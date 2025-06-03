@@ -1,0 +1,651 @@
+@import './styles/color-system.css'; /* Will be used once color-system.css is correctly populated */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Noise texture for EnhancedGradientText */
+.noise-texture::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image: url('data:image/svg+xml,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)"/%3E%3C/svg%3E');
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+
+/* Mobile optimizations */
+html {
+  touch-action: manipulation; /* Disable double-tap zoom on mobile */
+  -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+}
+
+body {
+  -webkit-text-size-adjust: 100%; /* Prevent font size adjustments on orientation change */
+  overscroll-behavior: none; /* Prevent pull-to-refresh */
+}
+
+/* Increase tap target sizes for mobile */
+button, a, input, select {
+  min-height: 44px; /* Minimum recommended touch target size */
+}
+
+/* Mobile landscape orientation optimizations */
+@media (max-width: 767px) and (orientation: landscape) {
+  body.is-mobile {
+    height: 100%;
+    overflow-y: auto;
+    position: fixed;
+    width: 100%;
+  }
+  
+  .landscape-optimize {
+    padding: 0.5rem !important;
+    margin: 0.5rem !important;
+  }
+  
+  /* Make buttons and inputs smaller in landscape mode */
+  button.landscape-sm,
+  input.landscape-sm {
+    height: 36px !important;
+    min-height: 36px !important;
+    font-size: 0.85rem !important;
+  }
+  
+  /* Stack items horizontally in landscape mode */
+  .landscape-horizontal {
+    display: flex;
+    flex-direction: row !important;
+  }
+  
+  /* Reduce form padding */
+  form.landscape-compact {
+    padding: 0.5rem !important;
+  }
+}
+
+/* Mobile specific optimizations */
+.is-mobile {
+  /* Force CSSOM optimizations */
+  contain: content;
+  
+  /* Optimize animations by deferring non-critical animations until after load */
+  &.defer-animations * {
+    animation-play-state: paused !important;
+  }
+  
+  /* Show animations after page load */
+  &.animations-ready * {
+    animation-play-state: running !important;
+  }
+  
+  /* Enhanced form styles for mobile */
+  :is(form) {
+    & label {
+      font-size: 0.9rem !important;
+    }
+    
+    & input {
+      font-size: 16px !important; /* iOS needs 16px+ to prevent zoom */
+      padding: 0.75rem !important;
+    }
+    
+    & .form-error {
+      font-size: 0.75rem !important;
+      margin-top: 0.25rem !important;
+    }
+    
+    & .form-group {
+      margin-bottom: 1rem !important;
+    }
+  }
+}
+
+/* Fix for iOS safari viewport height issues */
+@supports (-webkit-touch-callout: none) {
+  .min-h-screen {
+    min-height: -webkit-fill-available;
+  }
+  
+  /* Fix iOS 100vh issue */
+  .h-screen {
+    height: -webkit-fill-available;
+  }
+}
+
+/* Optimize scrolling on mobile */
+.smooth-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbars on mobile but keep functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  :root {
+    /* === IMAGE-BASED DARK THEME (Converted to Light) === */
+    /* Primary action (Coral/Orange from image) */
+    --brand-primary-action-hsl: 25 95% 60%; /* Light Orange */
+
+    /* Platform Colors (Green for Spotify, Red for YouTube from image) */
+    --spotify-base-color-hsl: 145 65% 45%; /* Bright Green */
+    --youtube-base-color-hsl: 0 80% 55%;   /* Bright Red */
+
+    /* Backgrounds - Light Theme */
+    --bg-primary-hsl: 220 20% 98%;    /* Very Light Cool Gray */
+    --bg-secondary-hsl: 220 15% 94%;  /* Light Cool Gray */
+    --surface-card-hsl: 0 0% 100%;     /* White */
+    --surface-tooltip-hsl: 230 30% 25%; /* Dark Blue for contrast */
+    --surface-glass-hsl: 0 0% 100%;
+    --surface-alt-hsl: 220 18% 96%;
+    --surface-highlight-hsl: 220 15% 90%;
+
+    /* Text Colors - Light Theme */
+    --text-primary-hsl: 230 30% 20%;    /* Dark Navy Blue */
+    --text-secondary-hsl: 230 25% 35%;  /* Darker Medium Navy Blue for contrast */
+    --text-tertiary-hsl: 230 20% 50%;   /* Darker Light Navy Blue for contrast */
+    --text-on-primary-action-hsl: 0 0% 100%; /* White on Orange */
+    --text-on-platform-spotify-hsl: 0 0% 100%; /* White on Green */
+    --text-on-platform-youtube-hsl: 0 0% 100%; /* White on Red */
+    --text-link-hsl: var(--spotify-base-color-hsl);
+    --text-placeholder-hsl: 230 15% 55%; /* Muted Navy Blue for Placeholders - Improved Contrast */
+
+    /* Border Colors - Light Theme */
+    --border-default-hsl: 220 15% 88%; /* Light Gray */
+    --border-strong-hsl: 220 20% 75%;
+    --border-interactive-hsl: var(--spotify-base-color-hsl);
+    --border-focus-hsl: var(--brand-primary-action-hsl);
+
+    /* Interactive Buttons - Light Theme */
+    --button-primary-bg-hsl: var(--brand-primary-action-hsl);
+    --button-primary-text-hsl: var(--text-on-primary-action-hsl);
+    --button-primary-hover-bg-hsl: 25 95% 65%; /* Lighter Orange */
+    --button-primary-glow-hsl: var(--brand-primary-action-hsl);
+
+    --button-spotify-bg-hsl: var(--spotify-base-color-hsl);
+    --button-spotify-text-hsl: var(--text-on-platform-spotify-hsl);
+    --button-spotify-hover-bg-hsl: 145 65% 50%; /* Lighter Green */
+    --button-spotify-glow-hsl: var(--spotify-base-color-hsl);
+
+    --button-youtube-bg-hsl: var(--youtube-base-color-hsl);
+    --button-youtube-text-hsl: var(--text-on-platform-youtube-hsl);
+    --button-youtube-hover-bg-hsl: 0 80% 60%; /* Lighter Red */
+    --button-youtube-glow-hsl: var(--youtube-base-color-hsl);
+    
+    /* Other button variants from previous theme, adapt or remove if not needed */
+    --brand-secondary-action-hsl: 190 80% 50%; /* Electric Teal - kept from prev for now */
+    --button-secondary-bg-hsl: var(--brand-secondary-action-hsl);
+    --button-secondary-text-hsl: 0 0% 100%;
+    --button-secondary-hover-bg-hsl: 190 80% 55%;
+    --button-secondary-glow-hsl: var(--brand-secondary-action-hsl);
+
+    /* Input Fields - Light Theme */
+    --input-bg-hsl: 0 0% 100%;
+    --input-text-hsl: var(--text-primary-hsl);
+    --input-border-hsl: var(--border-default-hsl);
+    --input-focus-ring-hsl: var(--spotify-base-color-hsl);
+    --input-placeholder-hsl: var(--text-placeholder-hsl);
+
+    /* Semantic State Colors - Light Theme */
+    --state-error-hsl: 0 75% 55%;     /* Red */
+    --state-warning-hsl: 35 90% 60%;  /* Orange */
+    --state-success-hsl: 145 60% 40%; /* Green */
+    --state-info-hsl: 200 85% 50%;  /* Blue */
+
+    /* Gradients - Light Theme */
+    --gradient-primary-action: linear-gradient(135deg, hsl(var(--brand-primary-action-hsl)), hsl(var(--spotify-base-color-hsl)));
+    
+    /* Shadows - Light Theme */
+    --shadow-xs: 0 1px 2px 0 hsla(var(--text-primary-hsl), 0.03);
+    --shadow-sm: 0 1px 3px 0 hsla(var(--text-primary-hsl), 0.05), 0 1px 2px -1px hsla(var(--text-primary-hsl), 0.05);
+    --shadow-md: 0 4px 6px -1px hsla(var(--text-primary-hsl), 0.05), 0 2px 4px -2px hsla(var(--text-primary-hsl), 0.05);
+    --shadow-lg: 0 10px 15px -3px hsla(var(--text-primary-hsl), 0.05), 0 4px 6px -4px hsla(var(--text-primary-hsl), 0.05);
+    --shadow-xl: 0 20px 25px -5px hsla(var(--text-primary-hsl), 0.05), 0 8px 10px -6px hsla(var(--text-primary-hsl), 0.05);
+    --shadow-2xl: 0 25px 50px -12px hsla(var(--text-primary-hsl), 0.1);
+    --shadow-inner: inset 0 2px 4px 0 hsla(var(--text-primary-hsl), 0.03);
+
+    --surface-shine-color: hsla(0, 0%, 100%, 0.6);
+    
+    /* Radii & Font settings from previous - kept */
+    --radius-sm: 0.25rem; --radius-md: 0.375rem; --radius-lg: 0.5rem; --radius-xl: 0.75rem; --radius-2xl: 1rem; --radius-full: 9999px;
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; line-height: 1.5; font-weight: 400; color-scheme: light dark; color: hsl(var(--text-primary-hsl)); background-color: hsl(var(--bg-primary-hsl)); font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    /* === END: IMAGE-BASED LIGHT THEME === */
+
+    --brand-gradient-dopamine-brights: linear-gradient(135deg, hsl(var(--brand-highlight-pink-hsl)), hsl(var(--brand-highlight-yellow-hsl)), hsl(var(--brand-accent-lime-hsl)), hsl(var(--brand-secondary-action-hsl)));
+    --brand-gradient-peach-fuzz: linear-gradient(135deg, hsl(var(--brand-primary-action-hsl)), hsl(var(--brand-highlight-yellow-hsl)), hsl(var(--brand-accent-coral-hsl)));
+
+    /* === Stepper Specific Colors === */
+    /* For Light Theme (based on image) */
+    --stepper-active-ring-color-hsl: 160 50% 75%; /* Light Teal for active ring */
+    --stepper-active-icon-bg-hsl: 0 0% 100%; /* White/Transparent for icon background */
+    --stepper-active-icon-color-hsl: 220 10% 85%; /* Light Grey for icon itself (gear) */
+    --stepper-active-text-color-hsl: 250 20% 35%; /* Dark Desaturated Blue/Purple for text */
+
+    --stepper-completed-bg-hsl: var(--brand-primary-hsl); /* Use theme primary for completed bg */
+    --stepper-completed-icon-color-hsl: var(--content-on-primary-action-hsl); /* Text on primary for icon */
+    --stepper-completed-text-color-hsl: var(--text-secondary-hsl);
+
+    --stepper-inactive-bg-hsl: var(--surface-alt-hsl);
+    --stepper-inactive-icon-color-hsl: var(--text-tertiary-hsl);
+    --stepper-inactive-text-color-hsl: var(--text-tertiary-hsl);
+    /* === End Stepper Specific Colors === */
+
+    /* === How It Works & Features Section Cards (Light Theme) === */
+    --section-card-bg-hsl: 0 0% 98%; /* Light gray, similar to current card bg */
+    --section-card-border-hsl: 220 15% 90%; /* Slightly darker border */
+    --section-card-icon-color-hsl: 0 0% 100%; /* White icon */
+    --section-card-text-primary-hsl: var(--text-primary-hsl); /* Use existing text colors */
+    --section-card-text-secondary-hsl: var(--text-secondary-hsl);
+
+    /* Icon container backgrounds - Light Theme (Vibrant) */
+    --section-card-icon-container-bg-how-it-works-1-hsl: 210 80% 55%; /* Vivid Blue */
+    --section-card-icon-container-bg-how-it-works-2-hsl: 145 65% 45%; /* Vivid Green */
+    --section-card-icon-container-bg-how-it-works-3-hsl: 0 80% 60%;   /* Vivid Red */
+
+    --section-card-icon-container-bg-features-1-hsl: 260 70% 60%; /* Vivid Purple */
+    --section-card-icon-container-bg-features-2-hsl: 190 75% 50%; /* Vivid Cyan/Teal */
+    --section-card-icon-container-bg-features-3-hsl: 40 90% 55%;  /* Vivid Orange/Gold */
+    --section-card-icon-container-bg-features-4-hsl: 330 80% 60%; /* Vivid Pink/Magenta */
+    /* === End How It Works & Features Section Cards (Light Theme) === */
+  }
+
+  .dark {
+    /* === IMAGE-BASED DARK THEME (Direct from image) === */
+    /* Primary action (Coral/Orange from image) */
+    --brand-primary-action-hsl: 22 90% 55%; /* Coral/Orange from image */
+
+    /* Platform Colors (Green for Spotify, Red for YouTube from image) */
+    --spotify-base-color-hsl: 140 60% 40%; /* Spotify Green from image */
+    --youtube-base-color-hsl: 0 75% 50%;   /* YouTube Red from image */
+
+    /* Backgrounds - Dark Theme (Matches image) */
+    --bg-primary-hsl: 230 25% 10%;    /* Very Dark Purplish Blue (Near Black) */
+    --bg-secondary-hsl: 230 20% 14%;  /* Dark Purplish Blue */
+    --surface-card-hsl: 230 20% 16%;   /* Slightly lighter card background */
+    --surface-tooltip-hsl: 220 15% 90%; /* Light for contrast */
+    --surface-glass-hsl: 230 20% 12%;
+    --surface-alt-hsl: 230 22% 18%;
+    --surface-highlight-hsl: 230 18% 22%;
+
+    /* Text Colors - Dark Theme (Matches image) */
+    --text-primary-hsl: 220 20% 90%;    /* Light Gray/Off-White */
+    --text-secondary-hsl: 220 15% 70%;  /* Medium Gray */
+    --text-tertiary-hsl: 220 10% 50%;   /* Dark Gray */
+    --text-on-primary-action-hsl: 0 0% 100%; /* White on Coral/Orange */
+    --text-on-platform-spotify-hsl: 0 0% 100%; /* White on Green */
+    --text-on-platform-youtube-hsl: 0 0% 100%; /* White on Red */
+    --text-link-hsl: var(--spotify-base-color-hsl);
+    --text-placeholder-hsl: 220 10% 45%;
+
+    /* Border Colors - Dark Theme (Matches image) */
+    --border-default-hsl: 230 15% 25%; /* Darker gray for subtle borders */
+    --border-strong-hsl: 230 15% 35%;
+    --border-interactive-hsl: var(--spotify-base-color-hsl);
+    --border-focus-hsl: var(--brand-primary-action-hsl);
+
+    /* Interactive Buttons - Dark Theme (Matches image) */
+    --button-primary-bg-hsl: var(--brand-primary-action-hsl);
+    --button-primary-text-hsl: var(--text-on-primary-action-hsl);
+    --button-primary-hover-bg-hsl: 22 90% 60%; /* Lighter Coral/Orange */
+    --button-primary-glow-hsl: var(--brand-primary-action-hsl);
+
+    --button-spotify-bg-hsl: var(--spotify-base-color-hsl);
+    --button-spotify-text-hsl: var(--text-on-platform-spotify-hsl);
+    --button-spotify-hover-bg-hsl: 140 60% 45%; /* Lighter Spotify Green */
+    --button-spotify-glow-hsl: var(--spotify-base-color-hsl);
+
+    --button-youtube-bg-hsl: var(--youtube-base-color-hsl);
+    --button-youtube-text-hsl: var(--text-on-platform-youtube-hsl);
+    --button-youtube-hover-bg-hsl: 0 75% 55%; /* Lighter YouTube Red */
+    --button-youtube-glow-hsl: var(--youtube-base-color-hsl);
+
+    /* Other button variants - ensure they fit the new dark theme */
+    --brand-secondary-action-hsl: 160 70% 40%; /* A darker teal to fit the new dark theme */
+    --button-secondary-bg-hsl: var(--brand-secondary-action-hsl);
+    --button-secondary-text-hsl: 0 0% 100%;
+    --button-secondary-hover-bg-hsl: 160 70% 45%;
+    --button-secondary-glow-hsl: var(--brand-secondary-action-hsl);
+
+    /* Input Fields - Dark Theme */
+    --input-bg-hsl: var(--bg-secondary-hsl);
+    --input-text-hsl: var(--text-primary-hsl);
+    --input-border-hsl: var(--border-default-hsl);
+    --input-focus-ring-hsl: var(--spotify-base-color-hsl);
+    --input-placeholder-hsl: var(--text-placeholder-hsl);
+
+    /* Semantic State Colors - Dark Theme */
+    --state-error-hsl: 0 70% 50%;
+    --state-warning-hsl: 25 85% 55%;
+    --state-success-hsl: 140 55% 40%;
+    --state-info-hsl: 190 75% 45%;
+  
+    /* Gradients - Dark Theme */
+    --gradient-primary-action: linear-gradient(135deg, hsl(var(--brand-primary-action-hsl)), hsl(var(--spotify-base-color-hsl)));
+
+    /* Shadows - Dark Theme */
+    --shadow-xs: 0 1px 2px 0 hsla(var(--brand-primary-action-hsl), 0.1); 
+    --shadow-sm: 0 1px 3px 0 hsla(var(--brand-primary-action-hsl), 0.15), 0 1px 2px -1px hsla(var(--brand-primary-action-hsl), 0.1);
+    --shadow-md: 0 4px 6px -1px hsla(var(--brand-primary-action-hsl), 0.15), 0 2px 4px -2px hsla(var(--brand-primary-action-hsl), 0.1);
+    --shadow-lg: 0 10px 15px -3px hsla(var(--brand-primary-action-hsl), 0.15), 0 4px 6px -4px hsla(var(--brand-primary-action-hsl), 0.1);
+    --shadow-xl: 0 20px 25px -5px hsla(var(--brand-primary-action-hsl), 0.15), 0 8px 10px -6px hsla(var(--brand-primary-action-hsl), 0.1);
+    --shadow-2xl: 0 25px 50px -12px hsla(var(--brand-primary-action-hsl), 0.25); 
+    --shadow-inner: inset 0 2px 4px 0 hsla(var(--brand-primary-action-hsl), 0.08);
+
+    --surface-shine-color: hsla(0, 0%, 100%, 0.1);
+    /* === END: IMAGE-BASED DARK THEME === */
+
+    --brand-gradient-dopamine-brights: linear-gradient(135deg, hsl(var(--brand-highlight-pink-hsl)), hsl(var(--brand-highlight-yellow-hsl)), hsl(var(--brand-accent-lime-hsl)), hsl(var(--brand-secondary-action-hsl)));
+    --brand-gradient-peach-fuzz: linear-gradient(135deg, hsl(var(--brand-primary-action-hsl)), hsl(var(--brand-highlight-yellow-hsl)), hsl(var(--brand-accent-coral-hsl)));
+
+    /* === Stepper Specific Colors === */
+    /* For Dark Theme (adjusting for visibility) */
+    --stepper-active-ring-color-hsl: 160 40% 55%; /* Slightly desaturated/darker Teal */
+    --stepper-active-icon-bg-hsl: var(--surface-primary-hsl); /* Darker surface for icon background */
+    --stepper-active-icon-color-hsl: 0 0% 85%; /* Light Grey for icon */
+    --stepper-active-text-color-hsl: 250 30% 75%; /* Lighter Desaturated Blue/Purple */
+
+    --stepper-completed-bg-hsl: var(--brand-primary-hsl); 
+    --stepper-completed-icon-color-hsl: var(--content-on-primary-action-hsl);
+    --stepper-completed-text-color-hsl: var(--text-secondary-hsl);
+
+    --stepper-inactive-bg-hsl: var(--surface-alt-hsl);
+    --stepper-inactive-icon-color-hsl: var(--text-tertiary-hsl);
+    --stepper-inactive-text-color-hsl: var(--text-tertiary-hsl);
+    /* === End Stepper Specific Colors === */
+
+    /* === How It Works & Features Section Cards (Dark Theme - Target Image) === */
+    --section-card-bg-hsl: 230 20% 18%; /* Dark purplish-blue card background */
+    --section-card-border-hsl: 230 15% 28%; /* Subtle darker border */
+    --section-card-icon-color-hsl: 0 0% 95%; /* Off-white icon for better blend */
+    --section-card-text-primary-hsl: 220 25% 92%; /* Bright, clear white for titles */
+    --section-card-text-secondary-hsl: 220 15% 78%; /* Lighter gray for descriptions */
+
+    /* Icon container backgrounds - Dark Theme (Matches target image) */
+    --section-card-icon-container-bg-how-it-works-1-hsl: 214 70% 48%; /* #2775C2 - Blue from image */
+    --section-card-icon-container-bg-how-it-works-2-hsl: 135 55% 46%; /* #36A45E - Green from image */
+    --section-card-icon-container-bg-how-it-works-3-hsl: 358 70% 55%; /* #D93B4A - Red from image */
+
+    --section-card-icon-container-bg-features-1-hsl: 214 70% 48%; /* #2775C2 - Blue for "Modern UI" */
+    --section-card-icon-container-bg-features-2-hsl: 135 55% 46%; /* #36A45E - Green for "Type-Safe" */
+    --section-card-icon-container-bg-features-3-hsl: 38 80% 54%;  /* #E69B2E - Gold for "Privacy First" */
+    --section-card-icon-container-bg-features-4-hsl: 358 70% 55%; /* #D93B4A - Red for "Fast Conversion" */
+    /* === End How It Works & Features Section Cards (Dark Theme) === */
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background-color: hsl(var(--background-primary));
+    color: hsl(var(--text-content-primary));
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  
+  h1 {
+    font-size: 3.2em;
+  }
+  
+  /* Elements with id for anchor navigation */
+  [id] {
+    scroll-margin-top: 100px;
+  }
+}
+
+.font-display {
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* Noise texture */
+.noise-texture {
+  position: relative;
+}
+
+.noise-texture::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.1;
+  pointer-events: none;
+  background-image: 
+    radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+    radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+  background-size: 12px 12px;
+  mix-blend-mode: overlay;
+}
+
+/* Advanced glass effect */
+.glass {
+  background: var(--surface-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--surface-glass-border);
+}
+
+/* .dark .glass is handled by variables */
+
+/* Enhanced animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+/* Variable font style for weight transitions */
+@supports (font-variation-settings: normal) {
+  body {
+    font-family: 'Inter var', 'Inter', sans-serif;
+  }
+  
+  .font-transition {
+    transition: font-variation-settings 0.3s ease;
+  }
+  
+  .font-transition:hover {
+    font-variation-settings: 'wght' 700;
+  }
+}
+
+/* Brand colors classes (should use Tailwind utilities with CSS vars instead, e.g., bg-spotify) */
+/* Example: .bg-spotify { background-color: var(--spotify-bg); } */
+
+/* Add these global styles for animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes slide-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animated-gradient {
+  background-size: 200% 200%;
+  animation: slide-gradient 3s ease infinite;
+  background-image: var(--brand-gradient); /* Use CSS variable for gradient */
+}
+
+/* Conversion Progress Styles - these should be reviewed to use theme variables */
+.conversion-progress {
+  @apply w-full rounded-xl shadow-2xl overflow-hidden;
+  background-color: hsl(var(--surface-card)); /* Example: use theme variable */
+}
+
+.conversion-progress-header {
+  @apply p-6 border-b;
+  border-color: hsl(var(--border-default)); /* Example: use theme variable */
+}
+
+.conversion-progress-title {
+  @apply text-2xl font-bold;
+  color: hsl(var(--text-content-primary)); /* Example: use theme variable */
+}
+
+.conversion-progress-steps {
+  @apply px-8 py-8;
+}
+
+.step-indicator {
+  @apply flex items-center justify-center w-12 h-12 mb-3 rounded-full;
+  /* color: hsl(var(--text-on-brand-primary)); /* Default text on indicator */
+}
+
+.step-indicator.completed {
+  background-color: hsl(var(--success-icon)); /* Use success icon color for bg */
+  color: hsl(var(--text-on-brand-primary));
+}
+
+.step-indicator.current {
+  background-image: var(--brand-gradient); /* Use theme gradient */
+  color: hsl(var(--text-on-brand-primary)); 
+}
+
+.step-indicator.pending {
+  background-color: hsl(var(--surface-alt)); /* Use a surface color */
+  color: hsl(var(--text-content-secondary));
+}
+
+.step-pulse {
+  @apply absolute inset-0 rounded-full -z-10 animate-pulse-slow;
+  background-color: hsl(var(--brand-primary)); /* Pulse with brand color */
+}
+
+.step-label {
+  @apply text-sm font-medium;
+}
+
+.step-label.completed {
+  color: hsl(var(--success-text));
+}
+
+.step-label.current {
+  color: hsl(var(--text-content-primary)); /* Primary text for current */
+}
+
+.step-label.pending {
+  color: hsl(var(--text-content-tertiary));
+}
+
+.step-title {
+  @apply text-base font-semibold mt-1 text-center;
+}
+
+.step-title.completed {
+  color: hsl(var(--success-text));
+}
+
+.step-title.current {
+  color: hsl(var(--text-content-primary));
+}
+
+.step-title.pending {
+  color: hsl(var(--text-content-tertiary));
+}
+
+.detail-panel {
+  @apply rounded-lg p-6 mb-8 border;
+  background-color: hsl(var(--surface-card-secondary));
+  border-color: hsl(var(--border-default));
+}
+
+.step-icon {
+  @apply w-10 h-10 rounded-lg flex items-center justify-center mr-3;
+  /* Background and color should be set based on step state (completed, current, pending) */
+}
+
+.control-button-reset {
+  @apply px-4 py-2 rounded-md flex items-center font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  background-color: hsl(var(--surface-alt));
+  color: hsl(var(--text-content-secondary));
+}
+.control-button-reset:hover:not(:disabled) {
+   background-color: hsl(var(--surface-highlight));
+}
+
+.control-button-start {
+  @apply px-5 py-2 rounded-md flex items-center font-medium;
+  /* These will be themed by GlowButton's variant props */
+}
+
+/* .control-button-start.active & .disabled are likely handled by GlowButton props */
+
+.progress-track {
+  @apply w-full h-2 rounded-full overflow-hidden;
+  background-color: hsl(var(--surface-alt));
+}
+
+.progress-bar {
+  @apply h-full;
+  background-color: hsl(var(--brand-primary));
+}
+
+.status-indicator {
+  @apply flex items-center text-sm;
+}
+
+.status-indicator.success {
+  color: hsl(var(--success-text));
+}
+
+.status-indicator.processing {
+  color: hsl(var(--brand-primary)); /* Use brand primary for processing */
+}
+
+.status-indicator.searching {
+  color: hsl(var(--warning-text)); /* Use warning for searching */
+}
+
+/* Animation utilities */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+} 

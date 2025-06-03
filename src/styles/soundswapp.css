@@ -1,0 +1,178 @@
+/* ===================================
+   SOUNDSWAPP BRAND STYLES
+   =================================== */
+
+/* Brand Logo Animation */
+.soundswapp-logo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.soundswapp-logo svg {
+  filter: drop-shadow(0 0 15px rgba(255, 122, 89, 0.3));
+  transition: all 0.6s ease;
+}
+
+.soundswapp-logo:hover svg {
+  filter: drop-shadow(0 0 20px rgba(255, 0, 122, 0.4));
+  transform: scale(1.05);
+}
+
+/* Double S Animation */
+.soundswapp-logo .ss-letter {
+  animation: pulseSS 3s infinite ease-in-out;
+  transform-origin: center;
+  filter: drop-shadow(0 0 5px rgba(255, 122, 89, 0.6));
+}
+
+.soundswapp-logo .ss-letter:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.soundswapp-logo:hover .ss-letter {
+  animation-duration: 1.5s;
+  filter: drop-shadow(0 0 8px rgba(255, 0, 122, 0.8));
+}
+
+@keyframes pulseSS {
+  0%, 100% { 
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Text Gradient Animation */
+.soundswapp-gradient-text {
+  background: linear-gradient(to right, #FF7A59, #FF007A, #00C4CC);
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.soundswapp-gradient-text.animated {
+  animation: gradientFlow 8s ease infinite;
+}
+
+@keyframes gradientFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Button and UI Elements */
+.soundswapp-button {
+  background: var(--soundswapp-gradient);
+  color: white;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.soundswapp-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08);
+}
+
+.soundswapp-button:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.2));
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+  z-index: -1;
+}
+
+.soundswapp-button:hover:before {
+  transform: translateX(0);
+}
+
+/* Form Input Glow Effect */
+.soundswapp-input:focus {
+  box-shadow: 0 0 0 2px rgba(255, 122, 89, 0.2), 0 0 15px rgba(255, 0, 122, 0.2);
+  border-color: rgba(255, 0, 122, 0.5);
+}
+
+/* Card Styles */
+.soundswapp-card {
+  background: rgba(38, 35, 56, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 122, 89, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.soundswapp-card:hover {
+  border-color: rgba(255, 0, 122, 0.2);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15), 0 0 10px rgba(255, 0, 122, 0.1);
+}
+
+/* Custom Scrollbar - SoundSwapp Theme */
+.soundswapp-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.soundswapp-scrollbar::-webkit-scrollbar-track {
+  background: rgba(38, 35, 56, 0.3);
+  border-radius: 10px;
+}
+
+.soundswapp-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #FF7A59, #FF007A);
+  border-radius: 10px;
+}
+
+.soundswapp-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #FF8D6A, #FF268E);
+}
+
+/* Platform Icons */
+.soundswapp-platform-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--surface-card);
+  color: var(--text-content-primary);
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.soundswapp-platform-icon.spotify {
+  color: #1DB954;
+  background: rgba(29, 185, 84, 0.1);
+  border: 1px solid rgba(29, 185, 84, 0.2);
+}
+
+.soundswapp-platform-icon.youtube {
+  color: #FF0000;
+  background: rgba(255, 0, 0, 0.1);
+  border: 1px solid rgba(255, 0, 0, 0.2);
+}
+
+.soundswapp-platform-icon:hover {
+  transform: translateY(-2px) scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+} 

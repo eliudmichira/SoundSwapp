@@ -1,0 +1,680 @@
+/* ===================================
+   ENHANCED MODERN COLOR SYSTEM
+   =================================== */
+
+/* 
+   Design Philosophy:
+   - SoundSwapp brand gradient colors
+   - High contrast for accessibility (WCAG AAA where possible)
+   - Vibrant, modern look with coral, pink, and teal accents
+   - Smooth transitions between themes
+*/
+
+/* ===================================
+   CORE COLOR TOKENS
+   =================================== */
+
+:root {
+  /* SoundSwapp Brand Colors */
+
+  /* CORE BRAND COLORS */
+  --brand-primary: #FF7A59; /* Coral - SoundSwapp primary */
+  --brand-primary-light: #FF9B82;
+  --brand-primary-dark: #E05A3D;
+
+  --brand-secondary: #00C4CC; /* Teal - SoundSwapp secondary */
+  --brand-secondary-light: #60DCE0;
+  --brand-secondary-dark: #00A2A8;
+
+  --brand-accent-pink: #FF007A; /* Vivid Pink - SoundSwapp accent */
+  --brand-accent-yellow: #FFD166; /* Warm Yellow - complementary */
+  --brand-accent-green: #39D98A; /* Bright Green (for success/spotify) */
+  --brand-accent-purple: #9D4EDD; /* Purple (for contrast) */
+
+
+  /* BACKGROUNDS */
+  --background-primary: #16131E; /* Deeper Navy/Purple for contrast with vibrant SoundSwapp colors */
+  --background-secondary: #1E1B2C; /* Slightly Lighter Navy/Purple */
+  --surface-card: #262338; /* Card background - a bit lighter for depth */
+  --surface-card-secondary: #312D46;
+  --surface-highlight: #3A3655; /* Hover, active states on cards */
+  --surface-alt: #1D1A29; /* Alternate dark for variety */
+  --surface-dropdown: #312D46;
+  --surface-tooltip: #3A3655;
+  --surface-scrollbar: #5F5980;
+  --surface-glass: rgba(38, 35, 56, 0.7); /* For GlassmorphicCard, with backdrop blur */
+  --surface-glass-border: rgba(120, 120, 150, 0.2);
+
+
+  /* TEXT */
+  --text-content-primary: #F8F9FA; /* Off-white for primary content */
+  --text-content-secondary: #CED4DA; /* Lighter gray for secondary content */
+  --text-content-tertiary: #ADB5BD; /* Even lighter for hints, disabled */
+  --text-on-brand-primary: #FFFFFF;
+  --text-on-brand-secondary: #FFFFFF;
+  --text-on-brand-accent: #FFFFFF;
+  --text-on-accent-yellow: #1A1A2E;
+
+
+  /* BORDERS & DIVIDERS */
+  --border-default: #3A3655; /* Subtle borders */
+  --border-strong: #5F5980;
+  --border-brand-highlight: var(--brand-secondary);
+  --border-interactive: var(--brand-primary);
+
+
+  /* INTERACTIVE UI ELEMENTS (Buttons, Inputs) */
+  --button-primary-bg: var(--brand-primary);
+  --button-primary-text: var(--text-on-brand-primary);
+  --button-primary-hover: var(--brand-primary-dark);
+  --button-primary-glow: rgba(255, 122, 89, 0.5); /* Glow for primary button */
+
+  --button-secondary-bg: var(--brand-secondary);
+  --button-secondary-text: var(--text-on-brand-secondary);
+  --button-secondary-hover: var(--brand-secondary-dark);
+  --button-secondary-glow: rgba(0, 196, 204, 0.5);
+
+  --button-accent-pink-bg: var(--brand-accent-pink);
+  --button-accent-pink-text: var(--text-on-brand-accent);
+  --button-accent-pink-hover: #D10065;
+  --button-accent-pink-glow: rgba(255, 0, 122, 0.5);
+  
+  --button-accent-yellow-bg: var(--brand-accent-yellow);
+  --button-accent-yellow-text: var(--text-on-accent-yellow);
+  --button-accent-yellow-hover: #E0BD00;
+  --button-accent-yellow-glow: rgba(255, 209, 102, 0.5);
+
+  --input-bg: #262338; /* Same as card, for consistency */
+  --input-text: var(--text-content-primary);
+  --input-border: var(--border-default);
+  --input-focus-ring: var(--brand-secondary);
+  --input-placeholder-text: var(--text-content-tertiary);
+
+
+  /* PLATFORM SPECIFIC (can be overridden by more specific vars if needed) */
+  --spotify-bg: #1DB954; /* Default Spotify Green */
+  --spotify-bg-hover: #1AA34A;
+  --spotify-bg-subtle: rgba(29, 185, 84, 0.1);
+  --spotify-text-button: #FFFFFF;
+  --spotify-text-accent: #1DB954;
+  --spotify-icon-color: #1DB954;
+  --spotify-icon-color-button: #FFFFFF;
+  --spotify-focus-ring: #1ED760;
+  --spotify-bg-connected: var(--spotify-bg);
+  --spotify-text-connected: #FFFFFF;
+
+  --youtube-bg: #FF0000; /* Default YouTube Red */
+  --youtube-bg-hover: #D90000;
+  --youtube-bg-subtle: rgba(255, 0, 0, 0.1);
+  --youtube-text-button: #FFFFFF;
+  --youtube-text-accent: #FF0000;
+  --youtube-icon-color: #FF0000;
+  --youtube-icon-color-button: #FFFFFF;
+  --youtube-focus-ring: #FF2C2C;
+  --youtube-bg-connected: var(--youtube-bg);
+  --youtube-text-connected: #FFFFFF;
+
+
+  /* SEMANTIC STATES (Feedback) */
+  --warning-bg: rgba(255, 209, 102, 0.1); /* Using Accent Yellow */
+  --warning-text: #FFD166;
+  --warning-border: var(--brand-accent-yellow);
+  --warning-icon: var(--brand-accent-yellow);
+
+  --error-bg: rgba(255, 0, 122, 0.1); /* Using Accent Pink */
+  --error-text: #FF007A;
+  --error-border: var(--brand-accent-pink);
+  --error-icon: var(--brand-accent-pink);
+
+  --success-bg: rgba(57, 217, 138, 0.1); /* Using Accent Green */
+  --success-text: #39D98A;
+  --success-border: var(--brand-accent-green);
+  --success-icon: var(--brand-accent-green);
+  
+
+  /* GRADIENTS */
+  --brand-gradient: linear-gradient(to right, var(--brand-primary), var(--brand-accent-pink));
+  --brand-gradient-secondary: linear-gradient(to right, var(--brand-secondary), var(--brand-accent-yellow));
+  --brand-gradient-cool: linear-gradient(to right, var(--brand-secondary), var(--brand-accent-purple));
+  --brand-gradient-warm: linear-gradient(to right, var(--brand-primary), var(--brand-accent-yellow));
+  --brand-gradient-vibrant: linear-gradient(90deg, var(--brand-primary) 0%, var(--brand-accent-pink) 50%, var(--brand-secondary) 100%);
+  --soundswapp-gradient: linear-gradient(to right, #FF7A59, #FF007A, #00C4CC);
+
+
+  /* SHADOWS (can be fine-tuned with Tailwind utilities too) */
+  --shadow-color: 223, 100%, 3%; /* HSL for dark shadow base */
+  --shadow-elevation-low: 0.3px 0.5px 0.7px hsl(var(--shadow-color) / 0.34),
+                          0.4px 0.8px 1px -1.2px hsl(var(--shadow-color) / 0.34),
+                          1px 2px 2.5px -2.5px hsl(var(--shadow-color) / 0.34);
+  --shadow-elevation-medium: 0.3px 0.5px 0.7px hsl(var(--shadow-color) / 0.36),
+                           0.8px 1.6px 2px -0.8px hsl(var(--shadow-color) / 0.36),
+                           2.1px 4.1px 5.2px -1.7px hsl(var(--shadow-color) / 0.36),
+                           5px 10px 12.6px -2.5px hsl(var(--shadow-color) / 0.36);
+  --shadow-elevation-high: 0.3px 0.5px 0.7px hsl(var(--shadow-color) / 0.34),
+                          1.5px 2.9px 3.7px -0.4px hsl(var(--shadow-color) / 0.34),
+                          2.7px 5.4px 6.8px -0.7px hsl(var(--shadow-color) / 0.34),
+                          4.5px 8.9px 11.2px -1.1px hsl(var(--shadow-color) / 0.34),
+                          7.1px 14.3px 18px -1.4px hsl(var(--shadow-color) / 0.34),
+                          11.2px 22.3px 28.1px -1.8px hsl(var(--shadow-color) / 0.34),
+                          17px 33.9px 42.7px -2.1px hsl(var(--shadow-color) / 0.34),
+                          25px 50px 62.9px -2.5px hsl(var(--shadow-color) / 0.34);
+
+  /* OTHER UI */
+  --particle-color: var(--brand-accent-pink); /* Updated particle color */
+  --morphing-blob-color-1: rgba(255, 122, 89, 0.15); /* Coral blob */
+  --morphing-blob-color-2: rgba(255, 0, 122, 0.12); /* Pink blob */
+  --floating-element-music: rgba(255, 122, 89, 0.3); /* Coral music notes */
+  --floating-element-disc: rgba(255, 0, 122, 0.25); /* Pink disc */
+  --floating-element-spotify: rgba(30, 215, 96, 0.3); /* Spotify green */
+  --floating-element-youtube: rgba(255, 0, 0, 0.2); /* YouTube red */
+  --logo-gradient-start: var(--brand-primary);
+  --logo-gradient-middle: var(--brand-accent-pink);
+  --logo-gradient-end: var(--brand-secondary);
+
+  /* Base HSL Values - Light Theme */
+  --brand-primary-action-hsl: 16 100% 66%; /* Vibrant Coral/Peach */
+  --brand-secondary-action-hsl: 190 80% 50%; /* Electric Teal */
+  --brand-highlight-yellow-hsl: 45 100% 58%; /* Sunny Yellow */
+  --brand-highlight-pink-hsl: 330 100% 70%; /* Playful Pink */
+  --brand-accent-lavender-hsl: 270 70% 75%; /* Soft Lavender */
+  --brand-accent-lime-hsl: 80 70% 55%;   /* Dopamine Lime */
+
+  /* Neutral & Backgrounds - Light Theme */
+  --bg-primary-hsl: 30 50% 98%; /* Very Light Warm Gray/Off-White */
+  --bg-secondary-hsl: 30 30% 95%; /* Light Warm Gray */
+  --surface-card-hsl: 0 0% 100%; /* White for cards */
+  --surface-tooltip-hsl: 220 20% 20%; /* Darker for contrast */
+  --surface-glass-hsl: 0 0% 100%; /* For glass effect base */
+
+  /* Text Colors - Light Theme */
+  --text-primary-hsl: 220 25% 20%; /* Dark Gray-Blue */
+  --text-secondary-hsl: 220 20% 40%; /* Medium Gray-Blue */
+  --text-tertiary-hsl: 220 15% 60%; /* Light Gray-Blue */
+  --text-on-primary-action-hsl: 0 0% 100%; /* White on Coral */
+  --text-on-secondary-action-hsl: 0 0% 100%; /* White on Teal */
+  --text-on-highlight-yellow-hsl: 20 100% 20%; /* Dark brown on Yellow */
+  --text-on-highlight-pink-hsl: 0 0% 100%;   /* White on Pink */
+  --text-link-hsl: var(--brand-secondary-action-hsl);
+
+  /* Border Colors - Light Theme */
+  --border-default-hsl: 220 15% 85%; /* Light Gray */
+  --border-strong-hsl: 220 20% 70%; /* Medium Gray */
+  --border-interactive-hsl: var(--brand-secondary-action-hsl);
+
+  /* Interactive Element States - Light Theme */
+  --button-primary-bg-hsl: var(--brand-primary-action-hsl);
+  --button-primary-text-hsl: var(--text-on-primary-action-hsl);
+  --button-primary-hover-bg-hsl: 16 100% 70%; /* Lighter Coral */
+  --button-primary-glow-hsl: 16 100% 66%;
+
+  --button-secondary-bg-hsl: var(--brand-secondary-action-hsl);
+  --button-secondary-text-hsl: var(--text-on-secondary-action-hsl);
+  --button-secondary-hover-bg-hsl: 190 80% 55%; /* Lighter Teal */
+  --button-secondary-glow-hsl: 190 80% 50%;
+
+  --button-highlight-yellow-bg-hsl: var(--brand-highlight-yellow-hsl);
+  --button-highlight-yellow-text-hsl: var(--text-on-highlight-yellow-hsl);
+  --button-highlight-yellow-hover-bg-hsl: 45 100% 62%; /* Lighter Yellow */
+  --button-highlight-yellow-glow-hsl: 45 100% 58%;
+
+  --button-highlight-pink-bg-hsl: var(--brand-highlight-pink-hsl);
+  --button-highlight-pink-text-hsl: var(--text-on-highlight-pink-hsl);
+  --button-highlight-pink-hover-bg-hsl: 330 100% 74%; /* Lighter Pink */
+  --button-highlight-pink-glow-hsl: 330 100% 70%;
+  
+  /* Input Fields - Light Theme */
+  --input-bg-hsl: 0 0% 100%;
+  --input-text-hsl: var(--text-primary-hsl);
+  --input-border-hsl: var(--border-default-hsl);
+  --input-focus-ring-hsl: var(--brand-secondary-action-hsl);
+  --input-placeholder-hsl: var(--text-tertiary-hsl);
+
+  /* Semantic State Colors - Light Theme */
+  --state-error-hsl: 0 90% 60%;
+  --state-warning-hsl: 35 100% 60%;
+  --state-success-hsl: 130 70% 45%;
+  --state-info-hsl: 200 90% 55%;
+
+  /* Gradients - Light Theme */
+  --gradient-primary-action: linear-gradient(135deg, hsl(var(--brand-primary-action-hsl)), hsl(var(--brand-highlight-yellow-hsl)));
+  --gradient-secondary-action: linear-gradient(135deg, hsl(var(--brand-secondary-action-hsl)), hsl(var(--brand-accent-lavender-hsl)));
+  --gradient-energetic: linear-gradient(135deg, hsl(var(--brand-highlight-pink-hsl)), hsl(var(--brand-accent-lime-hsl)), hsl(var(--brand-highlight-yellow-hsl)));
+  --gradient-warm-sunset: linear-gradient(to right, hsl(16 100% 66%), hsl(45 100% 58%)); /* Coral to Yellow */
+  --gradient-cool-sky: linear-gradient(to right, hsl(190 80% 50%), hsl(270 70% 75%)); /* Teal to Lavender */
+  --gradient-dopamine-splash: linear-gradient(45deg, hsl(var(--brand-accent-lime-hsl)) 0%, hsl(var(--brand-highlight-yellow-hsl)) 25%, hsl(var(--brand-primary-action-hsl)) 50%, hsl(var(--brand-highlight-pink-hsl)) 75%, hsl(var(--brand-secondary-action-hsl)) 100%);
+
+  /* Shadows - Light Theme */
+  --shadow-xs: 0 1px 2px 0 hsla(var(--text-primary-hsl), 0.05);
+  --shadow-sm: 0 1px 3px 0 hsla(var(--text-primary-hsl), 0.1), 0 1px 2px -1px hsla(var(--text-primary-hsl), 0.1);
+  --shadow-md: 0 4px 6px -1px hsla(var(--text-primary-hsl), 0.1), 0 2px 4px -2px hsla(var(--text-primary-hsl), 0.1);
+  --shadow-lg: 0 10px 15px -3px hsla(var(--text-primary-hsl), 0.1), 0 4px 6px -4px hsla(var(--text-primary-hsl), 0.1);
+  --shadow-xl: 0 20px 25px -5px hsla(var(--text-primary-hsl), 0.1), 0 8px 10px -6px hsla(var(--text-primary-hsl), 0.1);
+  --shadow-2xl: 0 25px 50px -12px hsla(var(--text-primary-hsl), 0.25);
+  --shadow-inner: inset 0 2px 4px 0 hsla(var(--text-primary-hsl), 0.05);
+
+  /* Surface Shine for Glassmorphism */
+  --surface-shine-color: hsla(0, 0%, 100%, 0.7); /* Brighter shine for light theme */
+}
+
+/* ===================================
+   LIGHT THEME
+   =================================== */
+
+[data-theme="light"] {
+  /* Background Layers */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8FAFC;       /* Slate 50 */
+  --bg-tertiary: #F1F5F9;        /* Slate 100 */
+  --bg-elevated: #FFFFFF;
+  --bg-overlay: rgba(15, 23, 42, 0.5);  /* Slate 900 */
+  
+  /* Surface Colors with Modern Gradients */
+  --surface-gradient: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 50%, #FFE5F0 100%);
+  --surface-card: rgba(255, 255, 255, 0.95);
+  --surface-card-hover: rgba(248, 250, 252, 1);
+  
+  /* Text Colors - High Contrast */
+  --text-primary: #0F172A;       /* Slate 900 - Contrast 16.08:1 */
+  --text-secondary: #475569;     /* Slate 600 - Contrast 7.43:1 */
+  --text-tertiary: #64748B;      /* Slate 500 - Contrast 4.85:1 */
+  --text-disabled: #94A3B8;      /* Slate 400 */
+  --text-inverse: #FFFFFF;
+  
+  /* Border Colors */
+  --border-default: #E2E8F0;     /* Slate 200 */
+  --border-hover: #CBD5E1;       /* Slate 300 */
+  --border-focus: var(--brand-primary);
+  
+  /* Interactive Elements */
+  --button-primary-bg: linear-gradient(135deg, #FF7A59 0%, #FF007A 100%);
+  --button-primary-hover: linear-gradient(135deg, #E05A3D 0%, #D10065 100%);
+  --button-primary-text: #FFFFFF;
+  
+  --button-secondary-bg: #F1F5F9;
+  --button-secondary-hover: #E2E8F0;
+  --button-secondary-text: #475569;
+  
+  /* Form Elements */
+  --input-bg: rgba(248, 250, 252, 0.8);
+  --input-border: #E2E8F0;
+  --input-focus-border: #FF007A;
+  --input-focus-ring: rgba(255, 0, 122, 0.2);
+  --input-error-border: #FF007A;
+  --input-error-bg: #FFF0F6;
+  
+  /* Shadows - Soft and Modern */
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -1px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.08), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
+  --shadow-glow: 0 0 20px rgba(255, 0, 122, 0.3);
+  
+  /* Special Effects */
+  --glow-primary: rgba(255, 122, 89, 0.4);
+  --glow-secondary: rgba(255, 0, 122, 0.4);
+  --particle-color: rgba(255, 0, 122, 0.6);
+  
+  /* SoundSwapp brand colors for light theme */
+  --brand-primary: #FF7A59;
+  --brand-accent-pink: #FF007A;
+  --brand-secondary: #00C4CC;
+  
+  /* Platform-specific colors in light theme */
+  --morphing-blob-color-1: rgba(255, 122, 89, 0.1);
+  --morphing-blob-color-2: rgba(255, 0, 122, 0.08);
+}
+
+/* ===================================
+   DARK THEME
+   =================================== */
+
+[data-theme="dark"] {
+  /* Background Layers - Deep Modern Darks */
+  --bg-primary: #16131E;         /* Deep space blue - SoundSwapp dark theme */
+  --bg-secondary: #1E1B2C;       /* Midnight blue */
+  --bg-tertiary: #262338;        /* Navy blue */
+  --bg-elevated: #1E293B;        /* Slate 800 */
+  --bg-overlay: rgba(0, 0, 0, 0.7);
+  
+  /* Surface Colors with Vibrant Gradients */
+  --surface-gradient: linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #0F3460 100%);
+  --surface-card: rgba(38, 35, 56, 0.8);
+  --surface-card-hover: rgba(38, 35, 56, 0.95);
+  
+  /* Text Colors - High Contrast */
+  --text-primary: #F8FAFC;       /* Slate 50 - Contrast 19.36:1 */
+  --text-secondary: #CBD5E1;     /* Slate 300 - Contrast 11.74:1 */
+  --text-tertiary: #94A3B8;      /* Slate 400 - Contrast 7.52:1 */
+  --text-disabled: #64748B;      /* Slate 500 */
+  --text-inverse: #0F172A;
+  
+  /* Border Colors */
+  --border-default: #3A3655;     /* Slightly lighter for dark theme */
+  --border-hover: #5F5980;       /* Brighter on hover */
+  --border-focus: var(--brand-accent-pink);
+  
+  /* Interactive Elements - Vibrant SoundSwapp Colors */
+  --button-primary-bg: linear-gradient(135deg, #FF7A59 0%, #FF007A 100%);
+  --button-primary-hover: linear-gradient(135deg, #FF8D6A 0%, #FF268E 100%);
+  --button-primary-text: #FFFFFF;
+  
+  --button-secondary-bg: linear-gradient(135deg, #00C4CC 0%, #00A2A8 100%);
+  --button-secondary-hover: linear-gradient(135deg, #20D4DC 0%, #00B2B8 100%);
+  --button-secondary-text: #FFFFFF;
+  
+  /* Form Elements */
+  --input-bg: rgba(38, 35, 56, 0.5);
+  --input-border: #3A3655;
+  --input-focus-border: #FF007A;
+  --input-focus-ring: rgba(255, 0, 122, 0.3);
+  --input-error-border: #FF007A;
+  --input-error-bg: rgba(255, 0, 122, 0.1);
+  
+  /* Shadows - Dramatic and Deep */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 30px rgba(255, 0, 122, 0.5);
+  
+  /* Special Effects - Vibrant glows */
+  --glow-primary: rgba(255, 122, 89, 0.6);
+  --glow-secondary: rgba(255, 0, 122, 0.6);
+  --particle-color: rgba(0, 196, 204, 0.8);
+
+  /* Base HSL Values - Dark Theme */
+  --brand-primary-action-hsl: 12 100% 68%; /* Coral */
+  --brand-secondary-action-hsl: 182 100% 40%; /* Teal */
+  --brand-highlight-pink-hsl: 336 100% 50%; /* Vivid Pink */
+  --brand-highlight-yellow-hsl: 42 100% 65%; /* Yellow */
+  
+  /* SoundSwapp brand colors remain consistent in dark theme */
+  --brand-primary: #FF7A59;
+  --brand-accent-pink: #FF007A;  
+  --brand-secondary: #00C4CC;
+  
+  /* Platform-specific colors in dark theme */
+  --morphing-blob-color-1: rgba(255, 122, 89, 0.15);
+  --morphing-blob-color-2: rgba(255, 0, 122, 0.12);
+}
+
+/* ===================================
+   COMPONENT-SPECIFIC COLORS
+   =================================== */
+
+/* Social Login Buttons */
+.social-google {
+  --social-bg: #FFFFFF;
+  --social-hover: #F9FAFB;
+  --social-text: #1F2937;
+  --social-border: #E5E7EB;
+  --social-icon: #EA4335;
+}
+
+[data-theme="dark"] .social-google {
+  --social-bg: rgba(38, 35, 56, 0.5);
+  --social-hover: rgba(58, 54, 85, 0.8);
+  --social-text: #F3F4F6;
+  --social-border: #3A3655;
+}
+
+.social-apple {
+  --social-bg: #000000;
+  --social-hover: #1F2937;
+  --social-text: #FFFFFF;
+  --social-border: transparent;
+  --social-icon: #FFFFFF;
+}
+
+[data-theme="dark"] .social-apple {
+  --social-bg: #FFFFFF;
+  --social-hover: #F3F4F6;
+  --social-text: #000000;
+  --social-icon: #000000;
+}
+
+/* Platform Badges */
+.platform-spotify {
+  --platform-bg: rgba(30, 215, 96, 0.1);
+  --platform-text: #1DB954;
+  --platform-border: rgba(30, 215, 96, 0.2);
+}
+
+[data-theme="dark"] .platform-spotify {
+  --platform-bg: rgba(30, 215, 96, 0.15);
+  --platform-text: #1ED760;
+  --platform-border: rgba(30, 215, 96, 0.3);
+}
+
+.platform-youtube {
+  --platform-bg: rgba(255, 0, 0, 0.1);
+  --platform-text: #FF0000;
+  --platform-border: rgba(255, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .platform-youtube {
+  --platform-bg: rgba(255, 0, 0, 0.15);
+  --platform-text: #FF0000;
+  --platform-border: rgba(255, 0, 0, 0.3);
+}
+
+/* ===================================
+   ACCESSIBILITY ENHANCEMENTS
+   =================================== */
+
+/* Focus Visible Styles */
+:focus-visible {
+  outline: 2px solid var(--brand-accent-pink);
+  outline-offset: 2px;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  :root {
+    --text-primary: #000000;
+    --text-secondary: #374151;
+    --bg-primary: #FFFFFF;
+    --border-default: #000000;
+  }
+  
+  [data-theme="dark"] {
+    --text-primary: #FFFFFF;
+    --text-secondary: #E5E7EB;
+    --bg-primary: #000000;
+    --border-default: #FFFFFF;
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===================================
+   UTILITY CLASSES
+   =================================== */
+
+/* Glassmorphism Effect */
+.glass {
+  background: var(--surface-card);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-default);
+}
+
+/* Neon Glow Effect */
+.neon-glow {
+  box-shadow: 
+    0 0 20px var(--glow-primary),
+    0 0 40px var(--glow-secondary),
+    inset 0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+/* Gradient Text */
+.gradient-text {
+  background: var(--soundswapp-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Modern Button Hover Effect */
+.button-modern {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.button-modern::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.button-modern:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* ===================================
+   THEME TRANSITION
+   =================================== */
+
+* {
+  transition: 
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+/* Add gradient animation for SoundSwapp title */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animated-gradient-text {
+  background-size: 200% auto;
+  animation: gradientShift 8s ease infinite;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  display: inline-block;
+} 
+
+/* SoundSwapp branded button */
+.soundswapp-button {
+  background: var(--soundswapp-gradient);
+  color: white;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.soundswapp-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08);
+}
+
+.soundswapp-button:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.2));
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+  z-index: -1;
+}
+
+.soundswapp-button:hover:before {
+  transform: translateX(0);
+}
+
+/* Authentication process indicators */
+body.auth-redirecting {
+  cursor: progress !important;
+}
+
+body.auth-redirecting::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(to right, 
+    var(--spotify-base-color), 
+    var(--youtube-base-color),
+    var(--spotify-base-color));
+  background-size: 200% 100%;
+  animation: authLoading 1.5s infinite;
+  z-index: 9999;
+}
+
+body.auth-in-progress {
+  cursor: progress !important;
+}
+
+body.auth-in-progress .social-google,
+body.auth-in-progress .social-apple {
+  position: relative;
+  overflow: hidden;
+}
+
+body.auth-in-progress .social-google::after,
+body.auth-in-progress .social-apple::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(
+    90deg, 
+    transparent, 
+    rgba(255, 255, 255, 0.2), 
+    transparent
+  );
+  animation: authButtonLoading 1.5s infinite;
+}
+
+@keyframes authLoading {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 200% 0%;
+  }
+}
+
+@keyframes authButtonLoading {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+} 
