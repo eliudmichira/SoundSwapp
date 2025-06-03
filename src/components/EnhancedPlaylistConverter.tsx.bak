@@ -1,0 +1,2136 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { EnhancedHeroSection } from './EnhancedHeroSection';
+import { useTheme } from '../lib/ThemeContext';
+import { useAuth } from '../lib/AuthContext';
+import { useConversion, ConversionStatus } from '../lib/ConversionContext';
+import { getYouTubeAuthUrl } from '../lib/youtubeAuth';
+import { initSpotifyAuth } from '../lib/spotifyAuth';
+import { cn } from '../lib/utils';
+import { GlassmorphicCard } from './ui/GlassmorphicCard';
+import { Enhanced3DCard } from './ui/Enhanced3DCard';
+import { EnhancedGradientText } from './ui/EnhancedGradientText';
+import { SuccessCelebration } from './feedback/SuccessCelebration';
+import { ToastContainer } from './feedback/EnhancedToast';
+import { PlaylistInsights } from './visualization/PlaylistInsights';
+import { Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { Toast } from './feedback/EnhancedToast';
+
+// Import Lucide React icons for consistent design language
+import { 
+  FileSpreadsheet, 
+  CheckCircle,
+  Loader,
+  Music,
+  Github,
+  Twitter,
+  Mail,
+  ExternalLink,
+  Link as LinkIcon,
+  RefreshCw,
+  Shield,
+  UserPlus,
+  Zap,
+  Info,
+  AlertTriangle,
+  ChevronRight,
+  ChevronLeft,
+  Upload,
+  Download,
+  ClipboardPaste,
+  Search,
+  LogOut,
+  User,
+  Lock,
+  PlayCircle,
+  Settings,
+  Headphones
+} from 'lucide-react';
+
+// Import only the components we need for this enhanced version
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSpotify, faYoutube, faSoundcloud } from '@fortawesome/free-brands-svg-icons';
+
+// Platform key type
+export type PlatformKey = 'spotify' | 'youtube' | 'soundcloud';
+
+// Keyboard accessibility helper
+interface KeyboardFocusableCardProps {
+  children: React.ReactNode;
+  onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
+  className?: string;
+  [key: string]: any;
+}
+
+// At the top of the file, add React import
+import React from 'react';
+
+// Fix the handleKeyDown function to differentiate between key and click events
+const KeyboardFocusableCard = ({ children, onKeyDown, onClick, className, ...props }: KeyboardFocusableCardProps) => {
+  return (
+    <div 
+      tabIndex={0} 
+      className={`focus:outline-none focus:ring-2 focus:ring-blue-500 ${className || ''}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onKeyDown?.(e);
+          // Only call onClick if onKeyDown doesn't exist or doesn't prevent default
+          if (onClick && (!onKeyDown || !e.defaultPrevented)) {
+            // Create a synthetic click event from the keyboard event
+            onClick(e as unknown as React.MouseEvent<HTMLDivElement, MouseEvent>);
+          }
+        } else if (onKeyDown) {
+          onKeyDown(e);
+        }
+      }}
+      onClick={onClick}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+};
+
+// Add mobile detection utilities
+const isMobileDevice = () => {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+};
+
+// First, remove the ConversionProgressProps interface
+// Create a reusable connection button component
+interface ConnectButtonProps {
+  platform: PlatformKey;
+  isConnected: boolean;
+  onConnect: () => void;
+  className?: string;
+}
+
+const ConnectButton = ({ platform, isConnected, onConnect, className }: ConnectButtonProps) => {
+  const platformIcons = {
+    'spotify': <FontAwesomeIcon icon={faSpotify} className="mr-2" />,
+    'youtube': <FontAwesomeIcon icon={faYoutube} className="mr-2" />,
+    'soundcloud': <FontAwesomeIcon icon={faSoundcloud} className="mr-2" />
+  };
+  
+  const platformColors = {
+    'spotify': 'bg-green-500 hover:bg-green-600',
+    'youtube': 'bg-red-500 hover:bg-red-600',
+    'soundcloud': 'bg-orange-400 hover:bg-orange-500'
+  };
+
+  return (
+    <button
+      onClick={onConnect}
+      disabled={isConnected}
+      className={cn(
+        "flex items-center justify-center px-4 py-2 rounded-lg text-white font-medium transition-colors",
+        isConnected ? "bg-green-600 cursor-default" : platformColors[platform] || "bg-purple-500 hover:bg-purple-600",
+        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800",
+        className
+      )}
+      aria-label={isConnected ? `Connected to ${platform}` : `Connect to ${platform}`}
+    >
+      {platformIcons[platform] || <LinkIcon className="mr-2" size={16} />}
+      {isConnected ? "Connected" : `Connect to ${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
+    </button>
+  );
+};
+
+// Function to get playlist insights from the tracks data
+interface PlaylistTrack {
+  title: string;
+  artists: string[];
+  duration: number;
+  popularity?: number;
+  releaseYear?: number;
+}
+
+interface Genre {
+  name: string;
+  count: number;
+  color: string;
+}
+
+interface Artist {
+  name: string;
+  count: number;
+  image?: string;
+}
+
+interface PlaylistInsights {
+  totalTracks: number;
+  avgPopularity: number;
+  totalDuration: number;
+  genres: Genre[];
+  topArtists: Artist[];
+  releaseYears: Record<string, number>;
+  totalGenreMentions?: number;
+}
+
+// Fix the generatePlaylistInsights function to handle empty tracks properly
+const generatePlaylistInsights = (tracks: PlaylistTrack[]): PlaylistInsights => {
+  if (!tracks || tracks.length === 0) {
+    return {
+      totalTracks: 0,
+      totalDuration: 0,
+      avgPopularity: 0,
+      genres: [],
+      topArtists: [],
+      releaseYears: {},
+      totalGenreMentions: 0
+    };
+  }
+  
+  // Get genre colors for visualization
+  const genreColors: Record<string, string> = {
+    'pop': '#EC4899',
+    'rock': '#3B82F6',
+    'hip hop': '#8B5CF6',
+    'rap': '#8B5CF6',
+    'electronic': '#10B981',
+    'dance': '#10B981',
+    'edm': '#10B981',
+    'r&b': '#F59E0B',
+    'indie': '#06B6D4',
+    'alternative': '#6366F1',
+    'country': '#F97316',
+    'folk': '#84CC16',
+    'metal': '#4B5563',
+    'jazz': '#7C3AED',
+    'classical': '#0EA5E9',
+    'soul': '#D946EF',
+    'blues': '#6B21A8',
+    'reggae': '#65A30D',
+    'punk': '#DC2626',
+    'latin': '#FB923C',
+    'default': '#9CA3AF'
+  };
+  
+  // Calculate total duration and average popularity
+  const totalDurationSeconds = tracks.reduce((sum, track) => sum + (track.duration / 1000), 0);
+  // Convert seconds to minutes and round to 1 decimal place
+  const totalDurationMinutes = Math.round(totalDurationSeconds / 60 * 10) / 10;
+  
+  const avgPopularity = Math.round(
+    tracks.reduce((sum, track) => sum + (track.popularity || 0), 0) / tracks.length
+  );
+  
+  // Extract genre information
+  const genreCounts: Record<string, number> = {};
+  const artistCounts: Record<string, { count: number; name: string; image: string }> = {};
+  const releaseYears: Record<string, number> = {};
+  
+  // Process each track
+  tracks.forEach(track => {
+    // Process artists
+    if (track.artists && track.artists.length > 0) {
+      track.artists.forEach(artist => {
+        if (artistCounts[artist]) {
+          artistCounts[artist].count += 1;
+        } else {
+          artistCounts[artist] = {
+            count: 1,
+            name: artist,
+            image: `https://ui-avatars.com/api/?name=${encodeURIComponent(artist)}&background=random&color=fff&size=128`
+          };
+        }
+        
+        // For demo purposes, assign random genres based on artist name
+        const assignRandomGenre = (artistName: string): string => {
+          const artistNameLower = artistName.toLowerCase();
+          // Try to make an educated guess based on common terms
+          if (artistNameLower.includes('rap') || artistNameLower.includes('hip')) return 'hip hop';
+          if (artistNameLower.includes('rock')) return 'rock';
+          if (artistNameLower.includes('pop')) return 'pop';
+          if (artistNameLower.includes('dj') || artistNameLower.includes('electronic')) return 'electronic';
+          if (artistNameLower.includes('country')) return 'country';
+          if (artistNameLower.includes('jazz')) return 'jazz';
+          if (artistNameLower.includes('soul')) return 'soul';
+          if (artistNameLower.includes('metal')) return 'metal';
+          
+          // As a fallback, assign a random genre from our list
+          const genres = Object.keys(genreColors).filter(g => g !== 'default');
+          return genres[Math.floor(Math.random() * genres.length)];
+        };
+        
+        const genre = assignRandomGenre(artist);
+        genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+      });
+    }
+    
+    // Extract release year (would be available in real Spotify data)
+    // For demo purposes, generate random recent years
+    const currentYear = new Date().getFullYear();
+    const randomYear = currentYear - Math.floor(Math.random() * 6); // Random year in last 5 years
+    releaseYears[randomYear.toString()] = (releaseYears[randomYear.toString()] ?? 0) + 1;
+  });
+  
+  // Calculate total genre mentions for proper percentage normalization
+  const totalGenreMentions = Object.values(genreCounts).reduce((sum, count) => sum + count, 0);
+  
+  // Convert genres to array format for visualization
+  const genres: Genre[] = Object.entries(genreCounts)
+    .map(([name, count]) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1), // Capitalize first letter
+      count,
+      color: genreColors[name] || genreColors.default
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5); // Top 5 genres
+  
+  // Convert artists to array format for visualization
+  const topArtists = Object.values(artistCounts)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5) // Top 5 artists
+    .map(artist => ({
+      name: artist.name,
+      count: artist.count,
+      image: artist.image
+    }));
+  
+  // Fetch artist images from Spotify API if available
+  const fetchArtistImages = async () => {
+    try {
+      const accessToken = localStorage.getItem('spotify_access_token');
+      
+      if (!accessToken) {
+        console.log('No Spotify token available for fetching artist images');
+        return;
+      }
+      
+      // Check token expiration
+      const expiresAt = localStorage.getItem('spotify_token_expires_at');
+      if (expiresAt && Date.now() > Number(expiresAt)) {
+        console.log('Spotify token expired, skipping artist image fetch');
+        return;
+      }
+      
+      // Use search endpoint to find artists
+      const artistPromises = topArtists.map(async (artist) => {
+        try {
+          const encodedArtistName = encodeURIComponent(artist.name);
+          
+          const response = await fetch(`https://api.spotify.com/v1/search?q=${encodedArtistName}&type=artist&limit=1`, {
+            method: 'GET',
+            headers: { 
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (!response.ok) {
+            if (response.status === 401) {
+              console.log('Spotify token invalid, clearing for refresh');
+              localStorage.removeItem('spotify_access_token');
+              throw new Error('Spotify token expired');
+            }
+            
+            console.log(`Skipping artist image fetch for ${artist.name} - API error ${response.status}`);
+            return;
+          }
+          
+          const data = await response.json();
+          if (data.artists && data.artists.items && data.artists.items.length > 0) {
+            const artistData = data.artists.items[0];
+            if (artistData.images && artistData.images.length > 0) {
+              // Update the artist image with the real one from Spotify
+              const index = topArtists.findIndex(a => a.name === artist.name);
+              if (index !== -1) {
+                topArtists[index].image = artistData.images[0].url;
+              }
+            }
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Spotify token expired') {
+            return;
+          }
+          console.log(`Error fetching image for artist ${artist.name}`);
+        }
+      });
+      
+      await Promise.allSettled(artistPromises);
+    } catch (error) {
+      console.log('Error in artist image fetching, using default images');
+    }
+  };
+  
+  // Fetch artist images
+  fetchArtistImages();
+  
+  return {
+    totalTracks: tracks.length,
+    totalDuration: totalDurationMinutes,
+    avgPopularity,
+    genres,
+    topArtists,
+    releaseYears,
+    totalGenreMentions
+  };
+};
+
+// Extract URL utility function
+const extractPlaylistId = (url: string, platform: PlatformKey): string | null => {
+  if (!url) return null;
+  if (platform === 'spotify') {
+    // Handle URLs like https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd?si=abc123
+    // or spotify:playlist:37i9dQZF1DX0XUsuxWHRQd
+    let match = url.match(/spotify\.com\/playlist\/([a-zA-Z0-9_-]+)/);
+    if (!match && url.includes('spotify:playlist:')) {
+      match = url.match(/spotify:playlist:([a-zA-Z0-9_-]+)/);
+    }
+    if (match && match[1]) {
+      // Remove any trailing query params or slashes
+      return match[1].split(/[/?#]/)[0];
+    }
+  } else if (platform === 'youtube') {
+    // Handle URLs like https://www.youtube.com/playlist?list=PLw-VjHDlEOgvtnnnqWlTqryAtBXmZCujo
+    const match = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+};
+
+/**
+ * Modern playlist converter with enhanced accessibility
+ */
+export const ModernPlaylistConverter = () => {
+  const { isDark } = useTheme();
+  const { 
+    user, 
+    isAuthenticated, 
+    loading: authLoading, 
+    hasSpotifyAuth, 
+    hasYouTubeAuth,
+    signOut
+  } = useAuth();
+  const conversion = useConversion();
+  const {
+    state: conversionState,
+    fetchSpotifyPlaylists,
+    selectPlaylist,
+    startConversion,
+    fetchConversionHistory,
+  } = conversion;
+  
+  // Get YouTube methods safely 
+  const fetchYouTubePlaylists = conversion.fetchYouTubePlaylists || (() => {
+    console.warn('fetchYouTubePlaylists not available');
+  });
+  const selectYouTubePlaylist = (id: string) => {
+    console.warn('selectYouTubePlaylist not available', id);
+  };
+
+  // Form state
+  const [spotifyUrl, setSpotifyUrl] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentWizardStep, setCurrentWizardStep] = useState(1);
+  const [showPlaylistSuggestions, setShowPlaylistSuggestions] = useState(false);
+  
+  // Platform selection with proper typing
+  type PlatformInfo = {
+    key: PlatformKey;
+    label: string;
+    color: string;
+    icon: any; // Using any for icon is acceptable here since we know it's a FontAwesome icon
+  };
+  
+  const platforms: PlatformInfo[] = [
+    { key: 'spotify', label: 'Spotify', color: 'bg-green-500', icon: faSpotify },
+    { key: 'youtube', label: 'YouTube', color: 'bg-red-500', icon: faYoutube },
+    // Add more platforms as needed
+  ];
+  
+  // State with proper typing
+  const [sourcePlatform, setSourcePlatform] = useState<PlatformKey>('spotify');
+  const [destinationPlatform, setDestinationPlatform] = useState<PlatformKey>('youtube');
+
+  // Ensure destination is never the same as source
+  useEffect(() => {
+    if (destinationPlatform === sourcePlatform) {
+      const next = platforms.find(p => p.key !== sourcePlatform);
+      if (next) setDestinationPlatform(next.key);
+    }
+    
+    // Save platform selections to localStorage for persistence
+    localStorage.setItem('source_platform', sourcePlatform);
+    localStorage.setItem('destination_platform', destinationPlatform);
+  }, [sourcePlatform, destinationPlatform, platforms]);
+  
+  // Restore saved platform selections on initial load
+  useEffect(() => {
+    const savedSource = localStorage.getItem('source_platform');
+    const savedDestination = localStorage.getItem('destination_platform');
+    const lastPlaylistUrl = localStorage.getItem('last_playlist_url');
+    
+    if (savedSource && platforms.some(p => p.key === savedSource)) {
+      setSourcePlatform(savedSource as PlatformKey);
+    }
+    
+    if (savedDestination && platforms.some(p => p.key === savedDestination) && savedDestination !== sourcePlatform) {
+      setDestinationPlatform(savedDestination as PlatformKey);
+    }
+    
+    if (lastPlaylistUrl) {
+      setSpotifyUrl(lastPlaylistUrl);
+    }
+  }, [platforms]);
+  
+  // Set the document title
+  useEffect(() => {
+    document.title = `Playlist Converter - Convert ${platforms.find(p => p.key === sourcePlatform)?.label} to ${platforms.find(p => p.key === destinationPlatform)?.label}`;
+  }, [sourcePlatform, destinationPlatform, platforms]);
+  
+  // Fetch conversion history when user is authenticated
+  const hasFetchedHistory = useRef(false);
+  useEffect(() => {
+    if (isAuthenticated && !hasFetchedHistory.current) {
+      hasFetchedHistory.current = true;
+      const loadHistory = async () => {
+        try {
+          await fetchConversionHistory();
+        } catch (error) {
+          console.error('Error loading conversion history:', error);
+        }
+      };
+      loadHistory();
+    }
+  }, [isAuthenticated, fetchConversionHistory]);
+  
+  // Show celebration when conversion is successful
+  useEffect(() => {
+    if (conversionState.status === ConversionStatus.SUCCESS) {
+      setShowCelebration(true);
+      setIsProcessing(false);
+      
+      // Determine destination platform and use appropriate playlist URL
+      const destinationIsSpotify = destinationPlatform === 'spotify';
+      const playlistUrl = destinationIsSpotify 
+        ? conversionState.spotifyPlaylistUrl 
+        : conversionState.youtubePlaylistUrl;
+      
+      const platformName = destinationIsSpotify ? 'Spotify' : 'YouTube';
+      
+      addToast({
+        type: 'success',
+        title: 'Conversion Complete',
+        message: `Your playlist has been successfully converted to ${platformName}!`,
+        actionLabel: 'View Playlist',
+        onAction: () => {
+          if (playlistUrl) {
+            window.open(playlistUrl, '_blank');
+          }
+        }
+      });
+      
+      // Move to final step in wizard
+      setCurrentWizardStep(4);
+    }
+  }, [conversionState.status, conversionState.youtubePlaylistUrl, conversionState.spotifyPlaylistUrl, destinationPlatform]);
+  
+  // Set processing state based on conversion status
+  useEffect(() => {
+    const processingStatuses = [
+      ConversionStatus.LOADING_TRACKS,
+      ConversionStatus.MATCHING_TRACKS,
+      ConversionStatus.CREATING_PLAYLIST
+    ];
+    
+    setIsProcessing(processingStatuses.includes(conversionState.status));
+  }, [conversionState.status]);
+  
+  // Track errors and notify the user
+  useEffect(() => {
+    if (conversionState.error) {
+      addToast({
+        type: 'error',
+        title: 'Conversion Error',
+        message: conversionState.error || 'An error occurred during conversion.',
+        actionLabel: 'Try Again'
+      });
+    }
+  }, [conversionState.error]);
+  
+  // Auto-advance Steps: Advance to step 3 when tracks are loaded after import
+  useEffect(() => {
+    if (currentWizardStep === 2 && conversionState.tracks.length > 0 && !isProcessing) {
+      setTimeout(() => {
+        setCurrentWizardStep(3);
+        // Scroll to wizard card
+        document.getElementById('playlist-wizard-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 500);
+    }
+    // Save last imported playlist URL
+    if (conversionState.selectedPlaylistId && currentWizardStep === 2) {
+      localStorage.setItem('last_playlist_url', spotifyUrl);
+    }
+  }, [conversionState.tracks.length, isProcessing, currentWizardStep, conversionState.selectedPlaylistId, spotifyUrl]);
+  
+  // Toast management
+  const addToast = ({ type, message, title, actionLabel, onAction }: Omit<Toast, 'id'>) => {
+    const id = Date.now();
+    const newToast: Toast = {
+      id,
+      type,
+      title: title || '',
+      message: message || '',
+      actionLabel,
+      onAction
+    };
+    setToasts(prev => [...prev, newToast]);
+    setTimeout(() => {
+      dismissToast(id);
+    }, 5000);
+  };
+  
+  const dismissToast = (id: number) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
+  
+  // Show different toast types
+  const showToast = useCallback((type: 'success' | 'error' | 'warning' | 'info', message: string) => {
+    const toastConfig = {
+      success: {
+        title: 'Success',
+        message: message || 'Operation completed successfully!',
+        actionLabel: 'Ok'
+      },
+      error: {
+        title: 'Error',
+        message: message || 'Something went wrong. Please try again.',
+        actionLabel: 'Retry'
+      },
+      warning: {
+        title: 'Warning',
+        message: message || 'Some tracks might not have been matched correctly.',
+        actionLabel: 'Review'
+      },
+      info: {
+        title: 'Information',
+        message: message || 'Your conversion is being processed in the background.',
+        actionLabel: 'Details'
+      }
+    };
+    
+    addToast({
+      type,
+      title: toastConfig[type].title,
+      message: toastConfig[type].message,
+      actionLabel: toastConfig[type].actionLabel
+    });
+  }, [addToast]);
+  
+  // Handle playlist URL input and extraction
+  const handlePlaylistUrlSubmit = useCallback((platform: PlatformKey) => {
+    const url = platform === 'spotify' ? spotifyUrl : youtubeUrl;
+    
+    if (!url.trim()) {
+      showToast('error', `Please enter a ${platform} playlist URL`);
+      return;
+    }
+    
+    try {
+      const playlistId = extractPlaylistId(url, platform);
+      
+      if (!playlistId) {
+        showToast('error', `Invalid ${platform} playlist URL format`);
+        return;
+      }
+
+      // Validate playlist ID format
+      if (platform === 'spotify' && (playlistId.length < 15 || playlistId.length > 30)) {
+        showToast('warning', 'The playlist ID format looks unusual, but trying anyway...');
+      }
+      
+      showToast('info', 'Fetching playlist details...');
+      setIsProcessing(true);
+      
+      // Select the playlist for conversion based on platform
+      if (platform === 'spotify') {
+        selectPlaylist(playlistId);
+      } else if (platform === 'youtube' && typeof selectYouTubePlaylist === 'function') {
+        selectYouTubePlaylist(playlistId);
+      }
+    } catch (error) {
+      console.error(`Error parsing ${platform} URL:`, error);
+      showToast('error', `Failed to process ${platform} URL`);
+      setIsProcessing(false);
+    }
+  }, [spotifyUrl, youtubeUrl, showToast, selectPlaylist, selectYouTubePlaylist]);
+  
+  // Auth helpers
+  const connectToSpotify = useCallback(() => {
+    try {
+      initSpotifyAuth();
+    } catch (error) {
+      console.error('Error initiating Spotify auth:', error);
+      showToast('error', 'Failed to connect to Spotify');
+    }
+  }, [showToast]);
+  
+  const connectToYouTube = useCallback(() => {
+    try {
+      window.location.href = getYouTubeAuthUrl();
+    } catch (error) {
+      console.error('Error initiating YouTube auth:', error);
+      showToast('error', 'Failed to connect to YouTube');
+    }
+  }, [showToast]);
+  
+  // Determine current conversion step
+  const getCurrentStep = useCallback(() => {
+    switch (conversionState.status) {
+      case ConversionStatus.LOADING_PLAYLISTS:
+      case ConversionStatus.SELECTING_PLAYLIST:
+      case ConversionStatus.IDLE:
+        return 1; // 1-indexed
+      case ConversionStatus.LOADING_TRACKS:
+        return 2;
+      case ConversionStatus.MATCHING_TRACKS:
+        return 3;
+      case ConversionStatus.CREATING_PLAYLIST:
+        return 4;
+      case ConversionStatus.SUCCESS:
+        return 4;
+      default:
+        return 1; // Default to first step
+    }
+  }, [conversionState.status]);
+  
+  // Start conversion with proper error handling
+  const handleStartConversion = useCallback(async () => {
+    // Make sure we have a playlist selected
+    if (!conversionState.selectedPlaylistId) {
+      showToast('error', 'Please select a playlist first');
+      return;
+    }
+    
+    // Make sure we have the necessary auth for both platforms
+    if (sourcePlatform === 'spotify' && !hasSpotifyAuth) {
+      showToast('error', 'Please connect to Spotify first');
+      return;
+    }
+    
+    if (destinationPlatform === 'youtube' && !hasYouTubeAuth) {
+      showToast('error', 'Please connect to YouTube first');
+      return;
+    }
+    
+    try {
+      setIsProcessing(true);
+      showToast('info', 'Starting conversion process...');
+      await startConversion();
+    } catch (error) {
+      console.error('Error starting conversion:', error);
+      setIsProcessing(false);
+      
+      if (error instanceof Error) {
+        showToast('error', `Conversion failed: ${error.message}`);
+      } else {
+        showToast('error', 'Conversion failed. Please try again.');
+      }
+    }
+  }, [
+    conversionState.selectedPlaylistId, 
+    sourcePlatform, 
+    destinationPlatform, 
+    hasSpotifyAuth, 
+    hasYouTubeAuth, 
+    showToast, 
+    startConversion
+  ]);
+  
+  // Fetch playlists based on auth status
+  useEffect(() => {
+    if (isAuthenticated && hasSpotifyAuth) {
+      fetchSpotifyPlaylists();
+    }
+  }, [isAuthenticated, hasSpotifyAuth, fetchSpotifyPlaylists]);
+
+  useEffect(() => {
+    if (isAuthenticated && hasYouTubeAuth && typeof fetchYouTubePlaylists === 'function') {
+      fetchYouTubePlaylists();
+    }
+  }, [isAuthenticated, hasYouTubeAuth, fetchYouTubePlaylists]);
+
+  // Get current auth status based on source and destination platforms
+  const getAuthStatus = useCallback(() => {
+    const sourceAuth = sourcePlatform === 'spotify' ? hasSpotifyAuth : hasYouTubeAuth;
+    const destinationAuth = destinationPlatform === 'spotify' ? hasSpotifyAuth : hasYouTubeAuth;
+    
+    return { sourceAuth, destinationAuth };
+  }, [sourcePlatform, destinationPlatform, hasSpotifyAuth, hasYouTubeAuth]);
+  
+  // Determine which connection handlers to use based on platforms
+  const getConnectionHandlers = useCallback(() => {
+    return {
+      connectToSource: sourcePlatform === 'spotify' ? connectToSpotify : connectToYouTube,
+      connectToDestination: destinationPlatform === 'spotify' ? connectToSpotify : connectToYouTube
+    };
+  }, [sourcePlatform, destinationPlatform, connectToSpotify, connectToYouTube]);
+  
+  // Get auth status for current platforms
+  const { sourceAuth, destinationAuth } = getAuthStatus();
+  
+  // Get appropriate connection handlers
+  const { connectToSource, connectToDestination } = getConnectionHandlers();
+
+  // After const conversion = useConversion();
+  const selectedPlaylist = conversionState.spotifyPlaylists.find(p => p.id === conversionState.selectedPlaylistId);
+
+  // Define step data for the wizard
+  const wizardSteps = [
+    {
+      number: 1,
+      label: 'Select Source',
+      help: 'Choose the platform you want to import your playlist from (Spotify or YouTube).',
+      icon: <Settings size={18} />
+    },
+    {
+      number: 2,
+      label: 'Import Playlist',
+      help: 'Paste your playlist URL or select from your library to import tracks.',
+      icon: <Upload size={18} />
+    },
+    {
+      number: 3,
+      label: 'Review Tracks',
+      help: 'Review the imported tracks and make sure everything looks correct.',
+      icon: <FileSpreadsheet size={18} />
+    },
+    {
+      number: 4,
+      label: 'Export Playlist',
+      help: 'Export your playlist to the destination platform with one click.',
+      icon: <Download size={18} />
+    },
+  ];
+
+  // Feature description data
+  const features = [
+    {
+      title: "Modern UI",
+      description: "Sleek, responsive design that works on all devices",
+      icon: <Settings size={20} />,
+      color: "bg-blue-100 text-blue-600"
+    },
+    {
+      title: "Type-Safe",
+      description: "Built with TypeScript and React for maximum reliability",
+      icon: <Shield size={20} />,
+      color: "bg-green-100 text-green-600"
+    },
+    {
+      title: "Privacy First", 
+      description: "We don't store your playlists or personal data",
+      icon: <Lock size={20} />,
+      color: "bg-yellow-100 text-yellow-600"
+    },
+    {
+      title: "Fast Conversion",
+      description: "Convert your playlists in seconds with our optimized algorithms",
+      icon: <Zap size={20} />,
+      color: "bg-red-100 text-red-600"
+    }
+  ];
+
+  // How it works steps
+  const howItWorks = [
+    {
+      title: "1. Paste Playlist URL",
+      description: "Copy the link to your playlist and paste it into our converter",
+      icon: <ClipboardPaste size={24} />,
+      color: "bg-green-100 text-green-600"
+    },
+    {
+      title: "2. Fetch & Verify",
+      description: "We'll retrieve all songs from your playlist and display them for verification",
+      icon: <Search size={24} />,
+      color: "bg-blue-100 text-blue-600"
+    },
+    {
+      title: "3. Create New Playlist",
+      description: "Create a new playlist with matching songs with just one click",
+      icon: <PlayCircle size={24} />,
+      color: "bg-red-100 text-red-600"
+    }
+  ];
+
+  return (
+    <div className={cn(
+      "min-h-screen transition-colors duration-300",
+      isDark ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-800"
+    )}>
+      {/* Enhanced Hero Section */}
+      <EnhancedHeroSection />
+      
+      {/* Authentication Section - Focus on accessibility */}
+      <section 
+        id="auth" 
+        className={cn(
+          "py-12 px-4",
+          isDark ? "bg-gray-800" : "bg-white"
+        )}
+        aria-labelledby="auth-section-title"
+      >
+        <div className="max-w-6xl mx-auto">
+          <GlassmorphicCard className="p-6 rounded-xl">
+            <h2 id="auth-section-title" className="sr-only">Authentication</h2>
+            {authLoading ? (
+              <div className="flex justify-center items-center py-8" aria-live="polite" aria-busy="true">
+                <Loader className="h-10 w-10 text-purple-500 animate-spin" />
+                <span className="sr-only">Loading authentication status...</span>
+              </div>
+            ) : !isAuthenticated ? (
+              <div className="text-center">
+                <h3 className="text-xl font-bold mb-4">Get Started</h3>
+                <p className={cn(
+                  "mb-6",
+                  isDark ? "text-gray-300" : "text-gray-600"
+                )}>
+                  Sign in to convert your playlists between platforms
+                </p>
+                <Link 
+                  to="/login" 
+                  className={cn(
+                    "inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors",
+                    isDark 
+                      ? "bg-purple-600 hover:bg-purple-500 text-white" 
+                      : "bg-purple-500 hover:bg-purple-400 text-white",
+                    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                  )}
+                  aria-label="Sign in or register for an account"
+                >
+                  <UserPlus size={18} />
+                  <span>Sign In / Register</span>
+                </Link>
+              </div>
+            ) : (
+              <div>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 mr-3" aria-hidden="true">
+                      <User size={18} />
+                    </div>
+                    <div>
+                      <p className="font-medium">{user?.displayName || 'User'}</p>
+                      <p className="text-sm text-gray-500">{user?.email}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={signOut}
+                    className={cn(
+                      "flex items-center gap-1 px-3 py-1 rounded-md transition-colors",
+                      isDark ? "text-gray-400 hover:text-white hover:bg-gray-700" : "text-gray-500 hover:text-gray-800 hover:bg-gray-100",
+                      "focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+                    )}
+                    aria-label="Sign out"
+                  >
+                    <LogOut size={16} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div className={cn(
+                    "flex items-center justify-between p-4 rounded-lg",
+                    isDark ? "bg-gray-700/50" : "bg-gray-100/70"
+                  )}>
+                    <div className="flex items-center">
+                      <FontAwesomeIcon icon={faSpotify} className="text-green-500 mr-3 text-xl" aria-hidden="true" />
+                      <span>Spotify</span>
+                    </div>
+                    {hasSpotifyAuth ? (
+                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center gap-1" role="status">
+                        <CheckCircle size={12} />
+                        Connected
+                      </span>
+                    ) : (
+                      <ConnectButton 
+                        platform="spotify" 
+                        isConnected={hasSpotifyAuth} 
+                        onConnect={connectToSpotify}
+                        className="text-sm"
+                      />
+                    )}
+                  </div>
+                  
+                  <div className={cn(
+                    "flex items-center justify-between p-4 rounded-lg",
+                    isDark ? "bg-gray-700/50" : "bg-gray-100/70"
+                  )}>
+                    <div className="flex items-center">
+                      <FontAwesomeIcon icon={faYoutube} className="text-red-500 mr-3 text-xl" aria-hidden="true" />
+                      <span>YouTube</span>
+                    </div>
+                    {hasYouTubeAuth ? (
+                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center gap-1" role="status">
+                        <CheckCircle size={12} />
+                        Connected
+                      </span>
+                    ) : (
+                      <ConnectButton 
+                        platform="youtube" 
+                        isConnected={hasYouTubeAuth} 
+                        onConnect={connectToYouTube}
+                        className="text-sm"
+                      />
+                    )}
+                  </div>
+                </div>
+                
+                {(!hasSpotifyAuth || !hasYouTubeAuth) && (
+                  <div className={cn(
+                    "rounded-md p-4 flex gap-2 text-sm",
+                    isDark ? "bg-yellow-900/20 border border-yellow-600/30 text-yellow-200" : "bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700"
+                  )}
+                  role="alert"
+                  aria-live="polite"
+                  >
+                    <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <p>
+                      Please connect both Spotify and YouTube to use the playlist converter.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </GlassmorphicCard>
+        </div>
+      </section>
+      
+      {/* Converter Section with Progress Visualization */}
+      {isAuthenticated && (
+        <section 
+          id="converter" 
+          className={cn(
+            "py-16 px-4 scroll-mt-20",
+            isDark ? "bg-gray-800" : "bg-white"
+          )}
+          aria-labelledby="converter-title"
+        >
+          <div className="max-w-6xl mx-auto">
+            <h2 id="converter-title" className="sr-only">Playlist Converter</h2>
+            
+            {/* Sticky progress bar/stepper at the top */}
+            <div className={cn(
+              "sticky top-0 z-20 py-4 mb-8 rounded-lg backdrop-blur-md shadow-sm",
+              isDark ? "bg-gray-800/90 border border-gray-700/50" : "bg-white/90 border border-gray-200"
+            )}
+            role="navigation"
+            aria-label="Conversion Steps">
+              <div className="flex items-center justify-center flex-wrap gap-4 px-2">
+                {wizardSteps.map((step, idx) => (
+                  <div key={step.label} className="flex items-center gap-2">
+                    <button
+                      className={cn(
+                        "rounded-full w-8 h-8 flex items-center justify-center font-bold transition-colors",
+                        idx + 1 === currentWizardStep 
+                          ? isDark ? "bg-purple-600 text-white" : "bg-purple-500 text-white" 
+                          : isDark ? "bg-gray-700 text-gray-400" : "bg-gray-200 text-gray-700",
+                        "focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+                      )}
+                      onClick={() => setCurrentWizardStep(idx + 1)}
+                      disabled={idx + 1 > getCurrentStep() || isProcessing}
+                      aria-label={`Go to step ${idx + 1}: ${step.label}`}
+                      aria-current={idx + 1 === currentWizardStep ? "step" : undefined}
+                    >
+                      {idx + 1}
+                    </button>
+                    <span className={cn(
+                      "font-medium text-sm hidden sm:flex items-center",
+                      idx + 1 === currentWizardStep 
+                        ? isDark ? "text-purple-400" : "text-purple-600" 
+                        : isDark ? "text-gray-400" : "text-gray-600"
+                    )}>
+                      {step.label}
+                      <div className="relative ml-1 cursor-help group">
+                        <Info size={12} className={cn(
+                          "text-gray-400 group-hover:text-purple-500 transition-colors",
+                          idx + 1 === currentWizardStep ? "text-purple-400" : ""
+                        )} />
+                        <span className="absolute left-1/2 -translate-x-1/2 mt-2 w-48 p-2 rounded bg-gray-900 text-white text-xs shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-none">
+                          {step.help}
+                        </span>
+                      </div>
+                    </span>
+                    {idx < wizardSteps.length - 1 && <span className="mx-2 text-gray-400 hidden sm:block">→</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Wizard card - Responsive, accessible, and streamlined */}
+            <div id="playlist-wizard-card">
+              <GlassmorphicCard className="p-6 max-w-2xl mx-auto mb-8 rounded-xl">
+                {/* Error banner */}
+                {conversionState.error && (
+                  <div 
+                    className={cn(
+                      "mb-4 p-3 rounded flex items-start gap-2",
+                      isDark ? "bg-red-900/30 text-red-300 border border-red-800/50" : "bg-red-100 text-red-700 border-l-4 border-red-600"
+                    )}
+                    role="alert"
+                    aria-live="assertive"
+                  >
+                    <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">{conversionState.error}</p>
+                    </div>
+                  </div>
+                )}
+                
+                <AnimatePresence mode="wait">
+                  {/* Step 1: Select Source Platform */}
+                  {currentWizardStep === 1 && (
+                    <motion.div
+                      key="step1"
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -30 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div>
+                        <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
+                          <Settings size={18} className="text-purple-500" aria-hidden="true" />
+                          Select Source Platform
+                          <span className="sr-only">{wizardSteps[0].help}</span>
+                        </h3>
+                        
+                        {/* Platform selection dropdowns */}
+                        <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-4">
+                          <div className="flex flex-col items-center">
+                            <label className="font-semibold mb-1 flex items-center gap-2" htmlFor="source-platform">
+                              <FontAwesomeIcon icon={platforms.find(p => p.key === sourcePlatform)?.icon || faSpotify} className="text-lg" aria-hidden="true" />
+                              Convert from:
+                            </label>
+                            <select
+                              id="source-platform"
+                              className={cn(
+                                "px-4 py-2 rounded border focus:outline-none focus:ring-2 focus:ring-purple-400",
+                                isDark ? "bg-gray-800 text-white border-gray-700" : "bg-white text-gray-800 border-gray-300"
+                              )}
+                              value={sourcePlatform}
+                              onChange={e => setSourcePlatform(e.target.value as PlatformKey)}
+                              disabled={isProcessing}
+                              aria-label="Source platform"
+                            >
+                              {platforms.map(p => (
+                                <option key={p.key} value={p.key}>{p.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <span className="mx-2 font-bold text-lg" aria-hidden="true">→</span>
+                          <div className="flex flex-col items-center">
+                            <label className="font-semibold mb-1 flex items-center gap-2" htmlFor="destination-platform">
+                              <FontAwesomeIcon icon={platforms.find(p => p.key === destinationPlatform)?.icon || faYoutube} className="text-lg" aria-hidden="true" />
+                              Convert to:
+                            </label>
+                            <select
+                              id="destination-platform"
+                              className={cn(
+                                "px-4 py-2 rounded border focus:outline-none focus:ring-2 focus:ring-purple-400",
+                                isDark ? "bg-gray-800 text-white border-gray-700" : "bg-white text-gray-800 border-gray-300"
+                              )}
+                              value={destinationPlatform}
+                              onChange={e => setDestinationPlatform(e.target.value as PlatformKey)}
+                              disabled={isProcessing}
+                              aria-label="Destination platform"
+                            >
+                              {platforms.map(p => (
+                                <option key={p.key} value={p.key} disabled={p.key === sourcePlatform}>{p.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        
+                        {/* Authentication check and notices */}
+                        {!sourceAuth && (
+                          <div className={cn(
+                            "my-3 p-3 rounded-md flex items-center gap-2 text-sm",
+                            isDark ? "bg-yellow-900/20 text-yellow-200" : "bg-yellow-50 text-yellow-700"
+                          )}>
+                            <AlertTriangle size={16} className="flex-shrink-0" aria-hidden="true" />
+                            <p>Please connect to {platforms.find(p => p.key === sourcePlatform)?.label} first.</p>
+                            <ConnectButton 
+                              platform={sourcePlatform} 
+                              isConnected={sourceAuth} 
+                              onConnect={connectToSource}
+                              className="ml-auto text-xs py-1"
+                            />
+                          </div>
+                        )}
+                        
+                        {!destinationAuth && (
+                          <div className={cn(
+                            "my-3 p-3 rounded-md flex items-center gap-2 text-sm",
+                            isDark ? "bg-yellow-900/20 text-yellow-200" : "bg-yellow-50 text-yellow-700"
+                          )}>
+                            <AlertTriangle size={16} className="flex-shrink-0" aria-hidden="true" />
+                            <p>Please connect to {platforms.find(p => p.key === destinationPlatform)?.label} first.</p>
+                            <ConnectButton 
+                              platform={destinationPlatform} 
+                              isConnected={destinationAuth} 
+                              onConnect={connectToDestination}
+                              className="ml-auto text-xs py-1"
+                            />
+                          </div>
+                        )}
+                        
+                        <button
+                          className={cn(
+                            "mt-6 px-6 py-2 rounded flex items-center gap-2 font-medium",
+                            (sourcePlatform === destinationPlatform || !sourceAuth || !destinationAuth) 
+                              ? isDark ? "bg-gray-700 text-gray-400 cursor-not-allowed" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                              : isDark ? "bg-purple-600 hover:bg-purple-500 text-white" : "bg-purple-500 hover:bg-purple-400 text-white",
+                            "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                          )}
+                          onClick={() => setCurrentWizardStep(2)}
+                          disabled={sourcePlatform === destinationPlatform || !sourceAuth || !destinationAuth}
+                          aria-label={`Continue to Import Playlist ${!sourceAuth || !destinationAuth ? '(connect to both platforms first)' : ''}`}
+                        >
+                          <span>Next</span>
+                          <ChevronRight size={16} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                  
+                  {/* Step 2: Import Playlist */}
+                  {currentWizardStep === 2 && (
+                    <motion.div
+                      key="step2"
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -30 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div>
+                        <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                          <Upload size={18} className="text-purple-500" aria-hidden="true" />
+                          Import Playlist
+                          <span className="sr-only">{wizardSteps[1].help}</span>
+                        </h3>
+                        
+                        {/* Platform-specific import UI */}
+                        <div className="mt-2 flex flex-col gap-3 w-full">
+                          {sourcePlatform === 'spotify' && (
+                            <>
+                              <div className="relative">
+                                <label htmlFor="spotify-url" className="text-sm font-medium mb-1 block">
+                                  Paste Spotify playlist URL or ID
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <div className="relative flex-grow">
+                                    <FontAwesomeIcon 
+                                      icon={faSpotify} 
+                                      className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" 
+                                      aria-hidden="true" 
+                                    />
+                                    <input
+                                      id="spotify-url"
+                                      type="text"
+                                      placeholder="https://open.spotify.com/playlist/..."
+                                      value={spotifyUrl}
+                                      onChange={e => setSpotifyUrl(e.target.value)}
+                                      disabled={isProcessing}
+                                      className={cn(
+                                        "flex-1 pl-9 pr-3 py-3 rounded focus:outline-none w-full text-sm",
+                                        isDark ? "bg-gray-700 text-white" : "bg-gray-100 text-gray-800",
+                                        isProcessing ? "opacity-50 cursor-not-allowed" : "",
+                                        "focus:ring-2 focus:ring-purple-500"
+                                      )}
+                                      aria-label="Spotify playlist URL"
+                                    />
+                                  </div>
+                                  <button
+                                    className={cn(
+                                      "px-4 py-3 rounded font-medium shadow transition-colors duration-200 flex-shrink-0",
+                                      "bg-green-600 text-white hover:bg-green-700",
+                                      (!spotifyUrl || isProcessing) ? "opacity-50 cursor-not-allowed" : "",
+                                      "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-gray-800"
+                                    )}
+                                    disabled={!spotifyUrl || isProcessing}
+                                    onClick={() => handlePlaylistUrlSubmit('spotify')}
+                                    aria-label="Import Spotify playlist"
+                                  >
+                                    {isProcessing ? (
+                                      <>
+                                        <Loader className="inline-block mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                                        <span>Importing...</span>
+                                      </>
+                                    ) : (
+                                      <span>Import</span>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                              
+                              {/* Your Playlists button with dropdown */}
+                              <div className="w-full my-2">
+                                <button
+                                  className={cn(
+                                    "w-full px-4 py-2 rounded-md border flex items-center justify-between",
+                                    isDark ? "bg-gray-800 border-gray-700 text-gray-300" : "bg-white border-gray-300 text-gray-700",
+                                    "hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
+                                    "focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                  )}
+                                  onClick={() => setShowPlaylistSuggestions(!showPlaylistSuggestions)}
+                                  aria-expanded={showPlaylistSuggestions}
+                                  aria-controls="playlist-dropdown"
+                                  aria-label="Show your Spotify playlists"
+                                >
+                                  <span className="flex items-center">
+                                    <FontAwesomeIcon icon={faSpotify} className="mr-2 text-green-500" aria-hidden="true" />
+                                    <span>Your Spotify Playlists</span>
+                                  </span>
+                                  <ChevronRight 
+                                    size={16} 
+                                    className={cn(
+                                      "transition-transform",
+                                      showPlaylistSuggestions ? "rotate-90" : ""
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                </button>
+                                
+                                {/* Playlist suggestions dropdown */}
+                                <AnimatePresence>
+                                  {showPlaylistSuggestions && sourceAuth && conversionState.spotifyPlaylists && conversionState.spotifyPlaylists.length > 0 && (
+                                    <motion.div
+                                      id="playlist-dropdown"
+                                      initial={{ opacity: 0, height: 0 }}
+                                      animate={{ opacity: 1, height: 'auto' }}
+                                      exit={{ opacity: 0, height: 0 }}
+                                      transition={{ duration: 0.2 }}
+                                      className={cn(
+                                        "mt-1 border rounded-lg shadow overflow-hidden",
+                                        isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                                      )}
+                                    >
+                                      <div className="max-h-56 overflow-y-auto p-1">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400 p-2 font-semibold">
+                                          Select a playlist to import:
+                                        </div>
+                                        <ul>
+                                          {conversionState.spotifyPlaylists.slice(0, 8).map((playlist) => (
+                                            <li key={playlist.id}>
+                                              <KeyboardFocusableCard
+                                                className={cn(
+                                                  "flex items-center gap-3 p-2 rounded cursor-pointer transition",
+                                                  isDark ? "hover:bg-green-900/30" : "hover:bg-green-100"
+                                                )}
+                                                onClick={() => {
+                                                  if (isProcessing) return;
+                                                  setSpotifyUrl(`https://open.spotify.com/playlist/${playlist.id}`);
+                                                  setShowPlaylistSuggestions(false);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    if (isProcessing) return;
+                                                    setSpotifyUrl(`https://open.spotify.com/playlist/${playlist.id}`);
+                                                    setShowPlaylistSuggestions(false);
+                                                  }
+                                                }}
+                                                aria-label={`Select playlist: ${playlist.name} by ${playlist.owner} with ${playlist.trackCount || 'unknown'} tracks`}
+                                              >
+                                                {playlist.imageUrl ? (
+                                                  <img 
+                                                    src={playlist.imageUrl} 
+                                                    alt="" 
+                                                    className="w-10 h-10 rounded object-cover flex-shrink-0" 
+                                                    aria-hidden="true"
+                                                  />
+                                                ) : (
+                                                  <div className="w-10 h-10 rounded bg-green-100 flex items-center justify-center flex-shrink-0">
+                                                    <Music size={16} className="text-green-600" aria-hidden="true" />
+                                                  </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="truncate font-medium text-sm">{playlist.name}</div>
+                                                  <div className="truncate text-xs text-gray-400">
+                                                    {playlist.owner} • {playlist.trackCount || 'Unknown'} tracks
+                                                  </div>
+                                                </div>
+                                              </KeyboardFocusableCard>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            </>
+                          )}
+                          
+                          {/* Add YouTube input for YouTube as source */}
+                          {sourcePlatform === 'youtube' && (
+                            <>
+                              <div className="relative">
+                                <label htmlFor="youtube-url" className="text-sm font-medium mb-1 block">
+                                  Paste YouTube playlist URL or ID
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <div className="relative flex-grow">
+                                    <FontAwesomeIcon 
+                                      icon={faYoutube} 
+                                      className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500" 
+                                      aria-hidden="true" 
+                                    />
+                                    <input
+                                      id="youtube-url"
+                                      type="text"
+                                      placeholder="https://youtube.com/playlist?list=..."
+                                      value={youtubeUrl}
+                                      onChange={e => setYoutubeUrl(e.target.value)}
+                                      disabled={isProcessing}
+                                      className={cn(
+                                        "flex-1 pl-9 pr-3 py-3 rounded focus:outline-none w-full text-sm",
+                                        isDark ? "bg-gray-700 text-white" : "bg-gray-100 text-gray-800",
+                                        isProcessing ? "opacity-50 cursor-not-allowed" : "",
+                                        "focus:ring-2 focus:ring-purple-500"
+                                      )}
+                                      aria-label="YouTube playlist URL"
+                                    />
+                                  </div>
+                                  <button
+                                    className={cn(
+                                      "px-4 py-3 rounded font-medium shadow transition-colors duration-200 flex-shrink-0",
+                                      "bg-red-600 text-white hover:bg-red-700",
+                                      (!youtubeUrl || isProcessing) ? "opacity-50 cursor-not-allowed" : "",
+                                      "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-offset-gray-800"
+                                    )}
+                                    disabled={!youtubeUrl || isProcessing}
+                                    onClick={() => handlePlaylistUrlSubmit('youtube')}
+                                    aria-label="Import YouTube playlist"
+                                  >
+                                    {isProcessing ? (
+                                      <>
+                                        <Loader className="inline-block mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                                        <span>Importing...</span>
+                                      </>
+                                    ) : (
+                                      <span>Import</span>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        
+                        {/* Show loading or error */}
+                        {isProcessing && (
+                          <div 
+                            className="mt-4 text-center flex items-center justify-center gap-2 text-purple-500"
+                            aria-live="polite"
+                          >
+                            <Loader className="animate-spin" size={16} aria-hidden="true" />
+                            <span>Loading tracks...</span>
+                          </div>
+                        )}
+                        
+                        <div className="flex justify-between mt-6">
+                          <button
+                            className={cn(
+                              "px-4 py-2 rounded flex items-center gap-2 text-sm",
+                              isDark ? "text-gray-400 hover:text-white hover:bg-gray-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100",
+                              "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                            )}
+                            onClick={() => setCurrentWizardStep(1)}
+                            aria-label="Go back to Select Source"
+                          >
+                            <ChevronLeft size={16} aria-hidden="true" />
+                            <span>Back</span>
+                          </button>
+                          
+                          <button
+                            className={cn(
+                              "px-4 py-2 rounded flex items-center gap-2 font-medium",
+                              (!conversionState.tracks.length) 
+                                ? isDark ? "bg-gray-700 text-gray-400 cursor-not-allowed" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                                : isDark ? "bg-purple-600 hover:bg-purple-500 text-white" : "bg-purple-500 hover:bg-purple-400 text-white",
+                              "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                            )}
+                            onClick={() => setCurrentWizardStep(3)}
+                            disabled={!conversionState.tracks.length}
+                            aria-label={`Continue to Review Tracks ${!conversionState.tracks.length ? '(import tracks first)' : ''}`}
+                          >
+                            <span>Next</span>
+                            <ChevronRight size={16} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                  
+                  {/* Step 3: Review Tracks */}
+                  {currentWizardStep === 3 && (
+                    <motion.div
+                      key="step3"
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -30 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div>
+                        <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                          <FileSpreadsheet size={18} className="text-purple-500" aria-hidden="true" />
+                          Review Tracks
+                          <span className="sr-only">{wizardSteps[2].help}</span>
+                        </h3>
+                        
+                        {/* Track summary */}
+                        <div className={cn(
+                          "mb-4 p-4 rounded-lg",
+                          isDark ? "bg-gray-800" : "bg-gray-100"
+                        )}>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold">{selectedPlaylist?.name || 'Imported Playlist'}</h4>
+                              <p className="text-sm text-gray-500">
+                                {selectedPlaylist?.trackCount || conversionState.tracks.length} tracks • 
+                                {selectedPlaylist?.owner && ` By ${selectedPlaylist.owner}`}
+                              </p>
+                            </div>
+                            <div className={cn(
+                              "flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium",
+                              isDark ? "bg-purple-900/50 text-purple-300" : "bg-purple-100 text-purple-700"
+                            )}>
+                              <FontAwesomeIcon 
+                                icon={platforms.find(p => p.key === sourcePlatform)?.icon} 
+                                className={sourcePlatform === 'spotify' ? 'text-green-500' : 'text-red-500'} 
+                                aria-hidden="true" 
+                              />
+                              <span>{platforms.find(p => p.key === sourcePlatform)?.label} Source</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Track list with improved accessibility */}
+                        <div 
+                          className="mt-2 rounded border"
+                          role="region"
+                          aria-label="Track list preview"
+                        >
+                          <div className={cn(
+                            "p-3 font-medium border-b text-sm",
+                            isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"
+                          )}>
+                            Track Preview ({conversionState.tracks.length})
+                          </div>
+                          <div className={cn(
+                            "max-h-64 overflow-y-auto",
+                            isDark ? "bg-gray-800" : "bg-white"
+                          )}>
+                            {conversionState.tracks.length > 0 ? (
+                              <ul role="list">
+                                {conversionState.tracks.map((track, idx) => (
+                                  <li 
+                                    key={track.id || idx} 
+                                    className={cn(
+                                      "py-2 px-3 border-b flex items-center gap-2",
+                                      isDark ? "border-gray-700 hover:bg-gray-700" : "border-gray-100 hover:bg-gray-50"
+                                    )}
+                                  >
+                                    <span className="w-6 text-center text-xs text-gray-400">{idx + 1}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-medium text-sm truncate">{track.name}</p>
+                                      <p className="text-xs text-gray-400 truncate">{track.artists.join(', ')}</p>
+                                    </div>
+                                    {track.duration_ms && (
+                                      <span className="text-xs text-gray-400 whitespace-nowrap">
+                                        {Math.floor(track.duration_ms / 60000)}:{((track.duration_ms % 60000) / 1000).toFixed(0).padStart(2, '0')}
+                                      </span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="py-8 text-center text-gray-400">
+                                <Music size={24} className="mx-auto mb-2 opacity-50" aria-hidden="true" />
+                                <p>No tracks loaded.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-between mt-6">
+                          <button
+                            className={cn(
+                              "px-4 py-2 rounded flex items-center gap-2 text-sm",
+                              isDark ? "text-gray-400 hover:text-white hover:bg-gray-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100",
+                              "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                            )}
+                            onClick={() => setCurrentWizardStep(2)}
+                            aria-label="Go back to Import Playlist"
+                          >
+                            <ChevronLeft size={16} aria-hidden="true" />
+                            <span>Back</span>
+                          </button>
+                          
+                          <button
+                            className={cn(
+                              "px-4 py-2 rounded flex items-center gap-2 font-medium",
+                              (!conversionState.tracks.length) 
+                                ? isDark ? "bg-gray-700 text-gray-400 cursor-not-allowed" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                                : isDark ? "bg-purple-600 hover:bg-purple-500 text-white" : "bg-purple-500 hover:bg-purple-400 text-white",
+                              "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                            )}
+                            onClick={() => setCurrentWizardStep(4)}
+                            disabled={!conversionState.tracks.length}
+                            aria-label={`Continue to Export Playlist ${!conversionState.tracks.length ? '(import tracks first)' : ''}`}
+                          >
+                            <span>Next</span>
+                            <ChevronRight size={16} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                  
+                  {/* Step 4: Export Playlist */}
+                  {currentWizardStep === 4 && (
+                    <motion.div
+                      key="step4"
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -30 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div>
+                        <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                          <Download size={18} className="text-purple-500" aria-hidden="true" />
+                          Export Playlist
+                          <span className="sr-only">{wizardSteps[3].help}</span>
+                        </h3>
+                        
+                        {/* Export summary */}
+                        <div className={cn(
+                          "p-4 rounded-lg border",
+                          isDark ? "bg-gray-800/50 border-gray-700" : "bg-white border-gray-200"
+                        )}>
+                          <div className="flex items-start gap-4">
+                            <div className={cn(
+                              "w-12 h-12 flex-shrink-0 rounded flex items-center justify-center",
+                              sourcePlatform === 'spotify' ? "bg-green-100" : "bg-red-100"
+                            )}>
+                              <FontAwesomeIcon 
+                                icon={platforms.find(p => p.key === sourcePlatform)?.icon} 
+                                className={sourcePlatform === 'spotify' ? 'text-green-600 text-lg' : 'text-red-600 text-lg'} 
+                                aria-hidden="true" 
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                <h4 className="font-semibold">{selectedPlaylist?.name || 'Unnamed Playlist'}</h4>
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-full text-xs",
+                                    isDark ? "bg-gray-700 text-gray-300" : "bg-gray-200 text-gray-700"
+                                  )}>
+                                    {conversionState.tracks.length} tracks
+                                  </span>
+                                  <FontAwesomeIcon 
+                                    icon={platforms.find(p => p.key === sourcePlatform)?.icon} 
+                                    className={sourcePlatform === 'spotify' ? 'text-green-500 text-sm' : 'text-red-500 text-sm'} 
+                                    aria-hidden="true" 
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-3 flex items-center">
+                                <div className="font-medium text-sm flex items-center gap-1">
+                                  <span>Converting to:</span>
+                                  <FontAwesomeIcon 
+                                    icon={platforms.find(p => p.key === destinationPlatform)?.icon} 
+                                    className={destinationPlatform === 'spotify' ? 'text-green-500 ml-1' : 'text-red-500 ml-1'} 
+                                    aria-hidden="true"
+                                  />
+                                  <span className="font-bold">{platforms.find(p => p.key === destinationPlatform)?.label}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                            
+                          {/* Conversion action button */}
+                          <div className="mt-4">
+                            <button
+                              className={cn(
+                                "w-full py-3 px-4 rounded-lg font-medium shadow-sm transition-colors flex items-center justify-center gap-2",
+                                (isProcessing || !conversionState.tracks.length) 
+                                  ? isDark ? "bg-gray-700 text-gray-400 cursor-not-allowed" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                                  : destinationPlatform === 'spotify'
+                                    ? "bg-green-600 hover:bg-green-700 text-white" 
+                                    : "bg-red-600 hover:bg-red-700 text-white",
+                                "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                              )}
+                              onClick={handleStartConversion}
+                              disabled={isProcessing || !conversionState.tracks.length}
+                              aria-label={`Export to ${platforms.find(p => p.key === destinationPlatform)?.label} ${isProcessing ? '(processing)' : !conversionState.tracks.length ? '(no tracks loaded)' : ''}`}
+                            >
+                              {isProcessing ? (
+                                <>
+                                  <Loader className="h-5 w-5 animate-spin" aria-hidden="true" />
+                                  <span>Exporting...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={18} aria-hidden="true" />
+                                  <span>Export to {platforms.find(p => p.key === destinationPlatform)?.label}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Success or error message */}
+                        {conversionState.status === ConversionStatus.SUCCESS && (
+                          <div className={cn(
+                            "mt-4 p-3 rounded-lg flex items-center gap-2",
+                            isDark ? "bg-green-900/30 text-green-300 border border-green-800/50" : "bg-green-100 text-green-800 border-l-4 border-green-600"
+                          )}
+                          role="status"
+                          aria-live="polite"
+                          >
+                            <CheckCircle size={18} className="flex-shrink-0" aria-hidden="true" />
+                            <div>
+                              <p className="font-semibold">Conversion successful!</p>
+                              <p className="text-sm mt-1">
+                                Your playlist has been successfully converted to {platforms.find(p => p.key === destinationPlatform)?.label}.
+                              </p>
+                            </div>
+                            <a
+                              href={(destinationPlatform === 'spotify' ? conversionState.spotifyPlaylistUrl : conversionState.youtubePlaylistUrl) || undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={cn(
+                                "ml-auto px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1",
+                                destinationPlatform === 'spotify' 
+                                  ? "bg-green-200 text-green-800 hover:bg-green-300" 
+                                  : "bg-red-200 text-red-800 hover:bg-red-300",
+                                "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                              )}
+                              aria-label={`View ${platforms.find(p => p.key === destinationPlatform)?.label} playlist (opens in new tab)`}
+                            >
+                              <span>View Playlist</span>
+                              <ExternalLink size={12} aria-hidden="true" />
+                            </a>
+                          </div>
+                        )}
+                        
+                        <div className="flex justify-between mt-6">
+                          <button
+                            className={cn(
+                              "px-4 py-2 rounded flex items-center gap-2 text-sm",
+                              isDark ? "text-gray-400 hover:text-white hover:bg-gray-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100",
+                              "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                            )}
+                            onClick={() => setCurrentWizardStep(3)}
+                            aria-label="Go back to Review Tracks"
+                            disabled={isProcessing}
+                          >
+                            <ChevronLeft size={16} aria-hidden="true" />
+                            <span>Back</span>
+                          </button>
+                          
+                          {/* Add a start over button */}
+                          {conversionState.status === ConversionStatus.SUCCESS && (
+                            <button
+                              className={cn(
+                                "px-4 py-2 rounded flex items-center gap-2 font-medium",
+                                isDark ? "bg-purple-600 hover:bg-purple-500 text-white" : "bg-purple-500 hover:bg-purple-400 text-white",
+                                "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                              )}
+                              onClick={() => {
+                                setCurrentWizardStep(1);
+                                setSpotifyUrl('');
+                                setYoutubeUrl('');
+                              }}
+                              aria-label="Convert another playlist"
+                            >
+                              <RefreshCw size={16} aria-hidden="true" />
+                              <span>Convert Another</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </GlassmorphicCard>
+            </div>
+            
+            {/* Recent Conversions Section */}
+            <AnimatePresence>
+              {conversionState.conversionHistory && conversionState.conversionHistory.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <GlassmorphicCard className="p-6 mb-8 rounded-xl" gradientOverlay={true}>
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                      <RefreshCw size={18} className="text-purple-500" aria-hidden="true" />
+                      Recent Conversions
+                    </h3>
+                    <div 
+                      className={cn(
+                        "rounded-lg border overflow-hidden",
+                        isDark ? "border-gray-700" : "border-gray-200"
+                      )}
+                      role="region"
+                      aria-label="Recent conversion history"
+                    >
+                      <table className="w-full" role="table">
+                        <thead>
+                          <tr className={cn(
+                            "text-xs font-medium text-left",
+                            isDark ? "bg-gray-800 text-gray-300" : "bg-gray-50 text-gray-600"
+                          )}>
+                            <th className="px-4 py-3" scope="col">Playlist</th>
+                            <th className="px-4 py-3 hidden md:table-cell" scope="col">Date</th>
+                            <th className="px-4 py-3 text-center" scope="col">Tracks</th>
+                            <th className="px-4 py-3 text-right" scope="col">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody role="rowgroup" className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {conversionState.conversionHistory.slice(0, 5).map((conv) => (
+                            <tr 
+                              key={conv.id}
+                              className={cn(
+                                "text-sm",
+                                isDark ? "hover:bg-gray-800" : "hover:bg-gray-50"
+                              )}
+                              role="row"
+                            >
+                              <td className="px-4 py-3 font-medium">{conv.spotifyPlaylistName || 'Unnamed Playlist'}</td>
+                              <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{new Date(conv.convertedAt).toLocaleDateString()}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={cn(
+                                  "inline-flex items-center text-xs rounded-full px-2 py-0.5",
+                                  isDark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-600"
+                                )}>
+                                  {conv.tracksMatched} / {conv.totalTracks}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {conv.youtubePlaylistUrl && (
+                                    <a
+                                      href={conv.youtubePlaylistUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={cn(
+                                        "inline-flex items-center gap-1 px-2 py-1 rounded text-white text-xs font-medium transition",
+                                        "bg-red-500 hover:bg-red-600",
+                                        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-offset-gray-800"
+                                      )}
+                                      aria-label="Open YouTube playlist in new tab"
+                                    >
+                                      <FontAwesomeIcon icon={faYoutube} aria-hidden="true" />
+                                      <span className="hidden sm:inline">YouTube</span>
+                                    </a>
+                                  )}
+                                  {conv.spotifyPlaylistUrl && (
+                                    <a
+                                      href={conv.spotifyPlaylistUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={cn(
+                                        "inline-flex items-center gap-1 px-2 py-1 rounded text-white text-xs font-medium transition",
+                                        "bg-green-500 hover:bg-green-600",
+                                        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-gray-800"
+                                      )}
+                                      aria-label="Open Spotify playlist in new tab"
+                                    >
+                                      <FontAwesomeIcon icon={faSpotify} aria-hidden="true" />
+                                      <span className="hidden sm:inline">Spotify</span>
+                                    </a>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </GlassmorphicCard>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            
+            {/* Playlist Insights - Enhanced visualization */}
+            <AnimatePresence>
+              {conversionState.status === ConversionStatus.SUCCESS && conversionState.tracks.length > 0 && (
+                <motion.div 
+                  className="mb-8"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <Headphones size={20} className="text-purple-500" aria-hidden="true" />
+                    Playlist Insights 
+                    <span className="ml-2 text-sm text-gray-500 font-normal">
+                      (Generated from your playlist data)
+                    </span>
+                  </h3>
+                  <PlaylistInsights 
+                    stats={generatePlaylistInsights(
+                      conversionState.tracks.map(track => ({
+                        title: track.name,
+                        artists: track.artists,
+                        duration: track.duration_ms,
+                        popularity: track.popularity
+                      }))
+                    )}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </section>
+      )}
+      
+      {/* How It Works Section - Enhanced for accessibility */}
+      <section 
+        id="how-it-works" 
+        className={cn(
+          "py-20 px-4 scroll-mt-20",
+          isDark ? "bg-gray-900" : "bg-gray-50"
+        )}
+        aria-labelledby="how-it-works-title"
+      >
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 id="how-it-works-title">
+              <EnhancedGradientText
+                variant="transition"
+                size="lg"
+                className="mb-4"
+              >
+                How It Works
+              </EnhancedGradientText>
+            </h2>
+            <p className={cn(
+              "max-w-2xl mx-auto",
+              isDark ? "text-gray-300" : "text-gray-600"
+            )}>
+              Converting your playlists is simple with our three-step process
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-3 gap-8">
+            {howItWorks.map((item, index) => (
+              <Enhanced3DCard className="p-6 text-center" key={index}>
+                <div className={cn(
+                  "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4",
+                  item.color
+                )} aria-hidden="true">
+                  {item.icon}
+                </div>
+                <h3 className="text-xl font-bold mb-2">{item.title}</h3>
+                <p className={isDark ? "text-gray-300" : "text-gray-600"}>
+                  {item.description}
+                </p>
+              </Enhanced3DCard>
+            ))}
+          </div>
+        </div>
+      </section>
+      
+      {/* Features Section - Enhanced for accessibility */}
+      <section 
+        className={cn(
+          "py-20 px-4",
+          isDark ? "bg-gray-800" : "bg-white"
+        )}
+        aria-labelledby="features-title"
+      >
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 id="features-title">
+              <EnhancedGradientText
+                size="lg"
+                className="mb-4"
+              >
+                Features
+              </EnhancedGradientText>
+            </h2>
+            <p className={cn(
+              "max-w-2xl mx-auto",
+              isDark ? "text-gray-300" : "text-gray-600"
+            )}>
+              Our TypeScript-powered converter offers top-notch performance and reliability
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {features.map((feature, index) => (
+              <GlassmorphicCard className="p-6 h-full" key={index}>
+                <div className={cn(
+                  "w-12 h-12 rounded-lg flex items-center justify-center mb-4",
+                  feature.color
+                )} aria-hidden="true">
+                  {feature.icon}
+                </div>
+                <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
+                <p className={isDark ? "text-gray-300 text-sm" : "text-gray-600 text-sm"}>
+                  {feature.description}
+                </p>
+              </GlassmorphicCard>
+            ))}
+          </div>
+        </div>
+      </section>
+      
+      {/* Modern Footer - Enhanced for accessibility */}
+      <footer className={cn(
+        "py-10 border-t",
+        isDark ? "bg-gray-900 border-gray-800" : "bg-gray-50 border-gray-200"
+      )}
+      aria-label="Site footer">
+        <div className="container mx-auto px-4">
+          {/* Footer top section with logo and social links */}
+          <div className="flex flex-col md:flex-row items-center justify-between mb-8">
+            <div className="flex items-center mb-6 md:mb-0">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-purple-600 to-blue-500 flex items-center justify-center mr-3" aria-hidden="true">
+                <Music className="text-white" size={18} />
+              </div>
+              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-500 to-blue-400">
+                Playlist Converter
+              </span>
+            </div>
+            
+            <div className="flex space-x-5">
+              <a 
+                href="https://github.com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className={cn(
+                  "h-10 w-10 rounded-full flex items-center justify-center transition-colors duration-300",
+                  isDark 
+                    ? "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white" 
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300 hover:text-gray-900",
+                  "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                )}
+                aria-label="GitHub repository (opens in new tab)"
+              >
+                <Github size={18} />
+              </a>
+              <a 
+                href="https://twitter.com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className={cn(
+                  "h-10 w-10 rounded-full flex items-center justify-center transition-colors duration-300",
+                  isDark 
+                    ? "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white" 
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300 hover:text-gray-900",
+                  "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                )}
+                aria-label="Twitter profile (opens in new tab)"
+              >
+                <Twitter size={18} />
+              </a>
+              <a 
+                href={`mailto:contact@playlistconverter.com`}
+                className={cn(
+                  "h-10 w-10 rounded-full flex items-center justify-center transition-colors duration-300",
+                  isDark 
+                    ? "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white" 
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300 hover:text-gray-900",
+                  "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 dark:focus:ring-offset-gray-800"
+                )}
+                aria-label="Contact via email"
+              >
+                <Mail size={18} />
+              </a>
+            </div>
+          </div>
+          
+          {/* Divider */}
+          <div className={cn(
+            "h-px w-full my-6",
+            isDark ? "bg-gray-800" : "bg-gray-200"
+          )} role="separator" />
+          
+          {/* Footer links section */}
+          <div className="flex flex-col md:flex-row items-center justify-between">
+            <nav aria-label="Footer navigation">
+              <ul className="flex flex-wrap justify-center md:justify-start gap-x-6 gap-y-2 mb-4 md:mb-0">
+                <li>
+                  <Link 
+                    to="/privacy-policy" 
+                    className={cn(
+                      "text-sm transition-colors duration-200",
+                      isDark ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900",
+                      "focus:outline-none focus:ring-2 focus:ring-purple-500 rounded-sm"
+                    )}
+                  >
+                    Privacy Policy
+                  </Link>
+                </li>
+                <li>
+                  <Link 
+                    to="/terms-of-service" 
+                    className={cn(
+                      "text-sm transition-colors duration-200",
+                      isDark ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900",
+                      "focus:outline-none focus:ring-2 focus:ring-purple-500 rounded-sm"
+                    )}
+                  >
+                    Terms of Service
+                  </Link>
+                </li>
+                <li>
+                  <Link 
+                    to="/" 
+                    className={cn(
+                      "text-sm transition-colors duration-200",
+                      isDark ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900",
+                      "focus:outline-none focus:ring-2 focus:ring-purple-500 rounded-sm"
+                    )}
+                  >
+                    Home
+                  </Link>
+                </li>
+              </ul>
+            </nav>
+            
+            <p className={cn(
+              "text-sm",
+              isDark ? "text-gray-500" : "text-gray-600"
+            )}>
+              © {new Date().getFullYear()} Playlist Converter. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </footer>
+      
+      {/* Toast container for notifications */}
+      <ToastContainer 
+        toasts={toasts} 
+        onDismiss={dismissToast} 
+        position="bottom-right"
+      />
+      
+      {/* Celebration animation - only shown on successful conversions */}
+      <SuccessCelebration 
+        isActive={showCelebration} 
+        message="Conversion Complete!"
+        onComplete={() => setShowCelebration(false)}
+      />
+    </div>
+  );
+};
