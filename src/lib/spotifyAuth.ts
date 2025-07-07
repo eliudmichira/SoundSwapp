@@ -1,10 +1,11 @@
 import { generateRandomString } from './cryptoUtils';
 import { isMobileDevice } from './utils';
+import { spotifyConfig } from './env';
 
 // Spotify API credentials
-const CLIENT_ID = '00c8de708f5d471eabb281146cf195bc';
-const CLIENT_SECRET = 'b9049fc180f5459684ee75dbb0509e06';
-const REDIRECT_URI = `${window.location.origin}/callback`;
+const CLIENT_ID = spotifyConfig.clientId;
+const CLIENT_SECRET = spotifyConfig.clientSecret;
+const REDIRECT_URI = spotifyConfig.redirectUri;
 const SCOPES = [
   'user-read-private',
   'user-read-email',

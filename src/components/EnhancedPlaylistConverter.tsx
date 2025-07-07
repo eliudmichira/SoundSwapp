@@ -1499,104 +1499,150 @@ const ModernPlaylistConverter: React.FC = () => {
                       transition={{ duration: 0.3 }}
                     >
                       <div>
-                        <h3 className="text-xl font-bold mb-1 text-content-primary">{wizardSteps[0].label}</h3>
-                        <p className="text-sm text-content-secondary mb-6">{wizardSteps[0].help}</p>
+                        <h3 className="text-2xl font-bold mb-2 text-content-primary dark:text-white">
+                          {wizardSteps[0].label}
+                        </h3>
+                        <p className="text-base text-content-secondary dark:text-gray-300 mb-8">
+                          {wizardSteps[0].help}
+                        </p>
                         
-                        <div className="grid sm:grid-cols-2 gap-6 mb-6">
+                        <div className="grid sm:grid-cols-2 gap-8 mb-8">
                           <div>
-                            <label className="block text-sm font-medium text-content-primary mb-2">
+                            <label className="block text-lg font-semibold text-content-primary dark:text-white mb-3">
                               Source Platform
                             </label>
-                            <div className="flex flex-col space-y-2">
+                            <div className="flex flex-col gap-3">
                               <GlowButton
                                 variant={sourcePlatform === 'spotify' ? "soundswapp" : "secondary"}
                                 onClick={() => setSourcePlatform('spotify')}
                                 disabled={false}
                                 className={cn(
-                                  "flex flex-1 justify-center items-center gap-2 py-3",
-                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "flex flex-1 justify-center items-center gap-3 py-4",
+                                  "bg-surface-card dark:bg-surface-card-dark border-2",
+                                  sourcePlatform === 'spotify' 
+                                    ? "border-[#1DB954] shadow-[0_0_15px_rgba(29,185,84,0.3)]" 
+                                    : "border-border dark:border-border-dark",
                                   "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
-                                  sourcePlatform === 'spotify' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
-                                  "text-content-primary dark:text-content-primary-dark"
+                                  "text-lg font-medium"
                                 )}
                                 aria-label="Select Spotify as source platform"
                               >
                                 <FaSpotify className={cn(
-                                  "h-5 w-5",
+                                  "h-6 w-6",
                                   sourcePlatform === 'spotify' ? "text-[#1DB954]" : "text-content-secondary dark:text-content-secondary-dark"
                                 )} />
-                                <span>Spotify</span>
+                                <span className={cn(
+                                  sourcePlatform === 'spotify' 
+                                    ? "text-[#1DB954] dark:text-[#1DB954]" 
+                                    : "text-content-primary dark:text-white"
+                                )}>Spotify</span>
                               </GlowButton>
+                              
                               <GlowButton
                                 variant={sourcePlatform === 'youtube' ? "soundswapp" : "secondary"}
                                 onClick={() => setSourcePlatform('youtube')}
                                 disabled={false}
                                 className={cn(
-                                  "flex flex-1 justify-center items-center gap-2 py-3",
-                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "flex flex-1 justify-center items-center gap-3 py-4",
+                                  "bg-surface-card dark:bg-surface-card-dark border-2",
+                                  sourcePlatform === 'youtube' 
+                                    ? "border-[#FF0000] shadow-[0_0_15px_rgba(255,0,0,0.3)]" 
+                                    : "border-border dark:border-border-dark",
                                   "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
-                                  sourcePlatform === 'youtube' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
-                                  "text-content-primary dark:text-content-primary-dark"
+                                  "text-lg font-medium"
                                 )}
                                 aria-label="Select YouTube as source platform"
                               >
                                 <Youtube className={cn(
-                                  "h-5 w-5",
+                                  "h-6 w-6",
                                   sourcePlatform === 'youtube' ? "text-[#FF0000]" : "text-content-secondary dark:text-content-secondary-dark"
                                 )} />
-                                <span>YouTube</span>
+                                <span className={cn(
+                                  sourcePlatform === 'youtube' 
+                                    ? "text-[#FF0000] dark:text-[#FF0000]" 
+                                    : "text-content-primary dark:text-white"
+                                )}>YouTube</span>
                               </GlowButton>
                             </div>
                           </div>
-                          <div className="flex-1">
-                            <label className="block text-sm font-medium text-content-primary mb-2">
+                          
+                          <div>
+                            <label className="block text-lg font-semibold text-content-primary dark:text-white mb-3">
                               Destination Platform
                             </label>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-col gap-3">
                               <GlowButton
                                 onClick={() => setDestinationPlatform('spotify')}
                                 disabled={!hasSpotifyAuth || sourcePlatform === 'spotify'}
                                 variant={destinationPlatform === 'spotify' ? "soundswapp" : "secondary"}
-                                size="sm"
                                 className={cn(
-                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "flex flex-1 justify-center items-center gap-3 py-4",
+                                  "bg-surface-card dark:bg-surface-card-dark border-2",
+                                  destinationPlatform === 'spotify' 
+                                    ? "border-[#1DB954] shadow-[0_0_15px_rgba(29,185,84,0.3)]" 
+                                    : "border-border dark:border-border-dark",
                                   "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
-                                  destinationPlatform === 'spotify' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
-                                  "text-content-primary dark:text-content-primary-dark",
+                                  "text-lg font-medium",
                                   (!hasSpotifyAuth || sourcePlatform === 'spotify') && "opacity-50 cursor-not-allowed"
                                 )}
                                 aria-label="Select Spotify as destination platform"
-                                aria-pressed={destinationPlatform === 'spotify'}
                               >
                                 <FaSpotify className={cn(
-                                  "w-5 h-5",
+                                  "h-6 w-6",
                                   destinationPlatform === 'spotify' ? "text-[#1DB954]" : "text-content-secondary dark:text-content-secondary-dark"
                                 )} />
-                                <span>Spotify</span>
+                                <span className={cn(
+                                  destinationPlatform === 'spotify' 
+                                    ? "text-[#1DB954] dark:text-[#1DB954]" 
+                                    : "text-content-primary dark:text-white"
+                                )}>Spotify</span>
                               </GlowButton>
+                              
                               <GlowButton
                                 onClick={() => setDestinationPlatform('youtube')}
                                 disabled={!hasYouTubeAuth || sourcePlatform === 'youtube'}
                                 variant={destinationPlatform === 'youtube' ? "soundswapp" : "secondary"}
-                                size="sm"
                                 className={cn(
-                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "flex flex-1 justify-center items-center gap-3 py-4",
+                                  "bg-surface-card dark:bg-surface-card-dark border-2",
+                                  destinationPlatform === 'youtube' 
+                                    ? "border-[#FF0000] shadow-[0_0_15px_rgba(255,0,0,0.3)]" 
+                                    : "border-border dark:border-border-dark",
                                   "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
-                                  destinationPlatform === 'youtube' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
-                                  "text-content-primary dark:text-content-primary-dark",
+                                  "text-lg font-medium",
                                   (!hasYouTubeAuth || sourcePlatform === 'youtube') && "opacity-50 cursor-not-allowed"
                                 )}
                                 aria-label="Select YouTube as destination platform"
-                                aria-pressed={destinationPlatform === 'youtube'}
                               >
                                 <Youtube className={cn(
-                                  "w-5 h-5",
+                                  "h-6 w-6",
                                   destinationPlatform === 'youtube' ? "text-[#FF0000]" : "text-content-secondary dark:text-content-secondary-dark"
                                 )} />
-                                <span>YouTube</span>
+                                <span className={cn(
+                                  destinationPlatform === 'youtube' 
+                                    ? "text-[#FF0000] dark:text-[#FF0000]" 
+                                    : "text-content-primary dark:text-white"
+                                )}>YouTube</span>
                               </GlowButton>
                             </div>
                           </div>
+                        </div>
+
+                        {/* Next button */}
+                        <div className="flex justify-end mt-8">
+                          <GlowButton
+                            variant="soundswapp"
+                            onClick={() => setCurrentWizardStep(2)}
+                            className={cn(
+                              "flex items-center gap-2 px-6 py-3",
+                              "text-white font-medium text-lg",
+                              "bg-gradient-to-r from-brand-primary to-brand-secondary",
+                              "hover:shadow-lg hover:scale-105 transform transition-all duration-200"
+                            )}
+                          >
+                            Next Step
+                            <ChevronRight className="w-5 h-5" />
+                          </GlowButton>
                         </div>
                       </div>
                     </motion.div>

@@ -7,7 +7,7 @@ const YOUTUBE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 // YouTube API credentials
 const YOUTUBE_CLIENT_ID = youtubeConfig.clientId;
 const YOUTUBE_CLIENT_SECRET = youtubeConfig.clientSecret; // Required for code flow
-const YOUTUBE_REDIRECT_URI = 'https://soundswapp.firebaseapp.com/youtube-callback';
+const YOUTUBE_REDIRECT_URI = youtubeConfig.redirectUri;
 
 // YouTube API scopes
 const YOUTUBE_SCOPES = [
