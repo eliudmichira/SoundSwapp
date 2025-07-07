@@ -1,17 +1,83 @@
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow authenticated users to read and write their own data
-    match /users/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Base functions for authentication and validation
+    function isAuthenticated() {
+      return request.auth != null;
     }
-    
-    // Allow reading of public assets
-    match /public/{allPaths=**} {
-      allow read;
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
-    
-    // Default deny all other access
+
+    function isValidFileSize() {
+      return request.resource.size <= 10 * 1024 * 1024; // 10MB limit
+    }
+
+    function isImageType() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isAudioType() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+
+    function hasValidConversion(userId, conversionId) {
+      return firestore
+        .get(/databases/(default)/documents/users/$(userId)/conversions/$(conversionId))
+        .data != null;
+    }
+
+    // User authentication data (profile pictures, etc.)
+    match /users/{userId}/auth/{fileName} {
+      allow read: if true; // Public read for auth-related files
+      allow write: if isOwner(userId) 
+        && isValidFileSize()
+        && (isImageType() || fileName.matches('auth_.*\\.json'));
+    }
+
+    // User profile data
+    match /users/{userId}/profile/{fileName} {
+      allow read: if true;
+      allow write: if isOwner(userId) 
+        && isValidFileSize()
+        && isImageType();
+    }
+
+    // Conversion data storage
+    match /conversions/{userId}/{conversionId}/{fileName} {
+      allow read: if isOwner(userId) && hasValidConversion(userId, conversionId);
+      allow write: if isOwner(userId) 
+        && isValidFileSize()
+        && (isAudioType() || fileName.matches('conversion_.*\\.(json|txt)'));
+      allow delete: if isOwner(userId);
+    }
+
+    // Playlist artwork
+    match /playlists/{playlistId}/artwork/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated()
+        && isValidFileSize()
+        && isImageType();
+    }
+
+    // Temporary conversion files (auto-deleted after 24 hours)
+    match /temp/{userId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+        && isValidFileSize()
+        && (request.time.toMillis() - resource.timeCreated.toMillis()) < 24 * 60 * 60 * 1000;
+      allow delete: if isOwner(userId);
+    }
+
+    // Public assets (logos, static images, etc.)
+    match /public/{fileName} {
+      allow read: if true;
+      allow write: if false; // Only allow admin writes through Firebase Console
+    }
+
+    // Block access to all other paths
     match /{allPaths=**} {
       allow read, write: if false;
     }

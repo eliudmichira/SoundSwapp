@@ -48,7 +48,8 @@ import {
   PlayCircle,
   Settings,
   Headphones,
-  Youtube
+  Youtube,
+  Loader2
 } from 'lucide-react';
 // Import real Spotify icon
 import { FaSpotify } from 'react-icons/fa';
@@ -196,201 +197,284 @@ const ConnectButton: React.FC<ConnectButtonProps> = ({ platform, isConnected, on
 };
 
 // Define insights interfaces
-interface Genre {
+import { PlaylistTypes } from '../types/playlist';
+
+// Use shared types
+type PlaylistStats = PlaylistTypes.PlaylistStats;
+type Album = PlaylistTypes.Album;
+type Genre = PlaylistTypes.Genre;
+type Artist = PlaylistTypes.Artist;
+
+interface ConversionTrack {
   name: string;
-  count: number;
-  color: string;
+  artists: string[];
+  popularity?: number;
+  duration_ms?: number;
+  explicit?: boolean;
+  album?: string;
+  releaseYear?: string | number;
+  genres?: string[];
+  artistImages?: string[];
 }
 
-interface Artist {
-  name: string;
-  count: number;
-  image?: string;
-}
+// Convert track to the correct type
+const convertTrack = (track: ConversionTrack): PlaylistTypes.Track => ({
+  name: track.name,
+  artists: track.artists,
+  popularity: track.popularity,
+  duration_ms: track.duration_ms,
+  explicit: track.explicit,
+  album: track.album,
+  releaseYear: track.releaseYear ? Number(track.releaseYear) : undefined,
+  genres: track.genres,
+  artistImages: track.artistImages
+});
 
-interface PlaylistInsightStats {
-  totalTracks: number;
-  avgPopularity: number;
-  totalDuration: number;
-  genres: Genre[];
-  topArtists: Artist[];
-  releaseYears: Record<string, number>;
-  totalGenreMentions?: number;
-  mostPopularTrack?: Track;
-  leastPopularTrack?: Track;
-  longestTrack?: Track;
-  shortestTrack?: Track;
-  explicitCount?: number;
-  nonExplicitCount?: number;
-  topAlbums?: { name: string; count: number }[];
-}
+// Generate a consistent color for a genre
+const generateGenreColor = (genre: string): string => {
+  // Create a hash of the genre name
+  let hash = 0;
+  for (let i = 0; i < genre.length; i++) {
+    hash = genre.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Convert to HSL color
+  const h = Math.abs(hash % 360);
+  return `hsl(${h}, 70%, 50%)`;
+};
 
 // Function to get playlist insights from the tracks data
-const generatePlaylistInsights = (tracks: Track[]): PlaylistInsightStats => {
-  if (!tracks || tracks.length === 0) {
-    return {
-      totalTracks: 0,
-      totalDuration: 0,
-      avgPopularity: 0,
-      genres: [],
-      topArtists: [],
-      releaseYears: {},
-      totalGenreMentions: 0,
-      explicitCount: 0,
-      nonExplicitCount: 0,
-      topAlbums: [],
-    };
-  }
-
-  // Get genre colors for visualization
-  const genreColors: Record<string, string> = {
-    'pop': 'hsl(var(--brand-highlight-pink-hsl))', // Playful Pink
-    'rock': 'hsl(var(--brand-secondary-action-hsl))', // Electric Teal
-    'hip hop': 'hsl(var(--brand-accent-lavender-hsl))', // Soft Lavender
-    'rap': 'hsl(var(--brand-accent-lavender-hsl))', // Soft Lavender
-    'electronic': 'hsl(var(--brand-accent-lime-hsl))', // Dopamine Lime
-    'dance': 'hsl(var(--brand-accent-lime-hsl))', // Dopamine Lime
-    'edm': 'hsl(var(--brand-accent-lime-hsl))', // Dopamine Lime
-    'r&b': 'hsl(var(--brand-highlight-yellow-hsl))', // Sunny Yellow
-    'indie': 'hsl(var(--brand-secondary-action-hsl))', // Electric Teal
-    'alternative': 'hsl(var(--brand-secondary-action-hsl), 0.8)', // Electric Teal (slightly muted)
-    'country': 'hsl(var(--brand-primary-action-hsl))', // Vibrant Coral
-    'folk': 'hsl(var(--brand-highlight-yellow-hsl), 0.8)', // Sunny Yellow (slightly muted)
-    'metal': 'hsl(var(--brand-primary-action-hsl), 0.7)', // Darker Coral
-    'jazz': 'hsl(var(--brand-accent-lavender-hsl), 0.9)', // Soft Lavender (slightly muted)
-    'classical': 'hsl(var(--brand-secondary-action-hsl), 0.7)', // Electric Teal (muted)
-    'soul': 'hsl(var(--brand-highlight-pink-hsl), 0.8)', // Playful Pink (slightly muted)
-    'blues': 'hsl(var(--brand-accent-lavender-hsl), 0.7)', // Deeper Lavender
-    'reggae': 'hsl(var(--brand-accent-lime-hsl), 0.9)', // Dopamine Lime (slightly muted)
-    'punk': 'hsl(var(--brand-primary-action-hsl), 0.9)', // Vibrant Coral (slightly muted)
-    'latin': 'hsl(var(--brand-highlight-yellow-hsl), 0.9)', // Sunny Yellow (slightly muted)
-    'default': 'hsl(var(--text-tertiary-hsl))'
-  };
-  
-  // Calculate total duration and average popularity
-  const totalDurationSeconds = tracks.reduce((sum, track) => sum + (track.duration_ms / 1000), 0);
-  const totalDurationMinutes = Math.round(totalDurationSeconds / 60 * 10) / 10;
-  const avgPopularity = Math.round(
-    tracks.reduce((sum, track) => sum + (track.popularity || 0), 0) / tracks.length
-  );
-  
-  // Extract genre, artist, album, and year information
+export const generatePlaylistInsights = (tracks: ConversionTrack[]): PlaylistStats => {
+  const artistCounts: Record<string, number> = {};
+  const artistImages: Record<string, string> = {};
   const genreCounts: Record<string, number> = {};
-  const artistCounts: Record<string, { count: number; name: string; image?: string }> = {};
-  const releaseYears: Record<string, number> = {};
+  const yearCounts: Record<string, number> = {};
   const albumCounts: Record<string, number> = {};
+  const genres = new Set<string>();
+  let totalTracks = tracks.length;
   let explicitCount = 0;
   let nonExplicitCount = 0;
+  let validPopularityCount = 0;
+  let totalPopularity = 0;
+  let totalDuration = 0;
+  let longestTrackDuration = 0;
+  let shortestTrackDuration = Infinity;
+  let longestTrack: ConversionTrack | null = null;
+  let shortestTrack: ConversionTrack | null = null;
+  let mostPopularTrack: ConversionTrack | null = null;
+  let leastPopularTrack: ConversionTrack | null = null;
+  let highestPopularity = 0;
+  let lowestPopularity = 100;
+  let oldestYear = '9999';
+  let newestYear = '0';
+  let oldestTrack: ConversionTrack | null = null;
+  let newestTrack: ConversionTrack | null = null;
 
-  // Find most and least popular tracks
-  let mostPopularTrack = tracks[0];
-  let leastPopularTrack = tracks[0];
-  let longestTrack = tracks[0];
-  let shortestTrack = tracks[0];
+  // Duration categories
+  const durationCategories = {
+    short: 0, // < 3 min
+    medium: 0, // 3-5 min
+    long: 0, // > 5 min
+  };
 
+  // Popularity ranges
+  const popularityRanges = {
+    low: 0, // 0-33
+    medium: 0, // 34-66
+    high: 0, // 67-100
+  };
+
+  // Process each track
   tracks.forEach(track => {
-    // Update popularity extremes
-    if (track.popularity > (mostPopularTrack?.popularity || 0)) {
-      mostPopularTrack = track;
-    }
-    if (track.popularity < (leastPopularTrack?.popularity || 100)) {
-      leastPopularTrack = track;
-    }
-    
-    // Update duration extremes
-    if (track.duration_ms > (longestTrack?.duration_ms || 0)) {
-      longestTrack = track;
-    }
-    if (track.duration_ms < (shortestTrack?.duration_ms || Infinity)) {
-      shortestTrack = track;
-    }
-    
-    // Genres (from enriched data)
-    if (track.genres && Array.isArray(track.genres)) {
-      track.genres.forEach((genre: string) => {
+    // Process artists
+    track.artists.forEach((artist, index) => {
+      artistCounts[artist] = (artistCounts[artist] || 0) + 1;
+      if (track.artistImages?.[index] && !artistImages[artist]) {
+        artistImages[artist] = track.artistImages[index];
+      }
+    });
+
+    // Process genres
+    if (track.genres) {
+      track.genres.forEach(genre => {
+        genres.add(genre);
         genreCounts[genre] = (genreCounts[genre] || 0) + 1;
       });
     }
-    
-    // Artists (from enriched data)
-    if (track.artists && track.artists.length > 0) {
-      track.artists.forEach((artist: string, idx: number) => {
-        const image = track.artistImages && track.artistImages[idx];
-        if (artistCounts[artist]) {
-          artistCounts[artist].count += 1;
-        } else {
-          artistCounts[artist] = {
-            count: 1,
-            name: artist,
-            image: image || undefined
-          };
-        }
-      });
+
+    // Process duration
+    if (track.duration_ms) {
+      totalDuration += track.duration_ms;
+      const durationMinutes = track.duration_ms / 1000 / 60;
+
+      if (durationMinutes < 3) durationCategories.short++;
+      else if (durationMinutes <= 5) durationCategories.medium++;
+      else durationCategories.long++;
+
+      if (track.duration_ms > longestTrackDuration) {
+        longestTrackDuration = track.duration_ms;
+        longestTrack = track;
+      }
+      if (track.duration_ms < shortestTrackDuration) {
+        shortestTrackDuration = track.duration_ms;
+        shortestTrack = track;
+      }
     }
-    
-    // Release year (from enriched data)
+
+    // Process popularity
+    if (track.popularity !== undefined) {
+      totalPopularity += track.popularity;
+      validPopularityCount++;
+
+      if (track.popularity <= 33) popularityRanges.low++;
+      else if (track.popularity <= 66) popularityRanges.medium++;
+      else popularityRanges.high++;
+
+      if (track.popularity > highestPopularity) {
+        highestPopularity = track.popularity;
+        mostPopularTrack = track;
+      }
+      if (track.popularity < lowestPopularity) {
+        lowestPopularity = track.popularity;
+        leastPopularTrack = track;
+      }
+    }
+
+    // Process release year
     if (track.releaseYear) {
-      releaseYears[track.releaseYear] = (releaseYears[track.releaseYear] || 0) + 1;
+      const year = track.releaseYear.toString();
+      yearCounts[year] = (yearCounts[year] || 0) + 1;
+
+      if (year < oldestYear) {
+        oldestYear = year;
+        oldestTrack = track;
+      }
+      if (year > newestYear) {
+        newestYear = year;
+        newestTrack = track;
+      }
     }
-    
-    // Albums
+
+    // Process explicit content
+    if (track.explicit) explicitCount++;
+    else nonExplicitCount++;
+
+    // Process albums
     if (track.album) {
       albumCounts[track.album] = (albumCounts[track.album] || 0) + 1;
     }
-    
-    // Explicit
-    if (track.explicit) {
-      explicitCount++;
-    } else {
-      nonExplicitCount++;
-    }
   });
-  
-  // Calculate total genre mentions for proper percentage normalization
-  const totalGenreMentions = Object.values(genreCounts).reduce((sum, count) => sum + count, 0);
-  
-  // Convert genres to array format for visualization
-  const genres: Genre[] = Object.entries(genreCounts)
-    .map(([name, count]) => ({
-      name: name.charAt(0).toUpperCase() + name.slice(1), // Capitalize first letter
+
+  // Calculate genre percentages
+  const genrePercentages: Record<string, number> = {};
+  const totalGenreMentions = Object.values(genreCounts).reduce((a, b) => a + b, 0);
+  Object.entries(genreCounts).forEach(([genre, count]) => {
+    genrePercentages[genre] = (count / totalGenreMentions) * 100;
+  });
+
+  // Calculate yearly trends
+  const yearlyTrends = Object.entries(yearCounts)
+    .map(([year, count]) => ({
+      year,
       count,
-      color: genreColors[name] || genreColors.default
+      avgPopularity: tracks
+        .filter(t => t.releaseYear?.toString() === year && t.popularity !== undefined)
+        .reduce((acc, t) => acc + (t.popularity || 0), 0) / count
+    }))
+    .sort((a, b) => a.year.localeCompare(b.year));
+
+  // Calculate decade distribution
+  const decadeDistribution: Record<string, number> = {};
+  Object.entries(yearCounts).forEach(([year, count]) => {
+    const decade = year.slice(0, 3) + '0';
+    decadeDistribution[decade] = (decadeDistribution[decade] || 0) + count;
+  });
+
+  // Convert genres to array with colors
+  const genreArray = Array.from(genres).map(name => ({
+    name,
+    count: genreCounts[name],
+    color: generateGenreColor(name),
+    percentage: genrePercentages[name]
+  })).sort((a, b) => b.count - a.count);
+
+  // Convert artists to array with images
+  const artistArray = Object.entries(artistCounts)
+    .map(([name, count]) => ({
+      name,
+      count,
+      image: artistImages[name],
+      popularity: tracks.find(t => t.artists.includes(name))?.popularity
     }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 5); // Top 5 genres
-  
-  // Convert artists to array format for visualization
-  const topArtists = Object.values(artistCounts)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5) // Top 5 artists
-    .map(artist => ({
-      name: artist.name,
-      count: artist.count,
-      image: artist.image
-    }));
-  
-  // Convert albums to array format
-  const topAlbums = Object.entries(albumCounts)
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
+    .slice(0, 10); // Top 10 artists
+
+  // Convert albums to array
+  const albumArray = Object.entries(albumCounts)
+    .map(([name, trackCount]) => {
+      const track = tracks.find(t => t.album === name);
+      const year = track?.releaseYear ? Number(track.releaseYear) : undefined;
+      return { 
+        name, 
+        trackCount,
+        year: !isNaN(year as number) ? year : undefined
+      };
+    })
+    .sort((a, b) => b.trackCount - a.trackCount)
     .slice(0, 5); // Top 5 albums
-  
+
   return {
-    totalTracks: tracks.length,
-    totalDuration: totalDurationMinutes,
-    avgPopularity,
-    genres,
-    topArtists,
-    releaseYears,
+    totalTracks,
+    avgPopularity: validPopularityCount ? totalPopularity / validPopularityCount : 0,
+    totalDuration: Math.round(totalDuration / 60000), // Convert to minutes
+    genres: genreArray,
+    topArtists: artistArray,
+    releaseYears: yearCounts,
     totalGenreMentions,
-    mostPopularTrack,
-    leastPopularTrack,
-    longestTrack,
-    shortestTrack,
+    mostPopularTrack: mostPopularTrack ? convertTrack(mostPopularTrack) : undefined,
+    leastPopularTrack: leastPopularTrack ? convertTrack(leastPopularTrack) : undefined,
+    longestTrack: longestTrack ? convertTrack(longestTrack) : undefined,
+    shortestTrack: shortestTrack ? convertTrack(shortestTrack) : undefined,
     explicitCount,
     nonExplicitCount,
-    topAlbums
+    topAlbums: albumArray,
+    avgTrackLength: totalDuration / totalTracks,
+    oldestTrack: oldestTrack ? convertTrack(oldestTrack) : undefined,
+    newestTrack: newestTrack ? convertTrack(newestTrack) : undefined,
+    explicitPercentage: (explicitCount / totalTracks) * 100,
+    uniqueArtists: Object.keys(artistCounts).length,
+    uniqueAlbums: Object.keys(albumCounts).length,
+    decadeDistribution,
+    // New fields
+    genrePercentages,
+    yearlyTrends,
+    durationCategories,
+    popularityRanges,
   };
+};
+
+// Helper function to calculate distribution array
+const calculateDistributionArray = (values: number[], buckets: number): { range: string; count: number }[] => {
+  if (values.length === 0) return [];
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const bucketSize = range / buckets;
+  const distribution: { range: string; count: number }[] = [];
+
+  values.forEach(value => {
+    const bucketIndex = Math.min(Math.floor((value - min) / bucketSize), buckets - 1);
+    const bucketKey = `${Math.round(min + bucketIndex * bucketSize)}-${Math.round(min + (bucketIndex + 1) * bucketSize)}`;
+    const existingBucket = distribution.find(d => d.range === bucketKey);
+    if (existingBucket) {
+      existingBucket.count++;
+    } else {
+      distribution.push({ range: bucketKey, count: 1 });
+    }
+  });
+
+  return distribution;
 };
 
 // Extract URL utility function
@@ -1385,11 +1469,8 @@ const ModernPlaylistConverter: React.FC = () => {
             </div>
             
             <div id="playlist-wizard-card">
-              <Enhanced3DCard // Changed from GlassmorphicCard
-                className="p-6 sm:p-8 max-w-2xl mx-auto mb-8 rounded-2xl bg-surface-card border border-border-default shadow-xl"
-                glassEffect={true} // Enable glass effect
-                depth={15} // Set a moderate depth
-                hoverScale={1.01} // Subtle hover scale
+              <GlassmorphicCard
+                className="p-6 sm:p-8 max-w-2xl mx-auto mb-8 rounded-2xl bg-surface-card border border-border-default shadow-xl backdrop-blur-lg"
               >
                 {conversionState.error && (
                   <div 
@@ -1423,118 +1504,100 @@ const ModernPlaylistConverter: React.FC = () => {
                         
                         <div className="grid sm:grid-cols-2 gap-6 mb-6">
                           <div>
-                            <label className="block text-sm font-medium text-content-secondary mb-2">
+                            <label className="block text-sm font-medium text-content-primary mb-2">
                               Source Platform
                             </label>
                             <div className="flex flex-col space-y-2">
                               <GlowButton
-                                variant={sourcePlatform === 'spotify' ? "soundswapp" : "secondary"} // Use soundswapp variant when active
+                                variant={sourcePlatform === 'spotify' ? "soundswapp" : "secondary"}
                                 onClick={() => setSourcePlatform('spotify')}
                                 disabled={false}
                                 className={cn(
                                   "flex flex-1 justify-center items-center gap-2 py-3",
-                                  sourcePlatform === 'spotify' ? "shadow-glow" : ""
+                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
+                                  sourcePlatform === 'spotify' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
+                                  "text-content-primary dark:text-content-primary-dark"
                                 )}
                                 aria-label="Select Spotify as source platform"
                               >
-                                <FaSpotify className="h-5 w-5" />
+                                <FaSpotify className={cn(
+                                  "h-5 w-5",
+                                  sourcePlatform === 'spotify' ? "text-[#1DB954]" : "text-content-secondary dark:text-content-secondary-dark"
+                                )} />
                                 <span>Spotify</span>
                               </GlowButton>
                               <GlowButton
-                                variant={sourcePlatform === 'youtube' ? "soundswapp" : "secondary"} // Use soundswapp variant when active
+                                variant={sourcePlatform === 'youtube' ? "soundswapp" : "secondary"}
                                 onClick={() => setSourcePlatform('youtube')}
                                 disabled={false}
                                 className={cn(
                                   "flex flex-1 justify-center items-center gap-2 py-3",
-                                  sourcePlatform === 'youtube' ? "shadow-glow" : ""
+                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
+                                  sourcePlatform === 'youtube' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
+                                  "text-content-primary dark:text-content-primary-dark"
                                 )}
                                 aria-label="Select YouTube as source platform"
                               >
-                                <Youtube className="h-5 w-5" />
+                                <Youtube className={cn(
+                                  "h-5 w-5",
+                                  sourcePlatform === 'youtube' ? "text-[#FF0000]" : "text-content-secondary dark:text-content-secondary-dark"
+                                )} />
                                 <span>YouTube</span>
                               </GlowButton>
                             </div>
                           </div>
                           <div className="flex-1">
-                            <label className="block text-sm font-medium text-muted-foreground mb-2">
+                            <label className="block text-sm font-medium text-content-primary mb-2">
                               Destination Platform
                             </label>
                             <div className="flex flex-wrap gap-2">
-                              <GlowButton // Changed from button to GlowButton
+                              <GlowButton
                                 onClick={() => setDestinationPlatform('spotify')}
                                 disabled={!hasSpotifyAuth || sourcePlatform === 'spotify'}
                                 variant={destinationPlatform === 'spotify' ? "soundswapp" : "secondary"}
-                                size="sm" // Smaller size for these toggle-like buttons
+                                size="sm"
                                 className={cn(
+                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
+                                  destinationPlatform === 'spotify' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
+                                  "text-content-primary dark:text-content-primary-dark",
                                   (!hasSpotifyAuth || sourcePlatform === 'spotify') && "opacity-50 cursor-not-allowed"
                                 )}
                                 aria-label="Select Spotify as destination platform"
                                 aria-pressed={destinationPlatform === 'spotify'}
                               >
-                                <FaSpotify className="w-5 h-5" />
+                                <FaSpotify className={cn(
+                                  "w-5 h-5",
+                                  destinationPlatform === 'spotify' ? "text-[#1DB954]" : "text-content-secondary dark:text-content-secondary-dark"
+                                )} />
                                 <span>Spotify</span>
                               </GlowButton>
-                              <GlowButton // Changed from button to GlowButton
+                              <GlowButton
                                 onClick={() => setDestinationPlatform('youtube')}
                                 disabled={!hasYouTubeAuth || sourcePlatform === 'youtube'}
                                 variant={destinationPlatform === 'youtube' ? "soundswapp" : "secondary"}
-                                size="sm" // Smaller size for these toggle-like buttons
+                                size="sm"
                                 className={cn(
+                                  "bg-surface-card dark:bg-surface-card-dark border border-border dark:border-border-dark",
+                                  "hover:bg-surface-hover dark:hover:bg-surface-hover-dark transition-all duration-200",
+                                  destinationPlatform === 'youtube' ? "shadow-glow ring-2 ring-brand-primary dark:ring-brand-primary-dark" : "",
+                                  "text-content-primary dark:text-content-primary-dark",
                                   (!hasYouTubeAuth || sourcePlatform === 'youtube') && "opacity-50 cursor-not-allowed"
                                 )}
                                 aria-label="Select YouTube as destination platform"
                                 aria-pressed={destinationPlatform === 'youtube'}
                               >
-                                <Youtube className="w-5 h-5" />
+                                <Youtube className={cn(
+                                  "w-5 h-5",
+                                  destinationPlatform === 'youtube' ? "text-[#FF0000]" : "text-content-secondary dark:text-content-secondary-dark"
+                                )} />
                                 <span>YouTube</span>
                               </GlowButton>
                             </div>
-              </div>
-            </div>
-            
-                        {/* Authentication check and notices */}
-                        {!sourceAuth && (
-                  <div className={cn(
-                            "my-3 p-3 rounded-md flex items-center gap-2 text-sm",
-                            "bg-warning-bg text-warning-text border border-warning-border" // Use CSS Vars for warning
-                          )}>
-                            <AlertTriangle size={16} className="flex-shrink-0 text-warning-icon" aria-hidden="true" /> {/* Use text-warning-icon */}
-                            <p>Please connect to {platforms.find(p => p.key === sourcePlatform)?.label} first.</p>
-                            <ConnectButton 
-                              platform={sourcePlatform} 
-                              isConnected={sourceAuth} 
-                              onConnect={connectToSource}
-                              className="ml-auto text-xs py-1"
-                            />
-                  </div>
-                        )}
-                        
-                        {!destinationAuth && (
-                          <div className={cn(
-                            "my-3 p-3 rounded-md flex items-center gap-2 text-sm",
-                            "bg-warning-bg text-warning-text border border-warning-border" // Use CSS Vars for warning
-                          )}>
-                            <AlertTriangle size={16} className="flex-shrink-0 text-warning-icon" aria-hidden="true" /> {/* Use text-warning-icon */}
-                            <p>Please connect to {platforms.find(p => p.key === destinationPlatform)?.label} first.</p>
-                            <ConnectButton 
-                              platform={destinationPlatform} 
-                              isConnected={destinationAuth} 
-                              onConnect={connectToDestination}
-                              className="ml-auto text-xs py-1"
-                            />
-                </div>
-                        )}
-                        
-                        <GlowButton
-                          variant="primary"
-                          onClick={() => setCurrentWizardStep(2)}
-                          disabled={sourcePlatform === destinationPlatform || !sourceAuth || !destinationAuth}
-                          className="mt-6"
-                          aria-label={`Continue to Import Playlist ${!sourceAuth || !destinationAuth ? '(connect to both platforms first)' : ''}`}
-                        >
-                          <span>Next</span>
-                          <ChevronRight size={16} aria-hidden="true" className="ml-1" />
-                        </GlowButton>
+                          </div>
+                        </div>
                       </div>
                     </motion.div>
                   )}
@@ -1563,40 +1626,49 @@ const ModernPlaylistConverter: React.FC = () => {
                                 {/* <label htmlFor="spotify-url" className="text-sm font-medium mb-1 block"> -- Label handled by FloatingLabels
                                   Paste Spotify playlist URL or ID
                                 </label> */} 
-                                <div className="flex items-center gap-2">
-                                  <div className="relative flex-grow">
-                                    {/* Icon can be outside or styled with FloatingLabels if supported, for now outside */}
-                                    {/* <FaSpotify 
-                                      className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" 
-                                      aria-hidden="true" 
-                                    /> */} 
-                                    <FloatingLabels
-                                      id="spotify-url"
-                                      type="text"
-                                      label="Spotify Playlist URL or ID"
-                                      placeholder="https://open.spotify.com/playlist/..."
-                                      value={spotifyUrl}
-                                      onChange={e => setSpotifyUrl(e.target.value)}
-                                      disabled={isProcessing}
-                                      variant="outlined"
-                                      containerClassName="flex-grow" // Ensure it takes space
-                                      inputClassName={cn( // Pass original conditional styling
-                                        isProcessing ? "opacity-50 cursor-not-allowed" : "",
-                                        "pl-3" // Keep some padding if icon is removed from inside
-                                      )}
-                                      // aria-label is handled by label prop
-                                    />
-                                  </div>
-                      <GlowButton
-                        variant="soundswapp" // Use soundswapp variant instead of primary
-                        onClick={() => handlePlaylistUrlSubmit('spotify')}
-                        disabled={!spotifyUrl || isProcessing}
-                        isLoading={isProcessing}
-                        className="flex-shrink-0"
-                        aria-label="Import Spotify playlist"
-                      >
-                        {isProcessing ? 'Importing...' : 'Import'}
-                      </GlowButton>
+                                <div className="relative flex items-center gap-2 w-full">
+                                  <input
+                                    type="text"
+                                    placeholder="Spotify Playlist URL or ID"
+                                    className={cn(
+                                      "flex-1 px-4 py-2 rounded-lg",
+                                      "bg-surface-card dark:bg-surface-card-dark",
+                                      "border border-border dark:border-border-dark",
+                                      "focus:outline-none focus:ring-2 focus:ring-brand-primary/50 dark:focus:ring-brand-primary-dark/50",
+                                      "text-content-primary dark:text-content-primary-dark",
+                                      "placeholder-content-secondary dark:placeholder-content-secondary-dark"
+                                    )}
+                                    value={spotifyUrl}
+                                    onChange={(e) => setSpotifyUrl(e.target.value)}
+                                    disabled={isProcessing}
+                                  />
+                                  <GlowButton
+                                    onClick={() => handlePlaylistUrlSubmit('spotify')}
+                                    disabled={isProcessing || !spotifyUrl}
+                                    variant="soundswapp"
+                                    className={cn(
+                                      "px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 min-w-[120px] justify-center",
+                                      "bg-brand-primary dark:bg-brand-primary-dark text-white",
+                                      "hover:bg-brand-primary-hover dark:hover:bg-brand-primary-hover-dark",
+                                      "disabled:opacity-50 disabled:cursor-not-allowed",
+                                      "transition-all duration-200 ease-in-out",
+                                      "shadow-md hover:shadow-lg dark:shadow-brand-primary/20",
+                                      "transform hover:-translate-y-0.5",
+                                      "focus:outline-none focus:ring-2 focus:ring-brand-primary/50 dark:focus:ring-brand-primary-dark/50"
+                                    )}
+                                  >
+                                    {isProcessing ? (
+                                      <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        <span>Importing...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Upload size={16} className="opacity-90" />
+                                        <span>Import</span>
+                                      </>
+                                    )}
+                                  </GlowButton>
                                 </div>
                               </div>
                               
@@ -1748,39 +1820,30 @@ const ModernPlaylistConverter: React.FC = () => {
                                 {/* <label htmlFor="youtube-url" className="text-sm font-medium mb-1 block">
                                   Paste YouTube playlist URL or ID
                                 </label> */} 
-                                <div className="flex items-center gap-2">
-                                  <div className="relative flex-grow">
-                                    {/* <Youtube 
-                                      className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500" 
-                                      aria-hidden="true" 
-                                    /> */} 
-                                    <FloatingLabels
-                                      id="youtube-url"
-                                      type="text"
-                                      label="YouTube Playlist URL or ID"
-                                      placeholder="https://youtube.com/playlist?list=..."
-                                      value={youtubeUrl}
-                                      onChange={e => setYoutubeUrl(e.target.value)}
-                                      disabled={isProcessing}
-                                      variant="outlined"
-                                      containerClassName="flex-grow"
-                                      inputClassName={cn(
-                                        isProcessing ? "opacity-50 cursor-not-allowed" : "",
-                                        "pl-3"
-                                      )}
-                                    />
-                                  </div>
-                      <GlowButton
-                        variant="secondary"
-                        onClick={() => handlePlaylistUrlSubmit('youtube')}
-                        disabled={!youtubeUrl || isProcessing}
-                        isLoading={isProcessing}
-                        className="flex-shrink-0"
-                        aria-label="Import YouTube playlist"
-                      >
-                        {isProcessing ? 'Importing...' : 'Import'}
-                      </GlowButton>
-                </div>
+                                <div className="relative flex items-center gap-2 w-full">
+                                  <input
+                                    type="text"
+                                    placeholder="YouTube Playlist URL or ID"
+                                    className="flex-1 px-4 py-2 rounded-lg bg-surface-card border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 text-content-primary"
+                                    value={youtubeUrl}
+                                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                                    disabled={isProcessing}
+                                  />
+                                  <button
+                                    onClick={() => handlePlaylistUrlSubmit('youtube')}
+                                    disabled={isProcessing || !youtubeUrl}
+                                    className="px-6 py-2 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-w-[100px] justify-center"
+                                  >
+                                    {isProcessing ? (
+                                      <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        <span>Importing...</span>
+                                      </>
+                                    ) : (
+                                      'Import'
+                                    )}
+                                  </button>
+                                </div>
                               </div>
 
                               {/* Your YouTube Playlists button with dropdown */}
@@ -2327,7 +2390,7 @@ const ModernPlaylistConverter: React.FC = () => {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </Enhanced3DCard>
+              </GlassmorphicCard>
             </div>
             
 
@@ -2399,38 +2462,50 @@ const ModernPlaylistConverter: React.FC = () => {
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex items-center justify-end gap-2">
-                        {conv.youtubePlaylistUrl && (
-                          <a
-                            href={conv.youtubePlaylistUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                                  <Link
+                                    to={`/insights/${conv.id}`}
+                                    className={cn(
+                                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-xs font-medium transition-colors",
+                                      "bg-brand-primary hover:bg-brand-primaryHover",
+                                      "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary ring-offset-surface-card"
+                                    )}
+                                    aria-label="View playlist insights"
+                                  >
+                                    <Info size={14} className="text-white" />
+                                    <span>Insights</span>
+                                  </Link>
+                                  {conv.youtubePlaylistUrl && (
+                                    <a
+                                      href={conv.youtubePlaylistUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
                                       className={cn(
                                         "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-xs font-medium transition-colors",
-                                        "bg-[var(--youtube-bg)] hover:bg-[var(--youtube-bg-hover)]", // YouTube button style
+                                        "bg-[var(--youtube-bg)] hover:bg-[var(--youtube-bg-hover)]",
                                         "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--youtube-bg)] ring-offset-surface-card"
                                       )}
                                       aria-label="Open YouTube playlist in new tab"
                                     >
-                                      <Youtube size={14} className="text-[var(--youtube-icon-color-button)]"/> {/* Icon color on button */}
-                                      <span className="text-[var(--youtube-text-button)]">View</span> {/* Text color on button */}
+                                      <Youtube size={14} className="text-[var(--youtube-icon-color-button)]"/>
+                                      <span className="text-[var(--youtube-text-button)]">View</span>
                                     </a>
-                        )}
-                        {conv.spotifyPlaylistUrl && (
-                          <a
-                            href={conv.spotifyPlaylistUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                                  )}
+                                  {conv.spotifyPlaylistUrl && (
+                                    <a
+                                      href={conv.spotifyPlaylistUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
                                       className={cn(
                                         "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-xs font-medium transition-colors",
-                                        "bg-[var(--spotify-bg)] hover:bg-[var(--spotify-bg-hover)]", // Spotify button style
+                                        "bg-[var(--spotify-bg)] hover:bg-[var(--spotify-bg-hover)]",
                                         "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--spotify-bg)] ring-offset-surface-card"
                                       )}
                                       aria-label="Open Spotify playlist in new tab"
                                     >
-                                      <FaSpotify size={14}  className="text-[var(--spotify-icon-color-button)]"/> {/* Icon color on button */}
-                                      <span className="text-[var(--spotify-text-button)]">View</span> {/* Text color on button */}
+                                      <FaSpotify size={14} className="text-[var(--spotify-icon-color-button)]"/>
+                                      <span className="text-[var(--spotify-text-button)]">View</span>
                                     </a>
-                        )}
+                                  )}
                                 </div>
                               </td>
                             </tr>

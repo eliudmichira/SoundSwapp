@@ -13,15 +13,23 @@ import {
   updateProfile,
   getRedirectResult,
   GoogleAuthProvider,
-  signInWithCredential as firebaseSignInWithCredential
+  signInWithCredential as firebaseSignInWithCredential,
+  signOut as firebaseSignOut
 } from 'firebase/auth';
-import { auth as firebaseAuth, handleAndroidAuth, reconnectFirestore, signInWithGoogle, debugGoogleAuth } from './firebase';
+import { 
+  auth as firebaseAuth, 
+  handleAndroidAuth, 
+  reconnectFirestore, 
+  signInWithGoogle, 
+  debugGoogleAuth 
+} from './firebase';
 import { isYouTubeAuthenticated, clearYouTubeAuth, getYouTubeUserProfile } from './youtubeAuth';
 import { isSpotifyAuthenticated, logoutFromSpotify, getSpotifyUserProfile } from './spotifyAuth';
 import { isSoundCloudAuthenticated } from './soundcloudAuth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db as firebaseDb } from './firebase';
 import '../styles/color-system.css'; // Import the new color system
+import { trackActivity, UserActivity } from './activityTracker';
 
 // Type assertion for the auth object
 const auth = firebaseAuth as Auth;
@@ -45,8 +53,20 @@ interface YouTubeUserProfile {
   subscriberCount?: string;
 }
 
+// Define a simpler user type for our needs
+interface AppUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  metadata?: {
+    creationTime?: string;
+    lastSignInTime?: string;
+  };
+}
+
 interface AuthContextType {
-  user: User | null;
+  user: AppUser | null;
   userData: any | null;
   error: string | null;
   isAuthenticated: boolean;
@@ -123,13 +143,13 @@ const isAndroidDevice = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [userData, setUserData] = useState<any | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   const [hasSpotifyAuth, setHasSpotifyAuthInternal] = useState<boolean>(false);
-  const [hasYouTubeAuth, setHasYouTubeAuthInternal] = useState<boolean>(false);
+  const [hasYouTubeAuth, setHasYouTubeAuth] = useState<boolean>(false);
   const [hasSoundCloudAuth, setHasSoundCloudAuth] = useState<boolean>(false);
 
   const [spotifyUserProfile, setSpotifyUserProfile] = useState<SpotifyUserProfile | null>(null);
@@ -139,6 +159,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isConnectingYouTube] = useState<boolean>(false);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
+
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    // Check for persisted auth state first
+    const persistedUser = localStorage.getItem('user');
+    if (persistedUser) {
+      try {
+        setUser(JSON.parse(persistedUser));
+      } catch (err) {
+        console.error('Error parsing persisted user:', err);
+        localStorage.removeItem('user');
+      }
+    }
+
+    // Listen for auth state changes
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+      console.log('Auth state changed:', firebaseUser ? `User ${firebaseUser.email}` : 'No user');
+      
+      if (firebaseUser) {
+        const userData: AppUser = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
+          metadata: {
+            creationTime: firebaseUser.metadata.creationTime || undefined,
+            lastSignInTime: firebaseUser.metadata.lastSignInTime || undefined
+          }
+        };
+        setUser(userData);
+        // Persist auth state
+        localStorage.setItem('user', JSON.stringify(userData));
+      } else {
+        setUser(null);
+        localStorage.removeItem('user');
+      }
+      
+      // Check YouTube auth status
+      if (firebaseUser) {
+        const isYTAuth = await isYouTubeAuthenticated();
+        setHasYouTubeAuth(isYTAuth);
+      } else {
+        setHasYouTubeAuth(false);
+      }
+      
+      setLoading(false);
+      setInitialized(true);
+    }, (error) => {
+      console.error('Auth state error:', error);
+      setLoading(false);
+      setInitialized(true);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const fetchSpotifyProfile = useCallback(async () => {
     if (hasSpotifyAuth) {
@@ -191,22 +269,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const setHasYouTubeAuth = (value: boolean) => {
-    setHasYouTubeAuthInternal(value);
-    if (value) {
-      fetchYouTubeProfile();
-    } else {
-      setYouTubeUserProfile(null);
-    }
-  };
-  
   const checkYouTubeAuth = async () => {
     try {
       console.log("Manual YouTube auth check initiated");
-      const youtubeAuthStatus = await isYouTubeAuthenticated();
-      console.log("YouTube auth check result:", youtubeAuthStatus);
-      setHasYouTubeAuth(youtubeAuthStatus);
-      return youtubeAuthStatus;
+      
+      // First check if we have tokens in localStorage
+      const accessToken = localStorage.getItem('youtube_access_token');
+      const refreshToken = localStorage.getItem('youtube_refresh_token');
+      const tokenExpiry = localStorage.getItem('youtube_token_expiry');
+      
+      console.log("YouTube token check:", {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        hasExpiry: !!tokenExpiry
+      });
+      
+      // If we have tokens, verify them
+      if (accessToken && refreshToken) {
+        const youtubeAuthStatus = await isYouTubeAuthenticated();
+        console.log("YouTube auth check result:", youtubeAuthStatus);
+        setHasYouTubeAuth(youtubeAuthStatus);
+        return youtubeAuthStatus;
+      }
+      
+      // No tokens found
+      console.log("No YouTube tokens found");
+      setHasYouTubeAuth(false);
+      return false;
     } catch (error) {
       console.error("Error checking YouTube auth:", error);
       setHasYouTubeAuth(false);
@@ -220,11 +309,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const spotifyAuthStatus = isSpotifyAuthenticated();
           setHasSpotifyAuth(spotifyAuthStatus);
-
-          console.log("Checking YouTube auth on auth context initialization");
-          const youtubeAuthStatus = await isYouTubeAuthenticated();
-          console.log("YouTube auth check result:", youtubeAuthStatus);
-          setHasYouTubeAuth(youtubeAuthStatus);
           
           const soundCloudAuthStatus = isSoundCloudAuthenticated();
           setHasSoundCloudAuth(soundCloudAuthStatus);
@@ -233,7 +317,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else {
         setHasSpotifyAuth(false);
-        setHasYouTubeAuth(false);
         setHasSoundCloudAuth(false);
       }
     };
@@ -513,25 +596,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
   
-  useEffect(() => {
-    console.log('Setting up auth state listener...');
-    const unsubscribe: Unsubscribe = onAuthStateChanged(auth, async (authUser: User | null) => {
-      console.log('🔥 onAuthStateChanged fired:', authUser ? `User ${authUser.email} (${authUser.uid})` : 'No user');
-      setUser(authUser);
-      if (authUser) {
-        await fetchUserData(authUser.uid);
-      } else {
-        setUserData(null);
+  // Track successful login
+  const trackSuccessfulLogin = async (firebaseUser: User) => {
+    await trackActivity({
+      userId: firebaseUser.uid,
+      type: 'LOGIN',
+      details: {
+        method: 'email',
+        timestamp: new Date().toISOString()
       }
-      setLoading(false);
-    }, (error) => {
-      console.error('🔥 onAuthStateChanged error:', error);
-      setLoading(false);
     });
-    
-    return () => unsubscribe();
-  }, []);
-  
+  };
+
+  // Track service connections
+  const trackServiceConnection = async (userId: string, service: 'SPOTIFY' | 'YOUTUBE') => {
+    await trackActivity({
+      userId,
+      type: `${service}_CONNECT` as UserActivity['type'],
+      details: {
+        timestamp: new Date().toISOString()
+      }
+    });
+  };
+
   const signIn = async (isAndroid: boolean = false) => {
     try {
       setLoading(true);
@@ -548,20 +635,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         if (!isAndroid) {
           try {
-            const user = await signInWithGoogle(false);
-            if (user) {
-              setUser(user);
+            const firebaseUser = await signInWithGoogle(false);
+            if (firebaseUser) {
+              setUser(firebaseUser);
+              await trackSuccessfulLogin(firebaseUser);
               
               try {
-                setHasSpotifyAuth(isSpotifyAuthenticated());
+                const spotifyAuth = isSpotifyAuthenticated();
+                setHasSpotifyAuth(spotifyAuth);
+                if (spotifyAuth) {
+                  await trackServiceConnection(firebaseUser.uid, 'SPOTIFY');
+                }
+
                 const youtubeAuth = await isYouTubeAuthenticated();
                 setHasYouTubeAuth(youtubeAuth);
+                if (youtubeAuth) {
+                  await trackServiceConnection(firebaseUser.uid, 'YOUTUBE');
+                }
+
                 setHasSoundCloudAuth(isSoundCloudAuthenticated());
               } catch (serviceError) {
                 console.warn("Error checking service auth after popup:", serviceError);
               }
               
-              return user;
+              return firebaseUser;
             }
           } catch (popupError) {
             console.error("Popup authentication also failed:", popupError);
@@ -713,6 +810,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setHasSoundCloudAuth(isSoundCloudAuthenticated());
       } catch (soundcloudError) {
         console.warn('Error checking SoundCloud auth:', soundcloudError);
+      }
+      
+      // After successful sign in/up, track the activity
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        await trackSuccessfulLogin(currentUser);
+        
+        // Check and track service connections
+        const spotifyAuth = isSpotifyAuthenticated();
+        setHasSpotifyAuth(spotifyAuth);
+        if (spotifyAuth) {
+          await trackServiceConnection(currentUser.uid, 'SPOTIFY');
+        }
+
+        const youtubeAuth = await isYouTubeAuthenticated();
+        setHasYouTubeAuth(youtubeAuth);
+        if (youtubeAuth) {
+          await trackServiceConnection(currentUser.uid, 'YOUTUBE');
+        }
       }
       
     } catch (error) {

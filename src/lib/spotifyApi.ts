@@ -349,11 +349,20 @@ class SpotifyApiClient {
     try {
       const data = await this.request<any>(`${ENDPOINTS.BASE}/artists/${artistId}`);
       
-      // Save to both caches
-      this.artistCache[artistId] = data;
-      CacheManager.setWithTtl(cacheKey, cacheTtlKey, data, CACHE.DURATION.ARTISTS);
+      // Process artist data
+      const processedData = {
+        ...data,
+        // Get the highest quality image available
+        images: data.images?.sort((a: any, b: any) => b.width - a.width) || [],
+        // Add a direct image URL for easier access
+        imageUrl: data.images?.length > 0 ? data.images[0].url : null
+      };
       
-      return data;
+      // Save to both caches
+      this.artistCache[artistId] = processedData;
+      CacheManager.setWithTtl(cacheKey, cacheTtlKey, processedData, CACHE.DURATION.ARTISTS);
+      
+      return processedData;
     } catch (error) {
       console.error(`Error fetching artist ${artistId}:`, error);
       return null; // Return null instead of throwing to avoid cascading failures

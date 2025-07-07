@@ -1,0 +1,24 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "Swapp",
+    "SoundSwapp",
+    "glassmorphic",
+    "Glassmorphic",
+    "Csvg",
+    "Cfilter",
+    "Crect",
+    "CSSOM",
+    "scrollbars",
+    "Avenir",
+    "Desaturated",
+    "desaturated",
+    "wght"
+  ],
+  "ignorePaths": [
+    "node_modules/**",
+    "dist/**",
+    "build/**"
+  ]
+} 

@@ -1,15 +1,42 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "conversions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "convertedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
   "fieldOverrides": [
     {
       "collectionGroup": "conversions",
       "fieldPath": "convertedAt",
+      "ttl": false,
       "indexes": [
         {
           "order": "DESCENDING",
           "queryScope": "COLLECTION"
         }
       ]
+    },
+    {
+      "collectionGroup": "conversions",
+      "fieldPath": "userId",
+      "ttl": false,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
     }
   ]
-} 
+}

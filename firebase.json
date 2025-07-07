@@ -1,4 +1,7 @@
 {
+  "storage": {
+    "rules": "storage.rules"
+  },
   "firestore": {
     "database": "(default)",
     "location": "nam5",
@@ -6,14 +9,17 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
-    "source": ".",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
-    "frameworksBackend": {
-      "region": "us-central1"
-    }
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
   }
 }

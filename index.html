@@ -2,6 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Service Worker Cleanup -->
+    <script>
+      // Unregister any existing service workers
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+    </script>
+    <!-- Cache control headers -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <!-- Browser API Polyfill - Moved to top -->
     <script>
       // Browser API Polyfill
@@ -97,7 +112,14 @@
     </script>
     
     <!-- Primary Content Security Policy - Made more permissive for development -->
-    <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'self' 'unsafe-inline' 'unsafe-eval'; connect-src * 'self' 'unsafe-inline'; img-src * 'self' data: blob:; frame-src * 'self'; style-src * 'self' 'unsafe-inline';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; 
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://*.firebaseapp.com https://*.firebase.com https://*.googletagmanager.com; 
+      connect-src * 'self' 'unsafe-inline'; 
+      img-src * 'self' data: blob:; 
+      frame-src * 'self' https://*.firebaseapp.com https://*.google.com; 
+      style-src * 'self' 'unsafe-inline';" />
+    <!-- Cross-Origin-Opener-Policy -->
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups" />
     <title>SoundSwapp - Sync Your Music Across All Platforms</title>
     <meta name="description" content="SoundSwapp: Seamlessly sync your music across Spotify, YouTube Music, and more with one click. Fast, secure, and free!" />
     <!-- Open Graph / Facebook -->

@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ThemeProvider } from './lib/ThemeContext';
 import { AuthProvider } from './lib/AuthContext'; // Removed useAuth, as RedirectHandler is removed
 import { ConversionProvider } from './lib/ConversionContext';
+import { UserProvider } from './context/UserContext';
 import ModernPlaylistConverter from './components/EnhancedPlaylistConverter';
 import SpotifyCallback from './components/SpotifyCallback';
 import YouTubeCallback from './components/YouTubeCallback';
@@ -17,6 +18,9 @@ import { useState, useEffect, createContext, useContext } from 'react';
 // Import our new useMobileDetection hook
 import useMobileDetection from './hooks/useMobileDetection';
 import { ParticleField } from './components/ui/ParticleField';
+import { ShareModal } from './components/ui/ShareModal';
+import { useShareModal } from './hooks/useShareModal';
+import { ConversionInsights } from './components/ConversionInsights';
 // Removed Firebase auth and getAuthRedirectResult imports, as RedirectHandler is removed
 
 // Declare global window interface for mobile debugging
@@ -78,6 +82,8 @@ function App() {
   
   // Use our enhanced mobile detection hook
   const { isMobile, isPortrait, isIOS, isAndroid } = useMobileDetection();
+  
+  const { isOpen, shareData, closeShareModal } = useShareModal();
   
   // Add debugging for mobile issues
   useEffect(() => {
@@ -148,21 +154,30 @@ function App() {
         <MobileContext.Provider value={mobileContextValue}>
           <style>{angularCss}</style>
           <AuthProvider>
-            {/* RedirectHandler removed */}
-            <ConversionProvider>
-              <AppInitializer>
-                <Routes>
-                  <Route path="/" element={<PrivateRoute element={<ModernPlaylistConverter />} />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/callback" element={<SpotifyCallback />} />
-                  <Route path="/youtube-callback" element={<YouTubeCallback />} />
-                  <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-                  <Route path="/terms-of-service" element={<TermsOfService />} />
-                  <Route path="/preloader-demo" element={<PreloaderDemo />} />
-                  <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
-              </AppInitializer>
-            </ConversionProvider>
+            <UserProvider>
+              <ConversionProvider>
+                <AppInitializer>
+                  <Routes>
+                    <Route path="/" element={<PrivateRoute element={<ModernPlaylistConverter />} />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/callback" element={<SpotifyCallback />} />
+                    <Route path="/youtube-callback" element={<YouTubeCallback />} />
+                    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                    <Route path="/terms-of-service" element={<TermsOfService />} />
+                    <Route path="/preloader-demo" element={<PreloaderDemo />} />
+                    <Route path="/insights/:id" element={<PrivateRoute element={<ConversionInsights />} />} />
+                    <Route path="*" element={<Navigate to="/" />} />
+                  </Routes>
+                  <ShareModal
+                    isOpen={isOpen}
+                    onClose={closeShareModal}
+                    title={shareData.title}
+                    url={shareData.url}
+                    description={shareData.description}
+                  />
+                </AppInitializer>
+              </ConversionProvider>
+            </UserProvider>
           </AuthProvider>
         </MobileContext.Provider>
       </Router>

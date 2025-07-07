@@ -30,7 +30,11 @@ const itemVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { type: "spring", stiffness: 100, damping: 10 }
+    transition: { 
+      type: "spring" as const,
+      stiffness: 100,
+      damping: 10
+    }
   }
 };
 
@@ -95,8 +99,32 @@ export const EnhancedHeroSection = () => {
                      <path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5"/>
                   </pattern>
                 </defs>
-                <motion.circle cx="18" cy="18" r="18" fill="url(#soundswapp-hero-grad)" initial={{opacity: 0.7}} animate={{opacity: 0.9}} transition={{duration:1, yoyo:Infinity}} />
-                <motion.circle cx="18" cy="18" r="18" fill="url(#hero-bg-pattern)" initial={{opacity: 0.3}} animate={{opacity: 0.5}} transition={{duration:1, yoyo:Infinity}} />
+                <motion.circle 
+                  cx="18" 
+                  cy="18" 
+                  r="18" 
+                  fill="url(#soundswapp-hero-grad)" 
+                  initial={{opacity: 0.7}} 
+                  animate={{opacity: 0.9}} 
+                  transition={{
+                    duration: 1,
+                    repeat: Infinity,
+                    repeatType: "reverse"
+                  }} 
+                />
+                <motion.circle 
+                  cx="18" 
+                  cy="18" 
+                  r="18" 
+                  fill="url(#hero-bg-pattern)" 
+                  initial={{opacity: 0.3}} 
+                  animate={{opacity: 0.5}} 
+                  transition={{
+                    duration: 1,
+                    repeat: Infinity,
+                    repeatType: "reverse"
+                  }} 
+                />
                 
                 <g filter="url(#hero-glow)" transform="translate(0.5, 0.5)">
                   <motion.path 

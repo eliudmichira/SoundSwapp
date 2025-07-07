@@ -21,6 +21,8 @@ const YouTubeCallback: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
   const { isDark } = useTheme();
+  const [authCheckAttempts, setAuthCheckAttempts] = useState(0);
+  const MAX_AUTH_CHECK_ATTEMPTS = 5;
   
   useEffect(() => {
     // Process the OAuth callback from YouTube
@@ -28,19 +30,28 @@ const YouTubeCallback: React.FC = () => {
       try {
         setDebugInfo('Starting callback processing...');
         
-        // Wait for auth loading to complete
-        if (authLoading) {
-          console.log("Waiting for auth loading to complete...");
+        // Check if user is already signed in
+        const isUserSignedIn = !!user || !!localStorage.getItem('user');
+        setDebugInfo(prev => `${prev}\nUser signed in: ${isUserSignedIn}`);
+        
+        // If loading auth state and haven't exceeded max attempts, wait and retry
+        if (authLoading && authCheckAttempts < MAX_AUTH_CHECK_ATTEMPTS) {
+          console.log(`Waiting for auth state to stabilize... Attempt ${authCheckAttempts + 1}`);
           setDebugInfo(prev => `${prev}\nWaiting for auth system to initialize...`);
+          
+          // Wait 1 second before next attempt
+          setTimeout(() => {
+            setAuthCheckAttempts(prev => prev + 1);
+          }, 1000);
           return;
         }
         
-        // Verify that user is logged in - CRITICAL CHECK!
-        if (!user) {
-          console.error("User not logged in during YouTube authentication");
+        // If we've exceeded max attempts and no sign of user being signed in
+        if (!isUserSignedIn && authCheckAttempts >= MAX_AUTH_CHECK_ATTEMPTS) {
+          console.error("User not logged in after maximum attempts");
           setStatus('auth-required');
           setError('You need to be logged in to connect your YouTube account');
-          setDebugInfo(prev => `${prev}\nError: User not logged in`);
+          setDebugInfo(prev => `${prev}\nError: User not logged in after ${MAX_AUTH_CHECK_ATTEMPTS} attempts`);
           return;
         }
         
@@ -102,7 +113,7 @@ const YouTubeCallback: React.FC = () => {
           localStorage.removeItem('youtube_auth_return_path');
           navigate(returnPath);
         }, 3000);
-      } catch (err: unknown) {
+      } catch (err) {
         console.error('Error handling YouTube callback:', err);
         setStatus('error');
         setError(err instanceof Error ? err.message : 'Failed to authenticate with YouTube');
@@ -110,16 +121,17 @@ const YouTubeCallback: React.FC = () => {
       }
     };
     
-    // Only run the callback processing if not still loading auth state
-    if (!authLoading) {
+    // Only run the callback processing if not still loading auth state or if we've exceeded max attempts
+    if (!authLoading || authCheckAttempts >= MAX_AUTH_CHECK_ATTEMPTS) {
       processCallback();
     }
-  }, [navigate, setHasYouTubeAuth, authLoading, user]);
+  }, [navigate, setHasYouTubeAuth, authLoading, user, authCheckAttempts]);
   
   const handleLogin = () => {
-    // Save current URL to return after login
-    localStorage.setItem('auth_return_path', window.location.pathname);
-    localStorage.setItem('youtube_auth_return_path', window.location.pathname);
+    // Save current URL with all parameters to return after login
+    const fullCallbackUrl = window.location.href;
+    localStorage.setItem('youtube_callback_url', fullCallbackUrl);
+    localStorage.setItem('auth_return_path', '/youtube-callback');
     navigate('/login');
   };
   
@@ -195,103 +207,79 @@ const YouTubeCallback: React.FC = () => {
               "text-xl font-medium mb-2",
               isDark ? "text-white" : "text-gray-800"
             )}>
-              Connection Error
+              Authentication Failed
             </p>
-            {error && (
-              <p className={cn(
-                "text-sm mb-4 max-w-xs mx-auto",
-                "text-red-500 dark:text-red-400"
-              )}>
-                {error}
-              </p>
-            )}
+            <p className={cn(
+              "text-sm mb-4",
+              isDark ? "text-gray-300" : "text-gray-600"
+            )}>
+              {error || 'Failed to connect your YouTube account. Please try again.'}
+            </p>
+            
+            <button
+              onClick={() => navigate('/')}
+              className={cn(
+                "flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                "bg-red-500 hover:bg-red-600 text-white"
+              )}
+            >
+              <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
+              Return Home
+            </button>
             
             <GlassmorphicContainer 
-              className="mt-2 mb-6 p-3 text-xs text-left max-w-xs mx-auto overflow-auto"
+              className="mt-4 p-3 text-xs text-left max-w-xs mx-auto overflow-auto"
               rounded="lg"
               shadow="sm"
             >
               <pre className="whitespace-pre-wrap break-words text-xs">{debugInfo}</pre>
             </GlassmorphicContainer>
-            
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => navigate('/')}
-                className={cn(
-                  "px-4 py-3 rounded-xl flex-1 flex items-center justify-center transition-all",
-                  "hover:scale-[1.02]",
-                  isDark
-                    ? "bg-gray-800 hover:bg-gray-700 text-white"
-                    : "bg-gray-200 hover:bg-gray-300 text-gray-900"
-                )}
-              >
-                <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
-                Go Back
-              </button>
-              <button
-                onClick={() => window.location.reload()}
-                className={cn(
-                  "px-4 py-3 rounded-xl flex-1 flex items-center justify-center transition-all",
-                  "bg-red-600 hover:bg-red-700 text-white hover:scale-[1.02]"
-                )}
-              >
-                Try Again
-              </button>
-            </div>
           </div>
         )}
-
+        
         {status === 'auth-required' && (
           <div className="flex flex-col items-center justify-center">
             <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mb-4">
-              <FontAwesomeIcon icon={faExclamationCircle} className="text-3xl text-blue-500" />
+              <FontAwesomeIcon icon={faSignInAlt} className="text-3xl text-blue-500" />
             </div>
             <p className={cn(
               "text-xl font-medium mb-2",
               isDark ? "text-white" : "text-gray-800"
             )}>
-              Authentication Required
+              Sign In Required
             </p>
-            {error && (
-              <p className={cn(
-                "text-sm mb-4 max-w-xs mx-auto",
-                "text-blue-500 dark:text-blue-400"
-              )}>
-                {error}
-              </p>
-            )}
             <p className={cn(
-              "text-sm mb-6",
+              "text-sm mb-4",
               isDark ? "text-gray-300" : "text-gray-600"
             )}>
-              You need to sign in to your account before connecting YouTube.
+              Please sign in to your SoundSwapp account first. We'll automatically continue connecting your YouTube account after you log in.
             </p>
             
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => navigate('/')}
-                className={cn(
-                  "px-4 py-3 rounded-xl flex-1 flex items-center justify-center transition-all",
-                  "hover:scale-[1.02]",
-                  isDark
-                    ? "bg-gray-800 hover:bg-gray-700 text-white"
-                    : "bg-gray-200 hover:bg-gray-300 text-gray-900"
-                )}
-              >
-                <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
-                Go Back
-              </button>
-              <button
-                onClick={handleLogin}
-                className={cn(
-                  "px-4 py-3 rounded-xl flex-1 flex items-center justify-center transition-all",
-                  "bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.02]"
-                )}
-              >
-                <FontAwesomeIcon icon={faSignInAlt} className="mr-2" />
-                Sign In
-              </button>
-            </div>
+            <button
+              onClick={handleLogin}
+              className={cn(
+                "flex items-center px-6 py-3 rounded-xl text-sm font-medium transition-colors",
+                "bg-blue-500 hover:bg-blue-600 text-white"
+              )}
+            >
+              <FontAwesomeIcon icon={faSignInAlt} className="mr-2" />
+              Sign In to Continue
+            </button>
+            
+            <p className={cn(
+              "text-xs mt-4",
+              isDark ? "text-gray-400" : "text-gray-500"
+            )}>
+              This ensures your YouTube account is securely linked to your SoundSwapp profile.
+            </p>
+            
+            <GlassmorphicContainer 
+              className="mt-4 p-3 text-xs text-left max-w-xs mx-auto overflow-auto"
+              rounded="lg"
+              shadow="sm"
+            >
+              <pre className="whitespace-pre-wrap break-words text-xs">{debugInfo}</pre>
+            </GlassmorphicContainer>
           </div>
         )}
       </GlassmorphicContainer>

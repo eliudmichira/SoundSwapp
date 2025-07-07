@@ -1,7 +1,17 @@
 import { getYouTubeToken, clearYouTubeAuth } from './youtubeAuth';
+import { config } from './config';
 
 // YouTube API base URL
 const YOUTUBE_API_BASE_URL = 'https://www.googleapis.com/youtube/v3';
+
+const YOUTUBE_AUTH_STORAGE_KEY = 'youtube_auth_state';
+const YOUTUBE_TOKEN_STORAGE_KEY = 'youtube_tokens';
+
+interface YouTubeTokens {
+  access_token: string;
+  refresh_token: string;
+  expiry_date: number;
+}
 
 // Helper function to extract detailed error information from YouTube API responses
 const extractYouTubeErrorDetails = async (response: Response): Promise<string> => {
@@ -517,4 +527,109 @@ export const addToYouTubePlaylist = async (_userId: string, playlistId: string, 
     
     throw error instanceof Error ? error : new Error(String(error));
   }
+};
+
+export const generateAuthUrl = () => {
+  const state = Math.random().toString(36).substring(7);
+  localStorage.setItem(YOUTUBE_AUTH_STORAGE_KEY, state);
+
+  const params = new URLSearchParams({
+    client_id: config.youtube.clientId,
+    redirect_uri: config.youtube.redirectUri,
+    response_type: 'code',
+    scope: config.youtube.scope,
+    state: state,
+    access_type: 'offline',
+    prompt: 'consent'
+  });
+
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+};
+
+export const handleAuthCallback = async (code: string, state: string): Promise<YouTubeTokens> => {
+  const storedState = localStorage.getItem(YOUTUBE_AUTH_STORAGE_KEY);
+  if (state !== storedState) {
+    throw new Error('Invalid state parameter');
+  }
+
+  const params = new URLSearchParams({
+    code,
+    client_id: config.youtube.clientId,
+    client_secret: config.youtube.clientSecret,
+    redirect_uri: config.youtube.redirectUri,
+    grant_type: 'authorization_code'
+  });
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params.toString()
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('Token exchange failed:', error);
+    throw new Error(`Token exchange failed: ${response.status}`);
+  }
+
+  const tokens = await response.json();
+  const expiryDate = Date.now() + (tokens.expires_in * 1000);
+  
+  const tokenData: YouTubeTokens = {
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    expiry_date: expiryDate
+  };
+
+  localStorage.setItem(YOUTUBE_TOKEN_STORAGE_KEY, JSON.stringify(tokenData));
+  return tokenData;
+};
+
+export const refreshAccessToken = async (refresh_token: string): Promise<YouTubeTokens> => {
+  const params = new URLSearchParams({
+    client_id: config.youtube.clientId,
+    client_secret: config.youtube.clientSecret,
+    refresh_token: refresh_token,
+    grant_type: 'refresh_token'
+  });
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params.toString()
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to refresh token');
+  }
+
+  const tokens = await response.json();
+  const expiryDate = Date.now() + (tokens.expires_in * 1000);
+
+  const tokenData: YouTubeTokens = {
+    access_token: tokens.access_token,
+    refresh_token: refresh_token, // Keep the existing refresh token
+    expiry_date: expiryDate
+  };
+
+  localStorage.setItem(YOUTUBE_TOKEN_STORAGE_KEY, JSON.stringify(tokenData));
+  return tokenData;
+};
+
+export const getStoredTokens = (): YouTubeTokens | null => {
+  const tokens = localStorage.getItem(YOUTUBE_TOKEN_STORAGE_KEY);
+  return tokens ? JSON.parse(tokens) : null;
+};
+
+export const isTokenExpired = (tokens: YouTubeTokens): boolean => {
+  return Date.now() >= tokens.expiry_date;
+};
+
+export const clearStoredTokens = () => {
+  localStorage.removeItem(YOUTUBE_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(YOUTUBE_AUTH_STORAGE_KEY);
 }; 

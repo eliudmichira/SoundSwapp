@@ -7,7 +7,7 @@ const YOUTUBE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 // YouTube API credentials
 const YOUTUBE_CLIENT_ID = youtubeConfig.clientId;
 const YOUTUBE_CLIENT_SECRET = youtubeConfig.clientSecret; // Required for code flow
-const YOUTUBE_REDIRECT_URI = youtubeConfig.redirectUri;
+const YOUTUBE_REDIRECT_URI = 'https://soundswapp.firebaseapp.com/youtube-callback';
 
 // YouTube API scopes
 const YOUTUBE_SCOPES = [
@@ -135,17 +135,65 @@ export const exchangeCodeForToken = async (code: string): Promise<{
 };
 
 /**
+ * Check if there's a preserved YouTube callback URL and extract the auth code
+ * @returns The authorization code if found, null otherwise
+ */
+export const getPreservedCallback = (): { code: string; state: string } | null => {
+  const callbackUrl = localStorage.getItem('youtube_callback_url');
+  if (!callbackUrl) return null;
+
+  try {
+    const url = new URL(callbackUrl);
+    const params = new URLSearchParams(url.search);
+    const code = params.get('code');
+    const state = params.get('state');
+
+    if (!code || !state) return null;
+
+    return { code, state };
+  } catch (err) {
+    console.error('Error parsing preserved callback URL:', err);
+    return null;
+  }
+};
+
+/**
+ * Clear any preserved callback data
+ */
+export const clearPreservedCallback = (): void => {
+  localStorage.removeItem('youtube_callback_url');
+};
+
+/**
  * Handle YouTube OAuth callback with proper error handling
  * This should be called in the YouTube callback page component
  */
 export const handleYouTubeCallback = async (): Promise<void> => {
   try {
     console.log("YouTube callback handling started");
-    // Get URL parameters
+    
+    // Get URL parameters - first check current URL, then preserved callback
+    let authCode: string | null = null;
+    let state: string | null = null;
+    let error: string | null = null;
+
+    // Check current URL first
     const urlParams = new URLSearchParams(window.location.search);
-    const authCode = urlParams.get('code');
-    const state = urlParams.get('state');
-    const error = urlParams.get('error');
+    authCode = urlParams.get('code');
+    state = urlParams.get('state');
+    error = urlParams.get('error');
+
+    // If no code in URL, check for preserved callback
+    if (!authCode) {
+      const preserved = getPreservedCallback();
+      if (preserved) {
+        console.log("Found preserved callback data");
+        authCode = preserved.code;
+        state = preserved.state;
+        // Clear the preserved data since we're using it
+        clearPreservedCallback();
+      }
+    }
     
     console.log("URL parameters:", { 
       hasCode: !!authCode, 

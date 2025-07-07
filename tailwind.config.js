@@ -198,22 +198,21 @@ module.exports = {
           "50%": { transform: "translateY(-10px)" },
         },
         "pulse-slow": {
-          "0%, 100%": { opacity: 1 },
-          "50%": { opacity: 0.5 },
+          "0%, 100%": { opacity: 0.8, transform: "scale(0.98)" },
+          "50%": { opacity: 1, transform: "scale(1.02)" },
         },
-        "blink": {
-          "0%, 100%": { opacity: 1 },
-          "50%": { opacity: 0 },
-        },
+        "shimmer": {
+          "100%": { transform: "translateX(100%)" }
+        }
       },
       animation: {
-        "trail": "trail var(--duration) linear infinite",
-        "fadeIn": "fadeIn 0.3s ease-out forwards",
+        "trail": "trail 8s linear infinite",
+        "fadeIn": "fadeIn 0.5s ease-out",
         "bg-position": "bg-position 3s ease infinite",
         "bounce-slow": "bounce-slow 3s ease-in-out infinite",
-        "float": "float 5s ease-in-out infinite",
-        "pulse-slow": "pulse-slow 4s ease-in-out infinite",
-        "blink": "blink 1s step-end infinite",
+        "float": "float 3s ease-in-out infinite",
+        "pulse-slow": "pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "shimmer": "shimmer 1.5s ease-in-out infinite"
       },
       fontFamily: {
         'display': ['Montserrat', 'system-ui', 'sans-serif'],

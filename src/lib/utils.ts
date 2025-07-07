@@ -201,16 +201,41 @@ export const supportsPassiveEvents = (): boolean => {
  * Register events with passive listeners for better touch performance
  */
 export const addPassiveEventListener = (
-  element: HTMLElement | Window | Document,
+  element: Element | Window | Document,
   eventName: string,
-  handler: EventListenerOrEventListenerObject,
-  passive: boolean = true
-): void => {
-  element.addEventListener(
-    eventName,
-    handler,
-    supportsPassiveEvents() ? { passive } : false
-  );
+  handler: EventListener,
+  options: boolean | AddEventListenerOptions = {}
+) => {
+  try {
+    // Test if passive is supported
+    let supportsPassive = false;
+    const opts = Object.defineProperty({}, 'passive', {
+      get: function() {
+        supportsPassive = true;
+        return true;
+      }
+    });
+    window.addEventListener('testPassive', null as any, opts);
+    window.removeEventListener('testPassive', null as any, opts);
+
+    // Add event listener with passive option if supported
+    const listenerOptions = typeof options === 'boolean' ? { capture: options } : options;
+    element.addEventListener(eventName, handler, {
+      ...listenerOptions,
+      passive: supportsPassive && (listenerOptions.passive !== false)
+    });
+
+    // Return cleanup function
+    return () => {
+      element.removeEventListener(eventName, handler, typeof options === 'boolean' ? options : options.capture);
+    };
+  } catch (e) {
+    // Fallback to normal event listener if something goes wrong
+    element.addEventListener(eventName, handler, options);
+    return () => {
+      element.removeEventListener(eventName, handler, options);
+    };
+  }
 };
 
 /**
@@ -246,4 +271,18 @@ export const addTouchAndMouseEvent = (
     element.removeEventListener(touchMap[eventType], handler);
     element.removeEventListener(mouseMap[eventType], handler);
   };
+};
+
+/**
+ * Helper to check if touch is supported
+ */
+export const isTouchDevice = () => {
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
+
+/**
+ * Helper to check if an element is scrollable
+ */
+export const isScrollable = (element: HTMLElement) => {
+  return element.scrollHeight > element.clientHeight;
 }; 

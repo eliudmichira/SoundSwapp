@@ -1,5 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../lib/AuthContext';
+import { useServiceConnections } from '../lib/hooks/useServiceConnections';
+import { initSpotifyAuth } from '../lib/spotifyAuth';
+import { signInWithGoogle } from '../lib/firebase';
+import { Loader2 } from 'lucide-react';
+import { ServiceConnectionCard } from './ServiceConnectionCard';
 
 interface ServiceItem {
   icon: string;
@@ -18,7 +24,24 @@ interface FlippedState {
 }
 
 const EnhancedConnectionSection = () => {
-  // State management
+  // Auth and connection states
+  const { 
+    user,
+    hasSpotifyAuth,
+    hasYouTubeAuth,
+    spotifyUserProfile,
+    youtubeUserProfile,
+    signOut
+  } = useAuth();
+
+  const {
+    refreshConnections,
+    isRefreshing,
+    lastRefresh,
+    error: connectionError
+  } = useServiceConnections();
+
+  // UI states
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [activeCard, setActiveCard] = useState<null | string>(null);
   const [isFlipped, setIsFlipped] = useState<FlippedState>({ spotify: false, youtube: false });
@@ -26,6 +49,7 @@ const EnhancedConnectionSection = () => {
   const [dockHoverIndex, setDockHoverIndex] = useState<number | null>(null);
   const [isFlowerMenuOpen, setIsFlowerMenuOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
+  const [isConnecting, setIsConnecting] = useState({ spotify: false, youtube: false });
   
     // No refs needed for simplified version  
       // No animation effects in this version
@@ -60,6 +84,40 @@ const EnhancedConnectionSection = () => {
     { icon: "tidal", color: "bg-blue-800", label: "Tidal" },
     { icon: "soundcloud", color: "bg-orange-500", label: "SoundCloud" }
   ];
+
+  // Handle Spotify connection
+  const handleSpotifyConnect = async () => {
+    try {
+      setIsConnecting(prev => ({ ...prev, spotify: true }));
+      initSpotifyAuth();
+    } catch (error) {
+      console.error('Failed to connect to Spotify:', error);
+    } finally {
+      setIsConnecting(prev => ({ ...prev, spotify: false }));
+    }
+  };
+
+  // Handle YouTube connection
+  const handleYouTubeConnect = async () => {
+    try {
+      setIsConnecting(prev => ({ ...prev, youtube: true }));
+      await signInWithGoogle();
+      await refreshConnections(); // Refresh connections after YouTube auth
+    } catch (error) {
+      console.error('Failed to connect to YouTube:', error);
+    } finally {
+      setIsConnecting(prev => ({ ...prev, youtube: false }));
+    }
+  };
+
+  // Handle manual refresh
+  const handleManualRefresh = async () => {
+    try {
+      await refreshConnections();
+    } catch (error) {
+      console.error('Failed to refresh connections:', error);
+    }
+  };
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 ${isDarkMode ? 'bg-transparent' : 'bg-gray-50'}`}>
@@ -272,600 +330,28 @@ const EnhancedConnectionSection = () => {
           {/* Connection cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 relative z-10">
             {/* Spotify Card */}
-            <motion.div 
-              className="h-56"
-              whileHover={{ scale: 1.02 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div 
-                className="w-full h-full relative cursor-pointer rounded-xl overflow-hidden"
-                onClick={() => handleCardFlip('spotify')}
-                style={{
-                  transform: isFlipped.spotify ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                  transformStyle: 'preserve-3d',
-                  transition: 'transform 0.6s',
-                }}
-              >
-                {/* Front side */}
-                <div 
-                  className="absolute inset-0 rounded-xl overflow-hidden"
-                  style={{ 
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden'
-                  }}
-                >
-                  <div 
-                    className="h-full p-5 relative overflow-hidden" 
-                    style={{
-                      background: isDarkMode ? 'rgba(15, 15, 20, 0.4)' : 'rgba(255, 255, 255, 0.4)',
-                      border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)',
-                    }}
-                  >
-                    {/* Card shine effect */}
-                    <motion.div 
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0"
-                      style={{ 
-                        skewX: '20deg',
-                        transform: 'translateX(-100%)'
-                      }}
-                      animate={{
-                        x: ['-100%', '200%'],
-                        opacity: [0, 0, 0.3, 0]
-                      }}
-                      transition={{
-                        duration: 4,
-                        repeat: Infinity,
-                        repeatDelay: 4
-                      }}
-                    />
-                    <div className="flex items-center mb-4">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg mr-3">
-                        <svg viewBox="0 0 24 24" className="w-8 h-8 text-white" fill="currentColor">
-                          <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.36.12-.78-.12-.9-.48-.12-.36.12-.78.48-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.48.66.36 1.021zm1.44-3.3c-.301.42-.841.6-1.262.3-3.24-1.98-8.16-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.24 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-semibold text-white">Spotify</h3>
-                        <div className="flex items-center">
-                          <motion.div 
-                            className="w-2 h-2 rounded-full bg-green-500 mr-2"
-                            animate={{
-                              boxShadow: ["0 0 0 0 rgba(34, 197, 94, 0.4)", "0 0 0 6px rgba(34, 197, 94, 0)"],
-                            }}
-                            transition={{
-                              duration: 1.5,
-                              repeat: Infinity,
-                            }}
-                          />
-                          <span className="text-gray-300">Connected</span>
-                        </div>
-                      </div>
-                      <div className="ml-auto w-8 h-8 flex items-center justify-center rounded-full bg-black/20">
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    </div>
-                    
-                    <button
-                      className="w-full py-3 rounded-lg font-medium text-white mt-2 relative overflow-hidden"
-                      style={{ 
-                        background: 'linear-gradient(to right, #1DB954, #1ed760)' 
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Reconnect logic would go here
-                      }}
-                    >
-                      <span className="relative z-10">Reconnect</span>
-                    </button>
-                    
-                    <p className="mt-4 text-xs text-gray-400 text-center flex items-center justify-center">
-                      <motion.span
-                        animate={{ scale: [1, 1.05, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                      >
-                        Click card to see account details
-                        <svg className="w-4 h-4 ml-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                        </svg>
-                      </motion.span>
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Back side */}
-                <div 
-                  className="absolute inset-0 rounded-xl overflow-hidden"
-                  style={{ 
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden',
-                    transform: 'rotateY(180deg)'
-                  }}
-                >
-                  <div 
-                    className="h-full p-5 relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
-                    style={{
-                      background: isDarkMode ? 'rgba(15, 15, 20, 0.4)' : 'rgba(255, 255, 255, 0.4)',
-                      border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)',
-                    }}
-                  >
-                    {/* Card shine effect */}
-                    <motion.div 
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0"
-                      style={{ 
-                        skewX: '20deg',
-                        transform: 'translateX(-100%)'
-                      }}
-                      animate={{
-                        x: ['-100%', '200%'],
-                        opacity: [0, 0, 0.3, 0]
-                      }}
-                      transition={{
-                        duration: 4,
-                        repeat: Infinity,
-                        repeatDelay: 4
-                      }}
-                    />
-                    <div className="absolute top-0 right-0 left-0 h-20 bg-gradient-to-b from-green-500/10 to-transparent opacity-50 pointer-events-none" />
-                  
-                    <div className="flex items-center mb-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg mr-3">
-                        <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
-                          <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.36.12-.78-.12-.9-.48-.12-.36.12-.78.48-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.48.66.36 1.021zm1.44-3.3c-.301.42-.841.6-1.262.3-3.24-1.98-8.16-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.24 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-white font-semibold">Account Details</h3>
-                        <div className="flex items-center">
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5" />
-                          <span className="text-green-400 text-xs">Verified</span>
-                        </div>
-                      </div>
-                      <motion.div 
-                        className="ml-auto w-8 h-8 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/30 cursor-pointer" 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCardFlip('spotify');
-                        }}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </motion.div>
-                    </div>
-                    
-                    {/* User info section */}
-                    <div className="bg-black/20 p-2 rounded-lg mb-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <div className="text-xs text-gray-400">Username</div>
-                          <div className="text-sm text-white font-medium">mich_michira</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400">Plan Type</div>
-                          <div className="text-sm text-white font-medium flex items-center">
-                            Premium
-                            <span className="ml-1 bg-green-500 text-white text-xs px-1 rounded-sm">PRO</span>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400">Followers</div>
-                          <div className="text-sm text-white font-medium">243</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400">Following</div>
-                          <div className="text-sm text-white font-medium">127</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Subscription info */}
-                    <div className="bg-black/20 p-2 rounded-lg mb-2">
-                      <div className="text-xs text-gray-300 mb-1 flex justify-between">
-                        <span>Premium Subscription</span>
-                        <span className="text-green-400">Active</span>
-                      </div>
-                      <div className="text-xs text-gray-400 flex items-center">
-                        <span>Renews on May 18, 2025</span>
-                        <span className="inline-block w-1 h-1 rounded-full bg-gray-500 mx-1.5"></span>
-                        <span className="text-green-400">$9.99/month</span>
-                      </div>
-                    </div>
-                    
-                    {/* Recent playlists */}
-                    <div className="mt-3">
-                      <div className="text-xs text-gray-300 mb-1.5">Recently Played</div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center bg-black/20 p-1.5 rounded-md">
-                          <div className="w-8 h-8 bg-purple-800 rounded-md flex items-center justify-center mr-2 text-xs">
-                            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-white text-xs font-medium truncate">Workout Mix 2025</div>
-                            <div className="text-gray-400 text-xs truncate">32 songs • 2h 17m</div>
-                          </div>
-                          <div className="ml-2 text-gray-400">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center bg-black/20 p-1.5 rounded-md">
-                          <div className="w-8 h-8 bg-blue-800 rounded-md flex items-center justify-center mr-2 text-xs">
-                            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-white text-xs font-medium truncate">Chill Vibes 2025</div>
-                            <div className="text-gray-400 text-xs truncate">48 songs • 3h 22m</div>
-                          </div>
-                          <div className="ml-2 text-gray-400">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Connected devices */}
-                    <div className="mt-3 text-xs text-gray-300">
-                      <div className="mb-1.5">Connected Devices</div>
-                      <div className="text-xs flex items-center text-gray-400 mb-1">
-                        <svg className="w-3.5 h-3.5 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
-                        </svg>
-                        <span>iPhone 15 Pro</span>
-                        <span className="inline-block w-1 h-1 rounded-full bg-green-500 ml-1.5 mr-1"></span>
-                        <span className="text-green-400">Current</span>
-                      </div>
-                      <div className="text-xs flex items-center text-gray-400">
-                        <svg className="w-3.5 h-3.5 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
-                        </svg>
-                        <span>MacBook Pro</span>
-                        <span className="inline-block w-1 h-1 rounded-full bg-gray-500 ml-1.5 mr-1"></span>
-                        <span>Last active: 2h ago</span>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-400">Account Health</span>
-                        <span className="text-xs text-green-400">Excellent</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-gray-700 rounded-full mt-1 overflow-hidden">
-                        <div 
-                          className="h-full bg-gradient-to-r from-green-400 to-green-500"
-                          style={{ width: '95%' }}
-                        />
-                      </div>
-                    </div>
-                    
-                    {/* Action buttons */}
-                    <div className="mt-3 flex space-x-2">
-                      <button className="flex-1 bg-green-600 hover:bg-green-700 transition-colors text-white rounded-full py-1.5 text-xs">
-                        Sync Playlists
-                      </button>
-                      <button className="flex-1 bg-gray-700 hover:bg-gray-600 transition-colors text-white rounded-full py-1.5 text-xs">
-                        Manage Account
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+            <ServiceConnectionCard
+              service="spotify"
+              isConnected={hasSpotifyAuth}
+              isConnecting={isConnecting.spotify}
+              userProfile={spotifyUserProfile ? {
+                displayName: spotifyUserProfile.displayName,
+                imageUrl: spotifyUserProfile.imageUrl
+              } : undefined}
+              onConnect={handleSpotifyConnect}
+            />
             
             {/* YouTube Card */}
-            <motion.div 
-              className="h-56"
-              whileHover={{ scale: 1.02 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div 
-                className="w-full h-full relative cursor-pointer rounded-xl overflow-hidden"
-                onClick={() => handleCardFlip('youtube')}
-                style={{
-                  transform: isFlipped.youtube ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                  transformStyle: 'preserve-3d',
-                  transition: 'transform 0.6s',
-                }}
-              >
-                {/* Front side */}
-                <div 
-                  className="absolute inset-0 rounded-xl overflow-hidden"
-                  style={{ 
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden'
-                  }}
-                >
-                  <div 
-                    className="h-full p-5 relative overflow-hidden" 
-                    style={{
-                      background: isDarkMode ? 'rgba(15, 15, 20, 0.4)' : 'rgba(255, 255, 255, 0.4)',
-                      border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)',
-                    }}
-                  >
-                    {/* Card shine effect */}
-                    <motion.div 
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0"
-                      style={{ 
-                        skewX: '20deg',
-                        transform: 'translateX(-100%)'
-                      }}
-                      animate={{
-                        x: ['-100%', '200%'],
-                        opacity: [0, 0, 0.3, 0]
-                      }}
-                      transition={{
-                        duration: 4,
-                        repeat: Infinity,
-                        repeatDelay: 6
-                      }}
-                    />
-                    <div className="flex items-center mb-4">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center shadow-lg mr-3">
-                        <svg viewBox="0 0 24 24" className="w-8 h-8 text-white" fill="currentColor">
-                          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-semibold text-white">YouTube</h3>
-                        <div className="flex items-center">
-                          <motion.div 
-                            className="w-2 h-2 rounded-full bg-red-500 mr-2"
-                            animate={{
-                              boxShadow: ["0 0 0 0 rgba(239, 68, 68, 0.4)", "0 0 0 6px rgba(239, 68, 68, 0)"],
-                            }}
-                            transition={{
-                              duration: 1.5,
-                              repeat: Infinity,
-                            }}
-                          />
-                          <span className="text-gray-300">Connected</span>
-                        </div>
-                      </div>
-                      <div className="ml-auto w-8 h-8 flex items-center justify-center rounded-full bg-black/20">
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    </div>
-                    
-                    <button
-                      className="w-full py-3 rounded-lg font-medium text-white mt-2 relative overflow-hidden"
-                      style={{ 
-                        background: 'linear-gradient(to right, #FF0000, #FF4500)' 
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Reconnect logic would go here
-                      }}
-                    >
-                      <span className="relative z-10">Reconnect</span>
-                    </button>
-                    
-                    <p className="mt-4 text-xs text-gray-400 text-center flex items-center justify-center">
-                      <motion.span
-                        animate={{ scale: [1, 1.05, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                      >
-                        Click card to see account details
-                        <svg className="w-4 h-4 ml-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                        </svg>
-                      </motion.span>
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Back side */}
-                <div 
-                  className="absolute inset-0 rounded-xl overflow-hidden"
-                  style={{ 
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden',
-                    transform: 'rotateY(180deg)'
-                  }}
-                >
-                  <div 
-                    className="h-full p-5 relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
-                    style={{
-                      background: isDarkMode ? 'rgba(15, 15, 20, 0.4)' : 'rgba(255, 255, 255, 0.4)',
-                      border: isDarkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)',
-                    }}
-                  >
-                    {/* Card shine effect */}
-                    <motion.div 
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0"
-                      style={{ 
-                        skewX: '20deg',
-                        transform: 'translateX(-100%)'
-                      }}
-                      animate={{
-                        x: ['-100%', '200%'],
-                        opacity: [0, 0, 0.3, 0]
-                      }}
-                      transition={{
-                        duration: 4,
-                        repeat: Infinity,
-                        repeatDelay: 6
-                      }}
-                    />
-                    <div className="absolute top-0 right-0 left-0 h-20 bg-gradient-to-b from-red-500/10 to-transparent opacity-50 pointer-events-none" />
-                  
-                    <div className="flex items-center mb-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center shadow-lg mr-3">
-                        <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
-                          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-white font-semibold">Account Details</h3>
-                        <div className="flex items-center">
-                          <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5" />
-                          <span className="text-red-400 text-xs">Content Creator</span>
-                        </div>
-                      </div>
-                      <motion.div 
-                        className="ml-auto w-8 h-8 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/30 cursor-pointer" 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCardFlip('youtube');
-                        }}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </motion.div>
-                    </div>
-                    
-                    {/* Channel info section */}
-                    <div className="bg-black/20 p-2 rounded-lg mb-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <div className="text-xs text-gray-400">Channel</div>
-                          <div className="text-sm text-white font-medium">MichMusic</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400">Email</div>
-                          <div className="text-sm text-white font-medium truncate">eliudsamwels7@gmail.com</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400">Subscribers</div>
-                          <div className="text-sm text-white font-medium">1.2K</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400">Total Views</div>
-                          <div className="text-sm text-white font-medium">47.8K</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Channel stats */}
-                    <div className="bg-black/20 p-2 rounded-lg mb-2">
-                      <div className="text-xs text-gray-300 mb-1 flex justify-between">
-                        <span>Channel Statistics</span>
-                        <span className="text-xs text-white px-1.5 py-0.5 bg-red-600 rounded-sm">MUSIC</span>
-                      </div>
-                      <div className="flex justify-between mt-1">
-                        <div className="text-center">
-                          <div className="text-white text-sm font-medium">16</div>
-                          <div className="text-gray-400 text-xs">Playlists</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-white text-sm font-medium">187</div>
-                          <div className="text-gray-400 text-xs">Videos</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-white text-sm font-medium">32</div>
-                          <div className="text-gray-400 text-xs">Likes</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Recent playlists */}
-                    <div className="mt-3">
-                      <div className="text-xs text-gray-300 mb-1.5">Recent Playlists</div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center bg-black/20 p-1.5 rounded-md">
-                          <div className="w-8 h-8 bg-red-900 rounded-md flex items-center justify-center mr-2 text-xs relative overflow-hidden">
-                            <div className="absolute inset-0 bg-black bg-opacity-30"></div>
-                            <svg className="w-4 h-4 text-white relative z-10" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M10 8l6 4-6 4V8z"/>
-                              <path d="M21 19H3c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2h18c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2zm0-12H3v10h18V7z"/>
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-white text-xs font-medium truncate">Top Hits 2025 Mix</div>
-                            <div className="text-gray-400 text-xs truncate">24 videos • 2.7K views</div>
-                          </div>
-                          <div className="ml-2 text-gray-400">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center bg-black/20 p-1.5 rounded-md">
-                          <div className="w-8 h-8 bg-red-900 rounded-md flex items-center justify-center mr-2 text-xs relative overflow-hidden">
-                            <div className="absolute inset-0 bg-black bg-opacity-30"></div>
-                            <svg className="w-4 h-4 text-white relative z-10" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M10 8l6 4-6 4V8z"/>
-                              <path d="M21 19H3c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2h18c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2zm0-12H3v10h18V7z"/>
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-white text-xs font-medium truncate">Lo-Fi Beats for Study</div>
-                            <div className="text-gray-400 text-xs truncate">18 videos • 1.3K views</div>
-                          </div>
-                          <div className="ml-2 text-gray-400">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Activity stats */}
-                    <div className="mt-3">
-                      <div className="text-xs text-gray-300 mb-1.5">Recent Activity</div>
-                      <div className="bg-black/20 p-2 rounded-lg">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs text-gray-400">Last upload</span>
-                          <span className="text-xs text-white">3 days ago</span>
-                        </div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs text-gray-400">Last comment</span>
-                          <span className="text-xs text-white">Yesterday</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-400">Watch time (30 days)</span>
-                          <span className="text-xs text-white">143 hours</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-400">Account Health</span>
-                        <span className="text-xs text-green-400">Good</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-gray-700 rounded-full mt-1 overflow-hidden">
-                        <div 
-                          className="h-full bg-gradient-to-r from-red-500 to-red-400"
-                          style={{ width: '85%' }}
-                        />
-                      </div>
-                    </div>
-                    
-                    {/* Action buttons */}
-                    <div className="mt-3 flex space-x-2">
-                      <button className="flex-1 bg-red-600 hover:bg-red-700 transition-colors text-white rounded-full py-1.5 text-xs">
-                        Sync Playlists
-                      </button>
-                      <button className="flex-1 bg-gray-700 hover:bg-gray-600 transition-colors text-white rounded-full py-1.5 text-xs">
-                        Studio Dashboard
-                      </button>
-                    </div>
-                </div>
-              </div>
-            </div>
-            </motion.div>
+            <ServiceConnectionCard
+              service="youtube"
+              isConnected={hasYouTubeAuth}
+              isConnecting={isConnecting.youtube}
+              userProfile={youtubeUserProfile ? {
+                displayName: youtubeUserProfile.displayName,
+                imageUrl: youtubeUserProfile.imageUrl
+              } : undefined}
+              onConnect={handleYouTubeConnect}
+            />
           </div>
         </motion.div>
         
@@ -957,6 +443,60 @@ const EnhancedConnectionSection = () => {
       >
         {/* ... existing code ... */}
       </motion.div>
+
+      {/* Connection status indicator */}
+      {isRefreshing && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-4 right-4 bg-black/50 backdrop-blur-md text-white px-4 py-2 rounded-full flex items-center gap-2 border border-white/10"
+        >
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Refreshing connections...</span>
+        </motion.div>
+      )}
+
+      {/* Connection error indicator */}
+      {connectionError && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-4 right-4 bg-red-500/50 backdrop-blur-md text-white px-4 py-2 rounded-full flex items-center gap-2 border border-white/10"
+        >
+          <span className="text-sm">{connectionError}</span>
+        </motion.div>
+      )}
+
+      {/* Manual refresh button */}
+      <motion.button
+        onClick={handleManualRefresh}
+        disabled={isRefreshing}
+        className="mt-4 px-4 py-2 rounded-lg bg-white/10 text-white/80 hover:bg-white/20 transition-colors flex items-center gap-2"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+      >
+        <svg
+          className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          />
+        </svg>
+        {isRefreshing ? 'Refreshing...' : 'Refresh Connections'}
+      </motion.button>
+
+      {/* Last refresh time */}
+      {lastRefresh && (
+        <p className="mt-2 text-sm text-white/50">
+          Last refreshed: {lastRefresh.toLocaleTimeString()}
+        </p>
+      )}
     </div>
   );
 };

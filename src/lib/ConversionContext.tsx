@@ -2,8 +2,8 @@ import React, { createContext, useContext, useReducer, useCallback } from 'react
 import { useAuth } from './AuthContext';
 import { getSpotifyPlaylists, getSpotifyPlaylistTracks, extractTrackData, getSpotifyPlaylistById } from './spotifyApi';
 import { getYouTubePlaylists, searchYouTube } from './youtubeApi';
-import { collection, addDoc, getDocs, query, orderBy, Timestamp, Firestore, QuerySnapshot } from 'firebase/firestore';
-import { db as firebaseDb, reconnectFirestore, auth } from './firebase';
+import { collection, addDoc, getDocs, query, orderBy, Timestamp, Firestore, QuerySnapshot, doc, setDoc } from 'firebase/firestore';
+import { db as firebaseDb, auth, reconnectFirestore } from './firebase';
 import { isSpotifyAuthenticated } from './spotifyAuth';
 
 // Type assertion for the Firestore db
@@ -280,8 +280,8 @@ const logFirestoreError = (context: string, error: any, userId?: string) => {
     
     // Attempt to help recovery by reconnecting
     try {
-      reconnectFirestore().catch(e => console.warn('Failed to reconnect after permission error:', e));
-    } catch (e) {
+      reconnectFirestore().catch((error: Error | unknown) => console.warn('Failed to reconnect after permission error:', error));
+    } catch (error: unknown) {
       // Ignore reconnect errors
     }
   }
@@ -701,41 +701,93 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SUCCESS });
           
           // Save the conversion to history
-      const conversionResult: ConversionResult = {
+          const conversionResult: ConversionResult = {
             id: `conversion_${Date.now()}`,
             spotifyPlaylistId: playlistId,
-        spotifyPlaylistName: selectedPlaylist.name,
+            spotifyPlaylistName: selectedPlaylist.name,
             spotifyPlaylistUrl: `https://open.spotify.com/playlist/${playlistId}`,
             youtubePlaylistId,
             youtubePlaylistUrl,
             tracksMatched: successCount,
             tracksFailed: failureCount,
-        totalTracks: tracks.length,
-        convertedAt: new Date(),
-            isMockData: false // Set based on match data if needed
+            totalTracks: tracks.length,
+            convertedAt: new Date(),
+            isMockData: false
           };
-          
+
           // Update conversion history in state
           dispatch({
             type: 'SET_CONVERSION_HISTORY',
             payload: [conversionResult, ...state.conversionHistory]
           });
-          
+
           // Save to local storage
           saveConversionHistoryToLocalStorage(user.uid, [conversionResult, ...state.conversionHistory]);
-          
-          // Try to save to Firestore, but don't block UI on it
+
+          // Try to save to Firestore with enhanced error handling
           try {
-            const conversionsRef = collection(db, 'users', user.uid, 'conversions');
-            addDoc(conversionsRef, {
-          ...conversionResult,
-              convertedAt: Timestamp.fromDate(conversionResult.convertedAt)
-            }).catch(error => {
-              console.warn('Non-blocking error saving conversion history to Firestore:', error);
+            console.log('Attempting to save conversion to Firestore:', {
+              userId: user.uid,
+              conversionId: conversionResult.id,
+              playlistName: conversionResult.spotifyPlaylistName
             });
+
+            const conversionsRef = collection(db, 'users', user.uid, 'conversions');
+            
+            // Use the same ID for Firestore document
+            const docRef = doc(conversionsRef, conversionResult.id);
+            
+            // Add retry logic for Firestore save
+            let attempts = 0;
+            const maxAttempts = 3;
+            let success = false;
+
+            while (attempts < maxAttempts && !success) {
+              try {
+                await setDoc(docRef, {
+                  ...conversionResult,
+                  convertedAt: Timestamp.fromDate(conversionResult.convertedAt),
+                  userId: user.uid,
+                  tracks: tracks.map(track => ({
+                    name: track.name,
+                    artists: track.artists,
+                    album: track.album,
+                    duration_ms: track.duration_ms
+                  }))
+                });
+
+                console.log('Successfully saved conversion to Firestore:', docRef.id);
+                success = true;
+                break;
+              } catch (saveError) {
+                attempts++;
+                console.warn(`Failed to save conversion (attempt ${attempts}/${maxAttempts}):`, saveError);
+                
+                if (attempts < maxAttempts) {
+                  // Wait before retrying with exponential backoff
+                  await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
+                } else {
+                  throw saveError;
+                }
+              }
+            }
           } catch (firestoreError) {
-            console.warn('Failed to save conversion history to Firestore:', firestoreError);
-            // Not blocking the UI or showing an error to the user
+            console.error('Failed to save conversion history to Firestore:', firestoreError);
+            
+            // Log detailed error information
+            logFirestoreError('saveConversion', firestoreError, user.uid);
+            
+            // Show a toast notification to the user
+            if (typeof window !== 'undefined' && window.dispatchEvent) {
+              window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: {
+                  type: 'warning',
+                  title: 'Backup Save Only',
+                  message: 'Your conversion was successful but could not be saved online. It is saved locally only.',
+                  duration: 5000
+                }
+              }));
+            }
           }
           
         } catch (playlistError) {

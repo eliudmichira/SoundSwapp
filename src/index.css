@@ -265,6 +265,14 @@ button, a, input, select {
     --section-card-icon-container-bg-features-3-hsl: 40 90% 55%;  /* Vivid Orange/Gold */
     --section-card-icon-container-bg-features-4-hsl: 330 80% 60%; /* Vivid Pink/Magenta */
     /* === End How It Works & Features Section Cards (Light Theme) === */
+
+    /* Brand Colors and Variables */
+    --brand-primary: #8B5CF6;
+    --brand-accent-pink: #EC4899;
+    --brand-secondary: #06B6D4;
+    --brand-primary-rgb: 139, 92, 246;
+    --brand-accent-pink-rgb: 236, 72, 153;
+    --brand-secondary-rgb: 6, 182, 212;
   }
 
   .dark {
@@ -648,4 +656,121 @@ button, a, input, select {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Animations */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.8; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1.02); }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s ease-in-out infinite;
+}
+
+/* SoundSwapp Logo Animations */
+.ss-letter-main {
+  animation: pulseSSMain 2.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.ss-letter-highlight {
+  animation: pulseSSHighlight 2.8s ease-in-out infinite;
+  transform-origin: center;
+  opacity: 0.7;
+}
+
+@keyframes pulseSSMain {
+  0%, 100% { 
+    opacity: 0.9;
+    transform: scale(0.98);
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+  }
+  40% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  50% { 
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  90%, 100% {
+    stroke-dashoffset: -1000;
+    opacity: 0.9;
+  }
+}
+
+@keyframes pulseSSHighlight {
+  0%, 100% { 
+    opacity: 0.5;
+    transform: scale(0.96);
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+  }
+  40% {
+    stroke-dashoffset: 0;
+    opacity: 0.7;
+  }
+  50% { 
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  90%, 100% {
+    stroke-dashoffset: -1000;
+    opacity: 0.5;
+  }
+}
+
+/* Glassmorphic Effects */
+.glassmorphic {
+  @apply backdrop-blur-md bg-white/40 dark:bg-gray-900/40;
+  @apply border border-white/20 dark:border-gray-700/20;
+  @apply shadow-lg;
+  @apply transition-all duration-300;
+}
+
+.glassmorphic:hover {
+  @apply bg-white/45 dark:bg-gray-900/45;
+}
+
+.glassmorphic:focus {
+  @apply outline-none ring-2 ring-purple-500/50;
+}
+
+/* Enhanced Gradients */
+.gradient-brand {
+  @apply bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent-pink)];
+}
+
+.gradient-text {
+  @apply bg-clip-text text-transparent;
+}
+
+/* Card Effects */
+.card-hover {
+  @apply transition-transform duration-300 hover:scale-105;
+}
+
+.card-active {
+  @apply transition-transform duration-150 active:scale-95;
+}
+
+/* Shimmer Effects */
+.shimmer {
+  @apply relative overflow-hidden;
+}
+
+.shimmer::after {
+  content: '';
+  @apply absolute inset-0;
+  @apply bg-gradient-to-r from-transparent via-white/20 to-transparent;
+  @apply -translate-x-full;
+  @apply animate-shimmer;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 } 
