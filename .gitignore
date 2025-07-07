@@ -7,10 +7,26 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+.pnp
+.pnp.js
+
+# Build files
 dist
 dist-ssr
 *.local
+build/
+out/
+.next/
+.firebase/
+.vercel
+.output
+
+# Environment variables
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -23,34 +39,22 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment variables
-.env
-.env.local
-.env.development
-.env.production
+# Cache and temporary files
+.cache/
+.eslintcache
+.stylelintcache
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+tsconfig.tsbuildinfo
+
+# Test coverage
+coverage/
 
 # Firebase
 .firebase/
 firebase-debug.log
 ui-debug.log
 .runtimeconfig.json
-
-# Build files
-build/
-dist/
-out/
-.next/
-
-# Cache
-.cache/
-.eslintcache
-.stylelintcache
-
-# Test coverage
-coverage/
-
-# Temporary files
-*.tmp
-*.temp
-.DS_Store
-Thumbs.db 
+*.cache 
