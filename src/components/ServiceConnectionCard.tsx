@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
 
 interface ServiceConnectionCardProps {
   service: 'spotify' | 'youtube';
@@ -19,6 +20,8 @@ export const ServiceConnectionCard = ({
   userProfile,
   onConnect
 }: ServiceConnectionCardProps) => {
+  const { user } = useAuth();
+  
   const serviceConfig = {
     spotify: {
       name: 'Spotify',
@@ -33,6 +36,44 @@ export const ServiceConnectionCard = ({
       hoverColor: '#ff1a1a'
     }
   }[service];
+
+  const handleConnect = () => {
+    console.log(`[DEBUG] ServiceConnectionCard.handleConnect called for ${service}`);
+    console.log(`[DEBUG] User state:`, { 
+      user: !!user, 
+      userUid: user?.uid,
+      isConnecting,
+      service 
+    });
+    
+    if (!user) {
+      console.warn('User not authenticated, but allowing connection attempt for development');
+      // For development, allow connection attempts even without authentication
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Development mode: proceeding with connection attempt');
+        if (isConnecting) {
+          console.log('Already connecting...');
+          return;
+        }
+        console.log(`Initiating ${service} connection in development mode...`);
+        onConnect();
+        return;
+      }
+      
+      console.error('User not authenticated');
+      // Instead of just returning, let's try to redirect to login
+      window.location.href = '/login';
+      return;
+    }
+    
+    if (isConnecting) {
+      console.log('Already connecting...');
+      return;
+    }
+    
+    console.log(`Initiating ${service} connection...`);
+    onConnect();
+  };
 
   return (
     <motion.div 
@@ -72,15 +113,24 @@ export const ServiceConnectionCard = ({
         </div>
       ) : (
         <button
-          onClick={onConnect}
-          disabled={isConnecting}
-          className={`w-full py-2 rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors hover:opacity-90`}
+          onClick={handleConnect}
+          disabled={isConnecting || (!user && process.env.NODE_ENV !== 'development')}
+          className={`w-full py-2 rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors hover:opacity-90 ${
+            !user && process.env.NODE_ENV !== 'development' ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
           style={{
             backgroundColor: serviceConfig.color
           }}
         >
           {isConnecting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Connecting...
+            </>
+          ) : !user && process.env.NODE_ENV !== 'development' ? (
+            'Sign in to connect'
+          ) : !user && process.env.NODE_ENV === 'development' ? (
+            `Connect ${serviceConfig.name} (Dev Mode)`
           ) : (
             `Connect ${serviceConfig.name}`
           )}

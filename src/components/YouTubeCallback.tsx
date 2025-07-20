@@ -8,135 +8,175 @@ import {
 } from '../lib/youtubeAuth';
 import { EnhancedGradientText } from './ui/EnhancedGradientText';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner, faCheckCircle, faExclamationTriangle, faExclamationCircle, faArrowLeft, faSignInAlt } from '@fortawesome/free-solid-svg-icons';
+import { 
+  faSpinner, 
+  faCheckCircle, 
+  faExclamationTriangle, 
+  faExclamationCircle, 
+  faArrowLeft, 
+  faSignInAlt,
+  faSync
+} from '@fortawesome/free-solid-svg-icons';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import GlassmorphicContainer from './ui/GlassmorphicContainer';
 import { cn } from '../lib/utils';
 import { useTheme } from '../lib/ThemeContext';
-import { simpleGlassmorphic } from '../lib/glassmorphic';
+
+const MAX_AUTH_WAIT = 10000; // 10 seconds
+const AUTH_CHECK_INTERVAL = 500; // 0.5 seconds
 
 const YouTubeCallback: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, setHasYouTubeAuth } = useAuth();
-  const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'auth-required'>('loading');
+  const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'auth-required' | 'auth-waiting'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
   const { isDark } = useTheme();
-  const [authCheckAttempts, setAuthCheckAttempts] = useState(0);
-  const MAX_AUTH_CHECK_ATTEMPTS = 5;
+  const [authWaitTime, setAuthWaitTime] = useState(0);
   
   useEffect(() => {
-    // Process the OAuth callback from YouTube
+    let authCheckInterval: NodeJS.Timeout;
+    let authTimeout: NodeJS.Timeout;
+    let isMounted = true;
+
     const processCallback = async () => {
       try {
+        // Save callback URL immediately
+        const currentUrl = window.location.href;
+        sessionStorage.setItem('youtube_callback_url', currentUrl);
+        
         setDebugInfo('Starting callback processing...');
+        console.log('User signed in:', !!user);
         
-        // Check if user is already signed in
-        const isUserSignedIn = !!user || !!localStorage.getItem('user');
-        setDebugInfo(prev => `${prev}\nUser signed in: ${isUserSignedIn}`);
-        
-        // If loading auth state and haven't exceeded max attempts, wait and retry
-        if (authLoading && authCheckAttempts < MAX_AUTH_CHECK_ATTEMPTS) {
-          console.log(`Waiting for auth state to stabilize... Attempt ${authCheckAttempts + 1}`);
-          setDebugInfo(prev => `${prev}\nWaiting for auth system to initialize...`);
+        // If not signed in, start waiting for auth
+        if (!user && !authLoading) {
+          setStatus('auth-waiting');
+          let waitTime = 0;
           
-          // Wait 1 second before next attempt
-          setTimeout(() => {
-            setAuthCheckAttempts(prev => prev + 1);
-          }, 1000);
+          // Start auth check interval
+          authCheckInterval = setInterval(() => {
+            waitTime += AUTH_CHECK_INTERVAL;
+            if (isMounted) {
+              setAuthWaitTime(waitTime);
+            }
+            
+            // Check if auth state has been restored
+            const auth = getAuth();
+            if (auth.currentUser) {
+              clearInterval(authCheckInterval);
+              if (isMounted) {
+                setStatus('loading');
+                processCallback();
+              }
+            }
+          }, AUTH_CHECK_INTERVAL);
+          
+          // Set timeout for auth waiting
+          authTimeout = setTimeout(() => {
+            clearInterval(authCheckInterval);
+            if (isMounted) {
+              setStatus('auth-required');
+              setError('Authentication session expired. Please sign in again.');
+            }
+          }, MAX_AUTH_WAIT);
+          
           return;
         }
         
-        // If we've exceeded max attempts and no sign of user being signed in
-        if (!isUserSignedIn && authCheckAttempts >= MAX_AUTH_CHECK_ATTEMPTS) {
-          console.error("User not logged in after maximum attempts");
+        // Clear intervals if we have a user
+        clearInterval(authCheckInterval);
+        clearTimeout(authTimeout);
+
+        // Require authentication
+        if (!user) {
           setStatus('auth-required');
           setError('You need to be logged in to connect your YouTube account');
-          setDebugInfo(prev => `${prev}\nError: User not logged in after ${MAX_AUTH_CHECK_ATTEMPTS} attempts`);
           return;
         }
         
-        // Get URL parameters for manual debugging
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const state = urlParams.get('state');
-        const error = urlParams.get('error');
-        
-        setDebugInfo(prev => `${prev}\nURL params: code=${!!code}, state=${!!state}, error=${error || 'none'}`);
-        
-        // Check localStorage for existing tokens before we start
-        const existingToken = localStorage.getItem('youtube_access_token');
-        const existingRefresh = localStorage.getItem('youtube_refresh_token');
-        const existingExpiry = localStorage.getItem('youtube_token_expiry');
-        
-        setDebugInfo(prev => `${prev}\nExisting tokens: access=${!!existingToken}, refresh=${!!existingRefresh}, expiry=${!!existingExpiry}`);
-        
-        if (!code) {
-          throw new Error('No authorization code found in the URL');
-        }
-        
-        // Check if there's a stored state in both sessionStorage and localStorage
-        const sessionState = sessionStorage.getItem('youtube_auth_state');
-        const localState = localStorage.getItem('youtube_auth_state');
-        
-        setDebugInfo(prev => `${prev}\nStored states: sessionStorage=${!!sessionState}, localStorage=${!!localState}`);
-        
-        // Call the OAuth callback handler
+        // Handle the callback
         await handleYouTubeCallback();
         
-        // Add a small delay to ensure token is saved
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // Double-check auth status
-        const token = getYouTubeToken();
-        const isAuth = await isYouTubeAuthenticated();
-        setDebugInfo(prev => `${prev}\nAuth check after callback: token=${!!token}, isAuth=${isAuth}`);
-        
-        // Check localStorage for tokens after the callback
-        const newToken = localStorage.getItem('youtube_access_token');
-        const newRefresh = localStorage.getItem('youtube_refresh_token');
-        const newExpiry = localStorage.getItem('youtube_token_expiry');
-        
-        setDebugInfo(prev => `${prev}\nNew tokens: access=${!!newToken}, refresh=${!!newRefresh}, expiry=${!!newExpiry}`);
-        
-        // Update auth context
-        if (setHasYouTubeAuth) {
-          setHasYouTubeAuth(true);
-          setDebugInfo(prev => `${prev}\nsetHasYouTubeAuth called`);
+        // Verify authentication was successful
+        const isAuthenticated = await isYouTubeAuthenticated();
+        if (!isAuthenticated) {
+          throw new Error('Failed to verify YouTube authentication');
         }
         
+        // Update auth context
+          setHasYouTubeAuth(true);
         setStatus('success');
         
-        // Redirect after a short delay
+        // Notify about successful authentication
+        notifyAuthComplete();
+        
+        // Clean up stored URL
+        sessionStorage.removeItem('youtube_callback_url');
+        
+        // Redirect after success message
         setTimeout(() => {
-          // Get return path from localStorage or default to home
           const returnPath = localStorage.getItem('youtube_auth_return_path') || '/';
           localStorage.removeItem('youtube_auth_return_path');
           navigate(returnPath);
-        }, 3000);
+        }, 2000);
       } catch (err) {
-        console.error('Error handling YouTube callback:', err);
+        console.error('YouTube callback error:', err);
         setStatus('error');
         setError(err instanceof Error ? err.message : 'Failed to authenticate with YouTube');
         setDebugInfo(prev => `${prev}\nError: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
     
-    // Only run the callback processing if not still loading auth state or if we've exceeded max attempts
-    if (!authLoading || authCheckAttempts >= MAX_AUTH_CHECK_ATTEMPTS) {
+    if (!authLoading) {
       processCallback();
     }
-  }, [navigate, setHasYouTubeAuth, authLoading, user, authCheckAttempts]);
+
+    return () => {
+      isMounted = false;
+      clearInterval(authCheckInterval);
+      clearTimeout(authTimeout);
+    };
+  }, [navigate, setHasYouTubeAuth, authLoading, user]);
+
+  const handleReturnHome = () => {
+    navigate('/');
+  };
   
   const handleLogin = () => {
-    // Save current URL with all parameters to return after login
-    const fullCallbackUrl = window.location.href;
-    localStorage.setItem('youtube_callback_url', fullCallbackUrl);
+    // Save current URL to return after login
+    sessionStorage.setItem('youtube_callback_url', window.location.href);
     localStorage.setItem('auth_return_path', '/youtube-callback');
     navigate('/login');
   };
+
+  const handleRetry = () => {
+    window.location.reload();
+  };
   
+  // Add a function to dispatch authentication event
+  const notifyAuthComplete = () => {
+    try {
+      // Notify opener if this is a popup
+      if (window.opener && window.opener !== window) {
+        window.opener.postMessage({ 
+          type: 'youtube-auth-complete', 
+          success: true 
+        }, window.location.origin);
+        console.log('Sent youtube-auth-complete message to opener');
+      }
+      
+      // Also dispatch a custom event for direct listeners
+      window.dispatchEvent(new CustomEvent('youtube-auth-changed', { 
+        detail: { authenticated: true } 
+      }));
+      console.log('Dispatched youtube-auth-changed event');
+    } catch (err) {
+      console.error('Error notifying about YouTube authentication:', err);
+    }
+  };
+
   return (
-    <div className="h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-900 to-black p-4">
       <GlassmorphicContainer 
         className="max-w-md w-full p-8 text-center"
         animate={true}
@@ -154,19 +194,24 @@ const YouTubeCallback: React.FC = () => {
         {status === 'loading' && (
           <div className="flex flex-col items-center justify-center">
             <FontAwesomeIcon icon={faSpinner} spin className="text-4xl text-red-500 mb-4" />
-            <p className={cn(
-              "text-base",
-              isDark ? "text-gray-200" : "text-gray-700"
-            )}>
+            <p className="text-gray-200">
               Authenticating with YouTube...
             </p>
-            
-            <div className={cn(
-              "mt-4 p-3 rounded-lg text-xs text-left max-w-xs mx-auto overflow-auto",
-              simpleGlassmorphic(isDark)
-            )}>
-              <pre className="whitespace-pre-wrap break-words">{debugInfo}</pre>
+          </div>
+        )}
+
+        {status === 'auth-waiting' && (
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mb-4">
+              <FontAwesomeIcon icon={faSync} spin className="text-3xl text-blue-500" />
             </div>
+            <p className="text-xl font-medium mb-2 text-white">
+              Restoring Session
+            </p>
+            <p className="text-sm text-gray-300 mb-4">
+              Please wait while we restore your session...
+              {authWaitTime > 0 && ` (${(MAX_AUTH_WAIT - authWaitTime) / 1000}s)`}
+            </p>
           </div>
         )}
         
@@ -175,111 +220,72 @@ const YouTubeCallback: React.FC = () => {
             <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
               <FontAwesomeIcon icon={faCheckCircle} className="text-3xl text-green-500" />
             </div>
-            <p className={cn(
-              "text-xl font-medium mb-2",
-              isDark ? "text-white" : "text-gray-800"
-            )}>
+            <p className="text-xl font-medium mb-2 text-white">
               Successfully Connected!
             </p>
-            <p className={cn(
-              "text-sm mb-4",
-              isDark ? "text-gray-300" : "text-gray-600"
-            )}>
+            <p className="text-sm mb-4 text-gray-300">
               Your YouTube account is now connected. Redirecting you back...
             </p>
-            
-            <GlassmorphicContainer 
-              className="mt-4 p-3 text-xs text-left max-w-xs mx-auto overflow-auto"
-              rounded="lg"
-              shadow="sm"
-            >
-              <pre className="whitespace-pre-wrap break-words text-xs">{debugInfo}</pre>
-            </GlassmorphicContainer>
           </div>
         )}
         
         {status === 'error' && (
           <div className="flex flex-col items-center justify-center">
             <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
-              <FontAwesomeIcon icon={faExclamationTriangle} className="text-3xl text-red-500" />
+              <FontAwesomeIcon icon={faExclamationCircle} className="text-3xl text-red-500" />
             </div>
-            <p className={cn(
-              "text-xl font-medium mb-2",
-              isDark ? "text-white" : "text-gray-800"
-            )}>
+            <p className="text-xl font-medium mb-2 text-white">
               Authentication Failed
             </p>
-            <p className={cn(
-              "text-sm mb-4",
-              isDark ? "text-gray-300" : "text-gray-600"
-            )}>
-              {error || 'Failed to connect your YouTube account. Please try again.'}
+            <p className="text-sm mb-6 text-red-400">
+              {error}
             </p>
-            
+            <div className="flex gap-4">
             <button
-              onClick={() => navigate('/')}
-              className={cn(
-                "flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                "bg-red-500 hover:bg-red-600 text-white"
-              )}
-            >
-              <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
-              Return Home
+                onClick={handleRetry}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                <FontAwesomeIcon icon={faSync} />
+                Try Again
             </button>
-            
-            <GlassmorphicContainer 
-              className="mt-4 p-3 text-xs text-left max-w-xs mx-auto overflow-auto"
-              rounded="lg"
-              shadow="sm"
-            >
-              <pre className="whitespace-pre-wrap break-words text-xs">{debugInfo}</pre>
-            </GlassmorphicContainer>
+              <button
+                onClick={handleReturnHome}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                <FontAwesomeIcon icon={faArrowLeft} />
+                Go Back
+              </button>
+            </div>
           </div>
         )}
         
         {status === 'auth-required' && (
           <div className="flex flex-col items-center justify-center">
-            <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mb-4">
-              <FontAwesomeIcon icon={faSignInAlt} className="text-3xl text-blue-500" />
+            <div className="w-16 h-16 rounded-full bg-yellow-500/20 flex items-center justify-center mb-4">
+              <FontAwesomeIcon icon={faExclamationTriangle} className="text-3xl text-yellow-500" />
             </div>
-            <p className={cn(
-              "text-xl font-medium mb-2",
-              isDark ? "text-white" : "text-gray-800"
-            )}>
-              Sign In Required
+            <p className="text-xl font-medium mb-2 text-white">
+              Authentication Required
             </p>
-            <p className={cn(
-              "text-sm mb-4",
-              isDark ? "text-gray-300" : "text-gray-600"
-            )}>
-              Please sign in to your SoundSwapp account first. We'll automatically continue connecting your YouTube account after you log in.
+            <p className="text-sm mb-6 text-gray-300">
+              {error || 'You need to be logged in to connect your YouTube account'}
             </p>
-            
+            <div className="flex gap-4">
             <button
               onClick={handleLogin}
-              className={cn(
-                "flex items-center px-6 py-3 rounded-xl text-sm font-medium transition-colors",
-                "bg-blue-500 hover:bg-blue-600 text-white"
-              )}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
             >
-              <FontAwesomeIcon icon={faSignInAlt} className="mr-2" />
-              Sign In to Continue
+                <FontAwesomeIcon icon={faSignInAlt} />
+                Sign In
             </button>
-            
-            <p className={cn(
-              "text-xs mt-4",
-              isDark ? "text-gray-400" : "text-gray-500"
-            )}>
-              This ensures your YouTube account is securely linked to your SoundSwapp profile.
-            </p>
-            
-            <GlassmorphicContainer 
-              className="mt-4 p-3 text-xs text-left max-w-xs mx-auto overflow-auto"
-              rounded="lg"
-              shadow="sm"
-            >
-              <pre className="whitespace-pre-wrap break-words text-xs">{debugInfo}</pre>
-            </GlassmorphicContainer>
+              <button
+                onClick={handleReturnHome}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                <FontAwesomeIcon icon={faArrowLeft} />
+                Go Back
+              </button>
+            </div>
           </div>
         )}
       </GlassmorphicContainer>

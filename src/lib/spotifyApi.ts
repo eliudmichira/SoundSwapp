@@ -178,15 +178,24 @@ class SpotifyApiClient {
     options: RequestInit = {}, 
     retryCount = 0
   ): Promise<T> {
+    console.log(`[DEBUG] SpotifyApiClient.request(${url}) called, retry: ${retryCount}`);
+    
     // Try both ways to get a token
     let accessToken: string | undefined = getSpotifyTokenSync() || undefined;
+    console.log(`[DEBUG] Token from getSpotifyTokenSync():`, accessToken ? 'Found' : 'Not found');
+    
     if (!accessToken) {
+      console.log(`[DEBUG] Trying async getSpotifyToken()...`);
       accessToken = (await getSpotifyToken()) || undefined;
+      console.log(`[DEBUG] Token from getSpotifyToken():`, accessToken ? 'Found' : 'Not found');
     }
     
     if (!accessToken) {
+      console.error(`[DEBUG] No valid Spotify access token available`);
       throw new Error('No valid Spotify access token available. Please reconnect.');
     }
+
+    console.log(`[DEBUG] Using token: ${accessToken.substring(0, 20)}...`);
 
     // Ensure headers exist and convert to plain object if it's Headers instance
     const headers: Record<string, string> = {};
@@ -211,20 +220,24 @@ class SpotifyApiClient {
     options.headers = headers;
     
     try {
+      console.log(`[DEBUG] Making request to: ${url}`);
       const response = await fetch(url, options);
+      console.log(`[DEBUG] Response status: ${response.status} ${response.statusText}`);
       
       // Handle successful response
       if (response.ok) {
+        console.log(`[DEBUG] Request successful`);
         return await response.json();
       }
       
       // Handle token expiration with refresh
       if (response.status === 401 && retryCount < this.MAX_RETRIES) {
-        console.log('Access token expired, refreshing...');
+        console.log(`[DEBUG] Access token expired (401), refreshing...`);
         localStorage.removeItem(CACHE.KEYS.TOKEN_EXPIRES);
         accessToken = (await getSpotifyToken()) || undefined;
         
         if (accessToken) {
+          console.log(`[DEBUG] Got new token, retrying request...`);
           // Update the authorization header with the new token
           Object.assign(options.headers, { 'Authorization': `Bearer ${accessToken}` });
           
@@ -235,9 +248,12 @@ class SpotifyApiClient {
       
       // Extract error details from response
       const errorDetails = await this.parseErrorResponse(response);
+      console.error(`[DEBUG] API request failed:`, errorDetails);
       
       throw new Error(errorDetails);
     } catch (error) {
+      console.error(`[DEBUG] Request error:`, error);
+      
       // If not our custom error from above, rethrow with better context
       if (!(error instanceof Error)) {
         throw new Error(`Unexpected error calling ${url}: ${error}`);
@@ -245,7 +261,7 @@ class SpotifyApiClient {
       
       // Retry network errors
       if (error.message.includes('network') && retryCount < this.MAX_RETRIES) {
-        console.log(`Network error, retrying (${retryCount + 1}/${this.MAX_RETRIES})...`);
+        console.log(`[DEBUG] Network error, retrying (${retryCount + 1}/${this.MAX_RETRIES})...`);
         await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
         return this.request<T>(url, options, retryCount + 1);
       }

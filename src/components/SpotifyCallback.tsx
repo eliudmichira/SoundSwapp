@@ -52,14 +52,27 @@ const SpotifyCallback: React.FC = () => {
           setError('You need to be logged in to connect your Spotify account');
           return;
         }
+
+        // Log URL parameters for debugging
+        const urlParams = new URLSearchParams(window.location.search);
+        console.log('Callback URL parameters:', {
+          code: urlParams.get('code') ? 'present' : 'missing',
+          state: urlParams.get('state') ? 'present' : 'missing',
+          error: urlParams.get('error') || 'none'
+        });
         
         // Handle the callback (token is in URL)
         const result = await handleSpotifyCallback();
         
         if (!result.success) {
-          // For mobile devices, especially Android, check if error might be related to
-          // network conditions or timeouts
-          if (isMobileDevice() && 
+          // Check for specific error conditions
+          if (result.error?.includes('authorization code')) {
+            setStatus('error');
+            setError('Failed to validate Spotify authorization. Please try connecting again.');
+          } else if (result.error?.includes('state parameter')) {
+            setStatus('error');
+            setError('Authentication session expired. Please try connecting again.');
+          } else if (isMobileDevice() && 
               (result.error?.includes('timeout') || 
                result.error?.includes('network') || 
                result.error?.includes('connection'))) {
@@ -73,6 +86,12 @@ const SpotifyCallback: React.FC = () => {
         }
         
         setStatus('success');
+        
+        // Dispatch event to notify application of successful authentication
+        window.dispatchEvent(new CustomEvent('spotify-auth-changed', { 
+          detail: { authenticated: true } 
+        }));
+        console.log("Dispatched spotify-auth-changed event");
         
         // Redirect after a short delay
         // Use a longer delay on mobile to ensure the success message is seen
@@ -92,11 +111,11 @@ const SpotifyCallback: React.FC = () => {
              error.message.includes('connection') || 
              error.message.includes('offline'))) {
           setStatus('network-error');
+          setError('Network error during authentication. Please check your connection and try again.');
         } else {
           setStatus('error');
+          setError(error instanceof Error ? error.message : 'Failed to authenticate with Spotify');
         }
-        
-        setError(error instanceof Error ? error.message : 'Failed to authenticate with Spotify');
       }
     };
     

@@ -1,122 +1,126 @@
-import { generateRandomString } from './cryptoUtils';
+import { generateRandomString, generateCodeVerifier, generateCodeChallenge } from './cryptoUtils';
 import { isMobileDevice } from './utils';
 import { spotifyConfig } from './env';
+import { db } from './firebase';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { TokenManager } from './tokenManager';
 
-// Spotify API credentials
-const CLIENT_ID = spotifyConfig.clientId;
-const CLIENT_SECRET = spotifyConfig.clientSecret;
-const REDIRECT_URI = spotifyConfig.redirectUri;
-const SCOPES = [
+// Spotify API configuration
+const SPOTIFY_CONFIG = {
+  CLIENT_ID: spotifyConfig.clientId,
+  CLIENT_SECRET: spotifyConfig.clientSecret,
+  REDIRECT_URI: spotifyConfig.redirectUri,
+  VALID_REDIRECT_URIS: spotifyConfig.validRedirectUris,
+  AUTH_ENDPOINT: 'https://accounts.spotify.com/authorize',
+  TOKEN_ENDPOINT: 'https://accounts.spotify.com/api/token',
+  SCOPES: [
   'user-read-private',
   'user-read-email',
   'playlist-read-private',
   'playlist-read-collaborative',
   'playlist-modify-public',
   'playlist-modify-private'
-];
-
-// Switch to Authorization Code Flow (PKCE) to avoid CSP issues
-export const initSpotifyAuth = () => {
-  // Generate a random state value for security
-  const state = generateRandomString(16);
-  
-  // Generate code verifier and code challenge for PKCE
-  const codeVerifier = generateRandomString(64);
-  
-  // Store values for later verification in both storages for redundancy
-  localStorage.setItem('spotify_auth_state', state);
-  sessionStorage.setItem('spotify_auth_state', state); // Also store in sessionStorage
-  localStorage.setItem('spotify_code_verifier', codeVerifier);
-  
-  // Also store the current URL to return to after auth completes
-  localStorage.setItem('spotify_auth_return_path', window.location.pathname);
-  
-  // Log state for debugging
-  console.log("Generated Spotify auth state:", state.substring(0, 5) + "...");
-  
-  // Build authorization URL with code flow parameters
-  const authUrl = new URL('https://accounts.spotify.com/authorize');
-  authUrl.searchParams.append('client_id', CLIENT_ID);
-  authUrl.searchParams.append('response_type', 'code'); // Use 'code' for authorization code flow
-  authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
-  authUrl.searchParams.append('state', state);
-  authUrl.searchParams.append('scope', SCOPES.join(' '));
-  // For maximum compatibility, don't use PKCE code challenge since we have a client secret
-  
-  // Check if running on mobile device
-  const isMobile = isMobileDevice();
-  
-  if (isMobile) {
-    console.log('Mobile device detected, using redirect flow for authentication');
-    // On mobile, use full redirect to avoid popup issues
-  window.location.href = authUrl.toString();
-  } else {
-    // On desktop, continue using popup flow
-    const width = 450;
-    const height = 730;
-    const left = (window.screen.width / 2) - (width / 2);
-    const top = (window.screen.height / 2) - (height / 2);
-    
-    window.open(
-      authUrl.toString(),
-      'Spotify Login',
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
-  }
+  ]
 };
 
-// Check if user is fully authenticated before starting Spotify auth
-export const ensureUserAuthenticated = (): boolean => {
-  // First check if we have a user object in the window
-  const hasWindowUser = !!(window as any)?.auth?.currentUser || !!(window as any)?.auth?.user;
-  
-  // Check for Firebase auth user in localStorage (more reliable)
-  const firebaseUserKey = Object.keys(localStorage).find(key => 
-    key.startsWith('firebase:authUser:') && key.endsWith('[DEFAULT]')
-  );
-  const hasFirebaseAuth = !!firebaseUserKey;
-  
-  // For mobile browsers, check if we have auth tokens saved
-  const hasAuthTokens = !!localStorage.getItem('authUser') || 
-                       !!sessionStorage.getItem('authUser');
-  
-  // For debugging
-  console.log('Auth check:', { hasWindowUser, hasFirebaseAuth, hasAuthTokens });
-  
-  // Also check for session cookie if available
-  const hasAuthCookie = document.cookie.includes('firebaseAuth=true');
-  
-  // If any of these conditions are true, user is authenticated
-  const isAuthenticated = hasWindowUser || hasFirebaseAuth || hasAuthTokens || hasAuthCookie;
-  
-  // For debugging, particularly on mobile
-  if (!isAuthenticated) {
-    console.warn('User appears to be NOT authenticated when connecting to Spotify');
-  } else {
-    console.log('User is authenticated for Spotify connection');
-  }
-  
-  return isAuthenticated;
+// Types
+interface SpotifyTokens {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  token_type: string;
+  scope: string;
+}
+
+interface AuthState {
+  state: string;
+  codeVerifier: string;
+  returnPath: string;
+}
+
+// Storage keys
+const STORAGE_KEYS = {
+  AUTH_STATE: 'spotify_auth_state',
+  CODE_VERIFIER: 'spotify_code_verifier',
+  RETURN_PATH: 'spotify_auth_return_path',
+  ACCESS_TOKEN: 'spotify_access_token',
+  REFRESH_TOKEN: 'spotify_refresh_token',
+  EXPIRES_AT: 'spotify_token_expires_at',
+  REDIRECT_URI: 'spotify_redirect_uri'
 };
 
-// Handle the redirect from Spotify with auth code
-export const handleSpotifyCallback = async (): Promise<{ success: boolean, error?: string }> => {
+/**
+ * Check if user is authenticated before starting Spotify auth
+ */
+export const ensureUserAuthenticated = (): { isAuthenticated: boolean; error?: string } => {
+  const auth = getAuth();
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    return {
+      isAuthenticated: false,
+      error: 'You need to be signed in to connect your Spotify account'
+    };
+  }
+
+  return { isAuthenticated: true };
+};
+
+/**
+ * Initialize Spotify authentication flow using PKCE
+ */
+export const initSpotifyAuth = async (): Promise<{ success: boolean; error?: string }> => {
   try {
-    // Get the query parameters (code flow uses query params, not hash)
-    const urlParams = new URLSearchParams(window.location.search);
+    // Check if user is authenticated first
+    const { isAuthenticated, error: authError } = ensureUserAuthenticated();
     
-    // Get values from params
+    if (!isAuthenticated) {
+      return {
+        success: false,
+        error: authError || 'Authentication required'
+      };
+    }
+
+    // Generate auth URL with PKCE
+    const authUrl = await getSpotifyAuthUrl();
+    
+    // Store current path to return to after auth
+    localStorage.setItem('spotify_auth_return_path', window.location.pathname);
+    
+    // Use full page redirect for all devices (more reliable)
+    console.log('Using full page redirect for Spotify authentication');
+    window.location.href = authUrl;
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to initialize Spotify auth:', error);
+    return {
+      success: false,
+      error: 'Failed to initialize Spotify authentication'
+    };
+  }
+};
+
+/**
+ * Handle the OAuth callback from Spotify
+ */
+export const handleSpotifyCallback = async (): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Get URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     const error = urlParams.get('error');
     
-    console.log("Spotify callback received:", {
+    // Log parameters for debugging
+    console.log("Callback parameters:", {
       hasCode: !!code,
       hasState: !!state,
       error: error || 'none'
     });
   
-  // Check for errors
+    // Handle OAuth errors
   if (error) {
     return { 
       success: false, 
@@ -124,269 +128,348 @@ export const handleSpotifyCallback = async (): Promise<{ success: boolean, error
     };
   }
   
-    // Verify state parameter - check both localStorage and sessionStorage
-    const storedStateLocal = localStorage.getItem('spotify_auth_state');
-    const storedStateSession = sessionStorage.getItem('spotify_auth_state');
-    
-    // Use either state that matches
-    const storedState = storedStateLocal || storedStateSession;
-    
-    // Log state check
-    console.log("Spotify state validation:", {
-      receivedState: state?.substring(0, 5) + "...",
-      storedStateLocal: storedStateLocal?.substring(0, 5) + "...",
-      storedStateSession: storedStateSession?.substring(0, 5) + "..."
-    });
-    
-    // Clean up state after checking
-    localStorage.removeItem('spotify_auth_state');
-    sessionStorage.removeItem('spotify_auth_state');
-    
-    // Special case: if we have no saved state at all, this is likely
-    // a returning user after browser restart - proceed with a warning
-    if (!storedState) {
-      console.warn("No saved Spotify state found, proceeding with authentication anyway");
-    } else if (state !== storedState) {
-    return { 
-      success: false, 
-      error: 'State verification failed. The request might have been tampered with.'
-    };
-  }
-  
-    if (!code) {
+    if (!code || !state) {
       return { 
         success: false, 
-        error: 'No authorization code found in the URL'
+        error: 'Missing required authorization parameters' 
       };
     }
     
-    // Exchange code for token using fetch directly
-    const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
+    // Get stored auth state
+    const storedAuthState = getStoredAuthState();
+    if (!storedAuthState) {
+      return { 
+        success: false, 
+        error: 'No authentication state found' 
+      };
+    }
+    
+    // Validate state parameter
+    if (state !== storedAuthState.state) {
+    return { 
+      success: false, 
+        error: 'Invalid state parameter' 
+      };
+    }
+    
+    // Get the redirect URI that was used for the initial request
+    const usedRedirectUri = localStorage.getItem(STORAGE_KEYS.REDIRECT_URI) || SPOTIFY_CONFIG.REDIRECT_URI;
+    
+    // Exchange code for tokens using the same redirect URI
+    const tokens = await exchangeCodeForTokens(code, usedRedirectUri);
+    if (!tokens) {
+      return { 
+        success: false, 
+        error: 'Failed to exchange authorization code for tokens' 
+      };
+    }
+    
+    // Store tokens securely
+    await storeTokens(tokens);
+    
+    // Clean up auth state
+    clearAuthState();
+    localStorage.removeItem(STORAGE_KEYS.REDIRECT_URI);
+    
+    // Dispatch event to notify application of successful authentication
+    window.dispatchEvent(new CustomEvent('spotify-auth-changed', { 
+      detail: { authenticated: true } 
+    }));
+    
+    console.log("Spotify authentication successful, dispatched spotify-auth-changed event");
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Spotify callback error:', error);
+    return { 
+      success: false, 
+      error: 'Failed to complete authentication' 
+    };
+  }
+};
+
+/**
+ * Exchange authorization code for tokens
+ */
+async function exchangeCodeForTokens(code: string, redirectUri: string): Promise<SpotifyTokens | null> {
+  try {
+    // Get stored auth state to retrieve code verifier
+    const storedAuthState = getStoredAuthState();
+    if (!storedAuthState?.codeVerifier) {
+      console.error('No code verifier found in stored auth state');
+      return null;
+    }
+
+    const response = await fetch(SPOTIFY_CONFIG.TOKEN_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        // Encode client credentials in Basic Authorization header
-        'Authorization': 'Basic ' + btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)
       },
       body: new URLSearchParams({
+        client_id: SPOTIFY_CONFIG.CLIENT_ID,
+        client_secret: SPOTIFY_CONFIG.CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
-        redirect_uri: REDIRECT_URI
-      }).toString(),
-      mode: 'cors'
+        redirect_uri: redirectUri,
+        code_verifier: storedAuthState.codeVerifier
+      }).toString()
     });
-    
-    if (!tokenResponse.ok) {
-      let errorMessage = `Failed to exchange authorization code: Status ${tokenResponse.status}`;
-      try {
-        const errorData = await tokenResponse.json();
-        console.error('Token exchange error:', errorData);
-        errorMessage = `Failed to exchange authorization code: ${errorData.error_description || errorData.error}`;
-      } catch (e) {
-        console.error('Could not parse error response:', e);
-      }
-      
-    return { 
-      success: false, 
-        error: errorMessage
-    };
-  }
-    
-    const tokenData = await tokenResponse.json();
-  
-  // Store tokens in localStorage
-    localStorage.setItem('spotify_access_token', tokenData.access_token);
-    localStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
-  localStorage.setItem('spotify_token_expires_at', 
-      (Date.now() + (tokenData.expires_in * 1000)).toString());
-  
-  // Clean up state
-  localStorage.removeItem('spotify_auth_state');
-    localStorage.removeItem('spotify_code_verifier');
-    
-    // If this is a popup window, notify the parent and close
-    if (window.opener && !window.opener.closed) {
-      window.opener.postMessage({ type: 'SPOTIFY_AUTH_SUCCESS' }, window.location.origin);
-      window.close();
-    } else {
-      // For mobile redirect flow, retrieve the return path
-      const returnPath = localStorage.getItem('spotify_auth_return_path') || '/';
-      localStorage.removeItem('spotify_auth_return_path');
-      
-      // If we're already at that path, no need to navigate
-      if (window.location.pathname !== returnPath) {
-        window.location.href = returnPath;
-      }
-    }
-  
-  return { success: true };
-  } catch (error) {
-    console.error('Spotify auth callback error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error during Spotify authentication'
-    };
-  }
-};
 
-// Get a valid token, refreshing if needed
-export const getSpotifyToken = async (): Promise<string | null> => {
-  const accessToken = localStorage.getItem('spotify_access_token');
-  const refreshToken = localStorage.getItem('spotify_refresh_token');
-  const expiresAt = localStorage.getItem('spotify_token_expires_at');
-  
-  if (!accessToken) {
-    console.log('No access token available, authentication required');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error('Token exchange error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData
+      });
+      return null;
+    }
+
+    const tokens = await response.json();
+    return tokens;
+  } catch (error) {
+    console.error('Failed to exchange code for tokens:', error);
     return null;
   }
-  
-  // Check if token is not expired yet, return immediately
-  // Add a buffer of 5 minutes (300,000 ms) to refresh before actual expiration
-  if (expiresAt && Date.now() < Number(expiresAt) - 300000) {
-    return accessToken;
+}
+
+/**
+ * Get the current user ID from Firebase Auth
+ */
+function getUserId(): string | null {
+  const auth = getAuth();
+  return auth.currentUser?.uid || null;
+}
+
+/**
+ * Store tokens securely in both localStorage and Firestore
+ */
+async function storeTokens(tokens: SpotifyTokens): Promise<void> {
+  try {
+    const expiresAt = Date.now() + (tokens.expires_in * 1000);
+    
+    // Store using TokenManager
+    TokenManager.storeTokens('spotify', {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt
+    });
+    
+    // Store in Firestore for persistence
+    const userId = getUserId();
+    if (userId) {
+      try {
+        const userTokenRef = doc(db, 'users', userId, 'tokens', 'spotify');
+        await setDoc(userTokenRef, {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt
+        });
+        
+        // Also update the user document to indicate Spotify is connected
+        const userRef = doc(db, 'users', userId);
+        await setDoc(userRef, {
+          spotifyConnected: true,
+          lastUpdated: new Date()
+        }, { merge: true });
+        
+      } catch (firestoreError) {
+        console.error('Failed to store tokens in Firestore:', firestoreError);
+        // Continue execution - localStorage backup is still available
+      }
+    }
+    
+    // Dispatch event to notify about token update
+    window.dispatchEvent(new CustomEvent('spotify-auth-changed', {
+      detail: { authenticated: true }
+    }));
+  } catch (error) {
+    console.error('Failed to store tokens:', error);
+    throw error;
   }
+}
+
+/**
+ * Get stored auth state from either localStorage or sessionStorage
+ */
+function getStoredAuthState(): AuthState | null {
+  const localState = localStorage.getItem(STORAGE_KEYS.AUTH_STATE);
+  const sessionState = sessionStorage.getItem(STORAGE_KEYS.AUTH_STATE);
   
-  console.log('Token expired or will soon expire, attempting refresh');
-  
-  // Token is expired, try to refresh
-  if (refreshToken) {
-    try {
-      console.log('Using refresh token to get new access token');
-      const refreshResponse = await fetch('https://accounts.spotify.com/api/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': 'Basic ' + btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)
-        },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken
-        }).toString(),
-        mode: 'cors'
-      });
-      
-      if (!refreshResponse.ok) {
-        // Get error details for better debugging
-        let errorData;
-        try {
-          errorData = await refreshResponse.json();
-          console.error('Spotify refresh token error:', errorData);
-        } catch (e) {
-          console.error('Failed to parse error response from Spotify:', e);
-        }
+  try {
+    return JSON.parse(localState || sessionState || 'null');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clear authentication state from storage
+ */
+function clearAuthState(): void {
+  localStorage.removeItem(STORAGE_KEYS.AUTH_STATE);
+  sessionStorage.removeItem(STORAGE_KEYS.AUTH_STATE);
+}
+
+/**
+ * Check if the current Spotify access token is valid
+ */
+export function isSpotifyAuthenticated(): boolean {
+  try {
+    // Use TokenManager for consistent token validation
+    return TokenManager.hasValidTokens('spotify');
+  } catch (error) {
+    console.error('Error checking Spotify authentication:', error);
+    return false;
+  }
+}
+
+/**
+ * Get the current access token, refreshing if necessary
+ */
+export async function getSpotifyToken(): Promise<string | null> {
+  try {
+    console.log('[DEBUG] getSpotifyToken() called');
+    
+    // Use TokenManager to get tokens
+    const tokens = TokenManager.getTokens('spotify');
+    console.log('[DEBUG] Tokens from TokenManager:', tokens ? 'Found' : 'Not found');
+    
+    if (tokens) {
+      console.log('[DEBUG] Returning valid token from TokenManager');
+      return tokens.accessToken;
+    }
+    
+    console.log('[DEBUG] No valid tokens found, attempting refresh...');
+    
+    // If no valid tokens, try to refresh using TokenManager
+    const storedTokens = TokenManager.getTokens('spotify');
+    if (storedTokens?.refreshToken) {
+      console.log('[DEBUG] Found refresh token in TokenManager, attempting refresh...');
+      const newTokens = await refreshAccessToken(storedTokens.refreshToken);
+      if (newTokens) {
+        console.log('[DEBUG] Token refresh successful, storing new tokens...');
         
-        // If refresh fails with 401, the refresh token is invalid or expired
-        if (refreshResponse.status === 401) {
-          console.warn('Refresh token is invalid, clearing auth data');
-          logoutFromSpotify();
-          return null;
-        }
+        // Store using TokenManager
+        TokenManager.storeTokens('spotify', {
+          accessToken: newTokens.access_token,
+          refreshToken: newTokens.refresh_token,
+          expiresAt: Date.now() + (newTokens.expires_in * 1000)
+        });
         
-        // For other error codes, try one more time after a short delay
-        // This helps with transient network issues
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const retryResponse = await fetch('https://accounts.spotify.com/api/token', {
+        console.log('[DEBUG] New tokens stored successfully');
+        return newTokens.access_token;
+      } else {
+        console.error('[DEBUG] Token refresh failed');
+      }
+    } else {
+      console.log('[DEBUG] No refresh token available');
+    }
+    
+    console.log('[DEBUG] No valid token available');
+    return null;
+  } catch (error) {
+    console.error('[DEBUG] Error in getSpotifyToken:', error);
+    return null;
+  }
+}
+
+/**
+ * Refresh the access token using the refresh token
+ */
+async function refreshAccessToken(refreshToken: string): Promise<SpotifyTokens | null> {
+  try {
+    const response = await fetch(SPOTIFY_CONFIG.TOKEN_ENDPOINT, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': 'Basic ' + btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)
+        'Content-Type': 'application/x-www-form-urlencoded'
           },
           body: new URLSearchParams({
             grant_type: 'refresh_token',
-            refresh_token: refreshToken
-          }).toString(),
-          mode: 'cors'
-        });
-        
-        if (!retryResponse.ok) {
-          // If retry also fails, clear tokens and return null
-          console.error('Spotify token refresh retry failed, status:', retryResponse.status);
-          logoutFromSpotify();
-          return null;
-        }
-        
-        const retryData = await retryResponse.json();
-        
-        // Store new tokens
-        localStorage.setItem('spotify_access_token', retryData.access_token);
-        localStorage.setItem('spotify_token_expires_at', 
-          (Date.now() + (retryData.expires_in * 1000)).toString());
-        
-        // Some refresh responses include a new refresh token
-        if (retryData.refresh_token) {
-          localStorage.setItem('spotify_refresh_token', retryData.refresh_token);
-        }
-        
-        console.log('Successfully refreshed Spotify token on retry');
-        return retryData.access_token;
-      }
-      
-      const refreshData = await refreshResponse.json();
-      
-      // Store new tokens
-      localStorage.setItem('spotify_access_token', refreshData.access_token);
-      localStorage.setItem('spotify_token_expires_at', 
-        (Date.now() + (refreshData.expires_in * 1000)).toString());
-      
-      // Some refresh responses include a new refresh token
-      if (refreshData.refresh_token) {
-        localStorage.setItem('spotify_refresh_token', refreshData.refresh_token);
-      }
-      
-      console.log('Successfully refreshed Spotify token');
-      return refreshData.access_token;
-    } catch (error) {
-      console.error('Error refreshing Spotify token:', error);
-      logoutFromSpotify();
+        refresh_token: refreshToken,
+        client_id: SPOTIFY_CONFIG.CLIENT_ID
+      }).toString()
+    });
+
+    if (!response.ok) {
       return null;
     }
-  } else {
-    // No refresh token, user needs to re-authenticate
-    console.warn('No refresh token available, user needs to re-authenticate');
-    logoutFromSpotify();
+
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to refresh access token:', error);
     return null;
   }
-};
+}
 
-// Synchronous version for compatibility
-export const getSpotifyTokenSync = (): string | null => {
-  const accessToken = localStorage.getItem('spotify_access_token');
-  const expiresAt = localStorage.getItem('spotify_token_expires_at');
+/**
+ * Log out from Spotify by clearing all tokens and state
+ */
+export function logoutFromSpotify(): void {
+  // Clear tokens using TokenManager
+  TokenManager.clearTokens('spotify');
   
-  if (!accessToken) {
-    return null;
+  // Clear legacy storage keys for backward compatibility
+  Object.values(STORAGE_KEYS).forEach(key => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+}
+
+/**
+ * Check the current authentication status
+ */
+async function checkAuthStatus(): Promise<void> {
+  const isAuthed = isSpotifyAuthenticated();
+  if (!isAuthed) {
+    // Trigger auth state change in your app
+    window.dispatchEvent(new CustomEvent('spotify-auth-changed', { 
+      detail: { authenticated: false } 
+    }));
   }
-  
-  // Check if token is expired - with 5 minute buffer
-  if (expiresAt && Date.now() > Number(expiresAt) - 300000) {
-    // Token is expired or will expire soon
-    console.warn('Spotify token is expired or will expire soon (from sync check)');
-    
-    // Trigger an async refresh in the background but don't wait for it
-    getSpotifyToken().catch(error => {
-      console.error('Background token refresh failed:', error);
-    });
-    
-    // Return null to force the caller to handle auth flow
-    return null;
-  }
-  
-  return accessToken;
-};
+}
 
-// Check if user is authenticated with Spotify
-export const isSpotifyAuthenticated = (): boolean => {
-  return !!localStorage.getItem('spotify_access_token');
-};
-
-// Logout from Spotify
-export const logoutFromSpotify = (): void => {
-  localStorage.removeItem('spotify_access_token');
-  localStorage.removeItem('spotify_refresh_token');
-  localStorage.removeItem('spotify_token_expires_at');
-  localStorage.removeItem('spotify_auth_state');
-  localStorage.removeItem('spotify_code_verifier');
+// Add this new function
+export const getSpotifyAuthUrl = async (): Promise<string> => {
+  // Generate PKCE and state values
+  const state = generateRandomString(32);
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+  
+  // Store auth state securely
+  const authState: AuthState = {
+    state,
+    codeVerifier,
+    returnPath: window.location.pathname
+  };
+  
+  // Store in both storages for redundancy
+  localStorage.setItem(STORAGE_KEYS.AUTH_STATE, JSON.stringify(authState));
+  sessionStorage.setItem(STORAGE_KEYS.AUTH_STATE, JSON.stringify(authState));
+  
+  // Store the current redirect URI being used
+  localStorage.setItem(STORAGE_KEYS.REDIRECT_URI, SPOTIFY_CONFIG.REDIRECT_URI);
+  
+  // Build authorization URL with PKCE
+  const authUrl = new URL(SPOTIFY_CONFIG.AUTH_ENDPOINT);
+  const params = {
+    client_id: SPOTIFY_CONFIG.CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: SPOTIFY_CONFIG.REDIRECT_URI,
+    code_challenge_method: 'S256',
+    code_challenge: codeChallenge,
+    state: state,
+    scope: SPOTIFY_CONFIG.SCOPES.join(' ')
+  };
+  
+  Object.entries(params).forEach(([key, value]) => {
+    authUrl.searchParams.append(key, value);
+  });
+  
+  // Log the auth URL for debugging
+  console.log('Spotify Auth URL:', authUrl.toString());
+  
+  return authUrl.toString();
 };
 
 // Add this new function
@@ -427,3 +510,14 @@ export const getSpotifyUserProfile = async (): Promise<any | null> => {
     return null;
   }
 }; 
+
+/**
+ * Get the current access token synchronously (no refresh)
+ */
+export function getSpotifyTokenSync(): string | null {
+  console.log('[DEBUG] getSpotifyTokenSync() called');
+  const tokens = TokenManager.getTokens('spotify');
+  const token = tokens?.accessToken || null;
+  console.log('[DEBUG] getSpotifyTokenSync result:', token ? 'Found' : 'Not found');
+  return token;
+} 

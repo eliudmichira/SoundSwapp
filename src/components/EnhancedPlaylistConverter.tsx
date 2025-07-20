@@ -1132,26 +1132,30 @@ const ModernPlaylistConverter: React.FC = () => {
       number: 1,
       label: 'Select Source',
       help: 'Choose the platform you want to import your playlist from (Spotify or YouTube).',
-      icon: <Settings size={24} />
+      icon: <Settings size={24} />,
+      className: 'text-white'  // Always white since background is dark
     },
     {
       number: 2,
       label: 'Import Playlist',
       help: 'Paste your playlist URL or select from your library to import tracks.',
-      icon: <Upload size={24} />
+      icon: <Upload size={24} />,
+      className: 'text-white'
     },
     {
       number: 3,
       label: 'Review Tracks',
       help: 'Review the imported tracks and make sure everything looks correct.',
-      icon: <FileSpreadsheet size={24} />
+      icon: <FileSpreadsheet size={24} />,
+      className: 'text-white'
     },
     {
       number: 4,
       label: 'Export Playlist',
       help: 'Export your playlist to the destination platform with one click.',
-      icon: <Download size={24} />
-    },
+      icon: <Download size={24} />,
+      className: 'text-white'
+    }
   ], []);
 
   // Feature description data
@@ -1499,16 +1503,24 @@ const ModernPlaylistConverter: React.FC = () => {
                       transition={{ duration: 0.3 }}
                     >
                       <div>
-                        <h3 className="text-2xl font-bold mb-2 text-content-primary dark:text-white">
+                        <div className="mb-8">
+                          <h2 className={cn(
+                            "text-2xl font-bold mb-2",
+                            "text-white"  // Always white since background is dark
+                          )}>
                           {wizardSteps[0].label}
-                        </h3>
-                        <p className="text-base text-content-secondary dark:text-gray-300 mb-8">
+                          </h2>
+                          <p className={cn(
+                            "text-white/90",  // Always white with high opacity since background is dark
+                            "text-lg"
+                          )}>
                           {wizardSteps[0].help}
                         </p>
+                        </div>
                         
                         <div className="grid sm:grid-cols-2 gap-8 mb-8">
                           <div>
-                            <label className="block text-lg font-semibold text-content-primary dark:text-white mb-3">
+                            <label className="block text-xl font-bold mb-3 text-white">
                               Source Platform
                             </label>
                             <div className="flex flex-col gap-3">
@@ -1567,7 +1579,7 @@ const ModernPlaylistConverter: React.FC = () => {
                           </div>
                           
                           <div>
-                            <label className="block text-lg font-semibold text-content-primary dark:text-white mb-3">
+                            <label className="block text-xl font-bold mb-3 text-white">
                               Destination Platform
                             </label>
                             <div className="flex flex-col gap-3">
@@ -1658,11 +1670,21 @@ const ModernPlaylistConverter: React.FC = () => {
                       transition={{ duration: 0.3 }}
                     >
                       <div>
-                        <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
-                          <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-red-500"><Upload size={24} /></span>
-                          Import Playlist
-                          <span className="sr-only">{wizardSteps[1].help}</span>
+                        <h3 className={cn(
+                          "text-lg font-bold mb-2",
+                          "text-white"  // White in both themes
+                        )}>
+                          <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-red-500">
+                            {wizardSteps[currentWizardStep - 1]?.icon}
+                          </span>
+                          {wizardSteps[currentWizardStep - 1]?.label}
                         </h3>
+                        <p className={cn(
+                          "mb-4",
+                          "text-white"  // White in both themes
+                        )}>
+                          {wizardSteps[currentWizardStep - 1]?.help}
+                        </p>
                         
                         {/* Platform-specific import UI */}
                         <div className="mt-2 flex flex-col gap-3 w-full">
@@ -1721,30 +1743,29 @@ const ModernPlaylistConverter: React.FC = () => {
                               {/* Your Playlists button with dropdown */}
                               <div className="w-full my-2">
                                 <button
+                                  onClick={() => setShowPlaylistSuggestions(true)}
                                   className={cn(
-                                    "w-full px-4 py-2 rounded-md border flex items-center justify-between",
-                                    isDark ? "bg-gray-800 border-gray-700 text-gray-300" : "bg-white border-gray-300 text-gray-700",
-                                    "hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
-                                    "focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    "w-full px-4 py-3 rounded-lg flex items-center justify-between",
+                                    "bg-white dark:bg-surface-card-dark",
+                                    "border border-border dark:border-border-dark",
+                                    "hover:bg-surface-hover dark:hover:bg-surface-hover-dark",
+                                    "transition-all duration-200"
                                   )}
-                                  onClick={() => setShowPlaylistSuggestions(!showPlaylistSuggestions)}
-                                  aria-expanded={showPlaylistSuggestions}
-                                  aria-controls="playlist-dropdown"
-                                  aria-label="Show your Spotify playlists"
                                 >
-                                  <span className="flex items-center">
-                                    <FaSpotify className="mr-2 text-green-500" aria-hidden="true" />
-                                    <span>Your Spotify Playlists</span>
-                                  </span>
-                                  <ChevronRight 
-                                    size={16} 
-                                    className={cn(
-                                      "transition-transform",
-                                      showPlaylistSuggestions ? "rotate-90" : ""
-                                    )}
-                                    aria-hidden="true"
-                                  />
+                                  <div className="flex items-center gap-2">
+                                    <FaSpotify className="h-5 w-5 text-[#1DB954]" />
+                                    <span className="text-gray-900 dark:text-gray-900">Your Spotify Playlists</span>
+                                  </div>
+                                  <ChevronRight className="h-5 w-5 text-gray-400" />
                                 </button>
+                                
+                                {/* Update the help text */}
+                                <p className={cn(
+                                  "text-white",  // White in both themes
+                                  "text-sm mt-2"
+                                )}>
+                                  Paste your playlist URL or select from your library to import tracks.
+                                </p>
                                 
                                 {/* Playlist suggestions dropdown */}
                                 <AnimatePresence>

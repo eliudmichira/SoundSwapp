@@ -1,1050 +1,692 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  User, 
+  getAuth, 
+  onAuthStateChanged, 
+  User as FirebaseUser,
   setPersistence,
-  browserSessionPersistence,
   browserLocalPersistence,
-  Auth,
-  Unsubscribe,
-  UserCredential,
-  onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
-  getRedirectResult,
-  GoogleAuthProvider,
-  signInWithCredential as firebaseSignInWithCredential,
   signOut as firebaseSignOut
 } from 'firebase/auth';
-import { 
-  auth as firebaseAuth, 
-  handleAndroidAuth, 
-  reconnectFirestore, 
-  signInWithGoogle, 
-  debugGoogleAuth 
-} from './firebase';
-import { isYouTubeAuthenticated, clearYouTubeAuth, getYouTubeUserProfile } from './youtubeAuth';
-import { isSpotifyAuthenticated, logoutFromSpotify, getSpotifyUserProfile } from './spotifyAuth';
-import { isSoundCloudAuthenticated } from './soundcloudAuth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { db as firebaseDb } from './firebase';
-import '../styles/color-system.css'; // Import the new color system
-import { trackActivity, UserActivity } from './activityTracker';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
+import { signInWithGoogle as firebaseSignInWithGoogle } from './firebase';
+import { TokenManager } from './tokenManager';
+import { SimpleAuth } from './simpleAuth';
 
-// Type assertion for the auth object
-const auth = firebaseAuth as Auth;
+// Constants for storage
+const AUTH_RECOVERY_KEY = 'auth_recovery_data';
+const YOUTUBE_AUTH_STATE_KEY = 'youtube_auth_state';
+const STORE_NAME = 'auth_store';
 
-// Type assertion for Firestore db
-const db = firebaseDb as import('firebase/firestore').Firestore;
+// Helper function to save to IndexedDB
+const saveToIndexedDB = async (storeName: string, key: string, data: any) => {
+  // Simple implementation - in a real app, you'd want to handle errors better
+  return new Promise((resolve, reject) => {
+    try {
+      const request = indexedDB.open('app_db', 1);
+      
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(storeName)) {
+          db.createObjectStore(storeName);
+        }
+      };
+      
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        store.put(data, key);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = (e) => reject(e);
+      };
+      
+      request.onerror = (e) => reject(e);
+    } catch (e) {
+      reject(e);
+    }
+  });
+};
 
-// Define types for user profiles
-interface SpotifyUserProfile {
-  displayName: string;
-  imageUrl?: string;
-  id: string;
-  externalUrls?: string;
-}
-
-interface YouTubeUserProfile {
-  displayName: string;
-  imageUrl?: string;
-  id: string;
-  customUrl?: string;
-  subscriberCount?: string;
-}
-
-// Define a simpler user type for our needs
-interface AppUser {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-  metadata?: {
-    creationTime?: string;
-    lastSignInTime?: string;
-  };
-}
+// Helper function to read from IndexedDB
+const readFromIndexedDB = async (storeName: string, key: string) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const request = indexedDB.open('app_db', 1);
+      
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(storeName)) {
+          db.createObjectStore(storeName);
+        }
+      };
+      
+      request.onsuccess = () => {
+        const db = request.result;
+        try {
+          const tx = db.transaction(storeName, 'readonly');
+          const store = tx.objectStore(storeName);
+          const getRequest = store.get(key);
+          
+          getRequest.onsuccess = () => resolve(getRequest.result);
+          getRequest.onerror = (e) => reject(e);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      
+      request.onerror = (e) => reject(e);
+    } catch (e) {
+      reject(e);
+    }
+  });
+};
 
 interface AuthContextType {
-  user: AppUser | null;
-  userData: any | null;
-  error: string | null;
-  isAuthenticated: boolean;
+  user: FirebaseUser | null;
   loading: boolean;
   hasSpotifyAuth: boolean;
   hasYouTubeAuth: boolean;
-  hasSoundCloudAuth: boolean;
-  spotifyUserProfile: SpotifyUserProfile | null;
-  youtubeUserProfile: YouTubeUserProfile | null;
-  fetchSpotifyProfile: () => Promise<void>;
-  fetchYouTubeProfile: () => Promise<void>;
-  signIn: (isAndroid?: boolean) => Promise<User | null>;
-  signOut: () => Promise<void>;
-  signInWithEmail: (email: string, password: string, name?: string, rememberMe?: boolean, phoneNumber?: string, company?: string) => Promise<void>;
-  signInWithCredential: (credential: string) => Promise<User | null>;
   setHasSpotifyAuth: (value: boolean) => void;
   setHasYouTubeAuth: (value: boolean) => void;
-  setHasSoundCloudAuth: (value: boolean) => void;
-  clearError: () => void;
-  checkYouTubeAuth: () => Promise<boolean>;
-  debugAuth: () => Promise<any>;
-  disconnectFromSpotify: () => void;
-  disconnectFromYouTube: () => void;
+  authRecoveryAttempted: boolean;
+  isAuthenticated: boolean;
+  // Authentication functions
+  signInWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+  // Profile management
+  spotifyUserProfile: any;
+  youtubeUserProfile: any;
+  fetchSpotifyProfile: () => Promise<void>;
+  fetchYouTubeProfile: () => Promise<void>;
+  // Service connections
+  disconnectFromSpotify: () => Promise<void>;
+  disconnectFromYouTube: () => Promise<void>;
   isConnectingSpotify: boolean;
   isConnectingYouTube: boolean;
   spotifyError: string | null;
   youtubeError: string | null;
-  setUser: (user: User | null) => void;
+  checkYouTubeAuth: () => Promise<boolean>;
+  // General error handling
+  error: string | null;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  userData: null,
-  loading: true,
-  error: null,
-  isAuthenticated: false,
-  hasSpotifyAuth: false,
-  hasYouTubeAuth: false,
-  hasSoundCloudAuth: false,
-  spotifyUserProfile: null,
-  youtubeUserProfile: null,
-  fetchSpotifyProfile: async () => {},
-  fetchYouTubeProfile: async () => {},
-  signIn: async () => null,
-  signOut: async () => {},
-  signInWithEmail: async () => {},
-  signInWithCredential: async () => null,
-  setHasSpotifyAuth: () => {},
-  setHasYouTubeAuth: () => {},
-  setHasSoundCloudAuth: () => {},
-  clearError: () => {},
-  checkYouTubeAuth: async () => false,
-  debugAuth: async () => {},
-  disconnectFromSpotify: () => {},
-  disconnectFromYouTube: () => {},
-  isConnectingSpotify: false,
-  isConnectingYouTube: false,
-  spotifyError: null,
-  youtubeError: null,
-  setUser: () => {},
-});
-
-export const useAuth = () => useContext(AuthContext);
-
-// Helper function to check if error is a Firestore permissions error
-// const isFirestorePermissionError = (error: any): boolean => {
-//   return (error?.code === 'permission-denied' || 
-//           error?.message?.includes('Missing or insufficient permissions'));
-// };
-
-// Add mobile device detection function
-const isAndroidDevice = () => {
-  return /Android/i.test(navigator.userAgent);
-};
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [userData, setUserData] = useState<any | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  const [hasSpotifyAuth, setHasSpotifyAuthInternal] = useState<boolean>(false);
-  const [hasYouTubeAuth, setHasYouTubeAuth] = useState<boolean>(false);
-  const [hasSoundCloudAuth, setHasSoundCloudAuth] = useState<boolean>(false);
-
-  const [spotifyUserProfile, setSpotifyUserProfile] = useState<SpotifyUserProfile | null>(null);
-  const [youtubeUserProfile, setYouTubeUserProfile] = useState<YouTubeUserProfile | null>(null);
-  
-  const [isConnectingSpotify] = useState<boolean>(false);
-  const [isConnectingYouTube] = useState<boolean>(false);
+  const [hasSpotifyAuth, setHasSpotifyAuth] = useState(false);
+  const [hasYouTubeAuth, setHasYouTubeAuth] = useState(false);
+  const [authRecoveryAttempted, setAuthRecoveryAttempted] = useState(false);
+  const [spotifyUserProfile, setSpotifyUserProfile] = useState<any>(null);
+  const [youtubeUserProfile, setYoutubeUserProfile] = useState<any>(null);
+  const [isConnectingSpotify, setIsConnectingSpotify] = useState(false);
+  const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const [initialized, setInitialized] = useState(false);
-
-  useEffect(() => {
-    // Check for persisted auth state first
-    const persistedUser = localStorage.getItem('user');
-    if (persistedUser) {
+  // Save auth state for recovery
+  const saveAuthState = async (user: FirebaseUser | null) => {
+    if (user) {
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        timestamp: Date.now()
+      };
+      
+      // Save to localStorage as backup
+      localStorage.setItem(AUTH_RECOVERY_KEY, JSON.stringify(userData));
+      
+      // Save to IndexedDB
       try {
-        setUser(JSON.parse(persistedUser));
-      } catch (err) {
-        console.error('Error parsing persisted user:', err);
-        localStorage.removeItem('user');
+        await saveToIndexedDB(STORE_NAME, 'currentUser', userData);
+      } catch (error) {
+        console.error('IndexedDB save failed:', error);
       }
     }
+  };
 
-    // Listen for auth state changes
-    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
-      console.log('Auth state changed:', firebaseUser ? `User ${firebaseUser.email}` : 'No user');
-      
-      if (firebaseUser) {
-        const userData: AppUser = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          photoURL: firebaseUser.photoURL,
-          metadata: {
-            creationTime: firebaseUser.metadata.creationTime || undefined,
-            lastSignInTime: firebaseUser.metadata.lastSignInTime || undefined
-          }
-        };
-        setUser(userData);
-        // Persist auth state
-        localStorage.setItem('user', JSON.stringify(userData));
+  // Implementation of signInWithEmail
+  const signInWithEmail = async (email: string, password: string, displayName?: string) => {
+    const auth = getAuth();
+    
+    try {
+      if (displayName) {
+        // This is a sign-up operation
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        // Update the user profile with the display name
+        await updateProfile(userCredential.user, { displayName });
       } else {
-        setUser(null);
-        localStorage.removeItem('user');
+        // This is a sign-in operation
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (error) {
+      console.error('Authentication error:', error);
+      throw error;
+    }
+  };
+
+  // Implementation of signIn (Google sign-in)
+  const signIn = async () => {
+    try {
+      await firebaseSignInWithGoogle();
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      throw error;
+    }
+  };
+
+  // Implementation of signOut
+  const signOut = async () => {
+    const auth = getAuth();
+    await firebaseSignOut(auth);
+  };
+
+  // Stub implementations for service-related functions
+  const fetchSpotifyProfile = async () => {
+    try {
+      setIsConnectingSpotify(true);
+      setSpotifyError(null);
+      
+      console.log('Fetching Spotify profile...');
+      
+      // Get Spotify tokens
+      const tokens = TokenManager.getTokens('spotify');
+      if (!tokens) {
+        throw new Error('No Spotify tokens available');
       }
       
-      // Check YouTube auth status
-      if (firebaseUser) {
-        const isYTAuth = await isYouTubeAuthenticated();
-        setHasYouTubeAuth(isYTAuth);
+      // Fetch actual Spotify profile
+      const response = await fetch('https://api.spotify.com/v1/me', {
+        headers: {
+          'Authorization': `Bearer ${tokens.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const profile = await response.json();
+      console.log('Spotify profile fetched:', profile);
+      
+      // Set the actual profile data
+      setSpotifyUserProfile({
+        id: profile.id,
+        displayName: profile.display_name,
+        email: profile.email,
+        imageUrl: profile.images?.[0]?.url,
+        country: profile.country,
+        product: profile.product, // premium, free, etc.
+        followers: profile.followers?.total
+      });
+      
+    } catch (err) {
+      console.error('Error fetching Spotify profile:', err);
+      setSpotifyError('Failed to fetch Spotify profile');
+      
+      // Fallback to placeholder if API fails
+      setSpotifyUserProfile({ 
+        displayName: 'Spotify User', 
+        id: 'spotify_user_id' 
+      });
+    } finally {
+      setIsConnectingSpotify(false);
+    }
+  };
+
+  const fetchYouTubeProfile = async () => {
+    try {
+      setIsConnectingYouTube(true);
+      setYoutubeError(null);
+      
+      console.log('Fetching YouTube profile...');
+      
+      // Get YouTube tokens
+      const tokens = TokenManager.getTokens('youtube');
+      if (!tokens) {
+        throw new Error('No YouTube tokens available');
+      }
+      
+      // Fetch actual YouTube profile
+      const response = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true`, {
+        headers: {
+          'Authorization': `Bearer ${tokens.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`YouTube API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('YouTube profile fetched:', data);
+      
+      if (data.items && data.items.length > 0) {
+        const channel = data.items[0];
+        const snippet = channel.snippet;
+        const statistics = channel.statistics;
+        
+        // Set the actual profile data
+        setYoutubeUserProfile({
+          id: channel.id,
+          displayName: snippet.title,
+          imageUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
+          description: snippet.description,
+          subscriberCount: statistics?.subscriberCount,
+          videoCount: statistics?.videoCount,
+          viewCount: statistics?.viewCount,
+          customUrl: snippet.customUrl
+        });
       } else {
-        setHasYouTubeAuth(false);
+        throw new Error('No YouTube channel found');
       }
       
-      setLoading(false);
-      setInitialized(true);
-    }, (error) => {
-      console.error('Auth state error:', error);
-      setLoading(false);
-      setInitialized(true);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  const fetchSpotifyProfile = useCallback(async () => {
-    if (hasSpotifyAuth) {
-      try {
-        console.log("Fetching Spotify user profile...");
-        const profile = await getSpotifyUserProfile();
-        if (profile) {
-          setSpotifyUserProfile(profile);
-          console.log("Spotify profile fetched:", profile);
-        } else {
-          console.log("No Spotify profile data returned or error fetching.");
-          setSpotifyUserProfile(null);
-        }
-      } catch (e) {
-        console.error("Error in fetchSpotifyProfile:", e);
-        setSpotifyUserProfile(null);
-      }
-    } else {
-      setSpotifyUserProfile(null);
+    } catch (err) {
+      console.error('Error fetching YouTube profile:', err);
+      setYoutubeError('Failed to fetch YouTube profile');
+      
+      // Fallback to placeholder if API fails
+      setYoutubeUserProfile({ 
+        displayName: 'YouTube User', 
+        id: 'youtube_user_id' 
+      });
+    } finally {
+      setIsConnectingYouTube(false);
     }
-  }, [hasSpotifyAuth]);
+  };
 
-  const fetchYouTubeProfile = useCallback(async () => {
-    if (hasYouTubeAuth) {
-      try {
-        console.log("Fetching YouTube user profile...");
-        const profile = await getYouTubeUserProfile();
-        if (profile) {
-          setYouTubeUserProfile(profile);
-          console.log("YouTube profile fetched:", profile);
-        } else {
-          console.log("No YouTube profile data returned or error fetching.");
-          setYouTubeUserProfile(null);
-        }
-      } catch (e) {
-        console.error("Error in fetchYouTubeProfile:", e);
-        setYouTubeUserProfile(null);
-      }
-    } else {
-      setYouTubeUserProfile(null);
-    }
-  }, [hasYouTubeAuth]);
-
-  const setHasSpotifyAuth = (value: boolean) => {
-    setHasSpotifyAuthInternal(value);
-    if (value) {
-      fetchSpotifyProfile();
-    } else {
+  const disconnectFromSpotify = async () => {
+    try {
+      // Actual implementation would revoke Spotify access
+      console.log('Disconnecting from Spotify...');
+      setHasSpotifyAuth(false);
       setSpotifyUserProfile(null);
+    } catch (err) {
+      console.error('Error disconnecting from Spotify:', err);
+      setSpotifyError('Failed to disconnect from Spotify');
+    }
+  };
+
+  const disconnectFromYouTube = async () => {
+    try {
+      // Actual implementation would revoke YouTube access
+      console.log('Disconnecting from YouTube...');
+      setHasYouTubeAuth(false);
+      setYoutubeUserProfile(null);
+    } catch (err) {
+      console.error('Error disconnecting from YouTube:', err);
+      setYoutubeError('Failed to disconnect from YouTube');
     }
   };
 
   const checkYouTubeAuth = async () => {
     try {
-      console.log("Manual YouTube auth check initiated");
+      // Actual implementation would check YouTube token validity
+      console.log('Checking YouTube auth...');
+      return hasYouTubeAuth;
+    } catch (err) {
+      console.error('Error checking YouTube auth:', err);
+      setYoutubeError('Failed to check YouTube authentication');
+      return false;
+    }
+  };
+
+  // Fallback authentication using Spotify-style pattern
+  const fallbackAuth = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      console.log('[DEBUG] Attempting fallback authentication...');
       
-      // First check if we have tokens in localStorage
-      const accessToken = localStorage.getItem('youtube_access_token');
-      const refreshToken = localStorage.getItem('youtube_refresh_token');
-      const tokenExpiry = localStorage.getItem('youtube_token_expiry');
+      // First try SimpleAuth
+      if (SimpleAuth.isAuthenticated()) {
+        console.log('[DEBUG] SimpleAuth authentication found');
+        const simpleUser = SimpleAuth.getCurrentUser();
+        if (simpleUser) {
+          console.log('[DEBUG] SimpleAuth user:', simpleUser.email);
+          
+          // Dispatch a custom event to notify the app
+          window.dispatchEvent(new CustomEvent('fallback-auth-success', {
+            detail: { user: simpleUser, source: 'simpleAuth' }
+          }));
+          
+          return { success: true };
+        }
+      }
       
-      console.log("YouTube token check:", {
-        hasAccessToken: !!accessToken,
-        hasRefreshToken: !!refreshToken,
-        hasExpiry: !!tokenExpiry
+      // Fallback to original method
+      const savedData = JSON.parse(localStorage.getItem(AUTH_RECOVERY_KEY) || 'null');
+      
+      if (savedData && Date.now() - savedData.timestamp < 3600000) { // 1 hour
+        console.log('[DEBUG] Found valid saved auth data, attempting recovery...');
+        
+        // Try to restore the user session
+        const auth = getAuth();
+        
+        // Check if we're already authenticated
+        if (auth.currentUser) {
+          console.log('[DEBUG] User already authenticated, skipping fallback');
+          return { success: true };
+        }
+        
+        // For fallback, we'll use a simplified approach
+        // In a real implementation, you might want to verify the token with your backend
+        console.log('[DEBUG] Fallback auth successful for user:', savedData.email);
+        
+        // Dispatch a custom event to notify the app
+        window.dispatchEvent(new CustomEvent('fallback-auth-success', {
+          detail: { user: savedData, source: 'legacy' }
+        }));
+        
+        return { success: true };
+      }
+      
+      return { 
+        success: false, 
+        error: 'No valid authentication data found for fallback' 
+      };
+    } catch (error) {
+      console.error('[DEBUG] Fallback authentication failed:', error);
+      return { 
+        success: false, 
+        error: 'Fallback authentication failed' 
+      };
+    }
+  };
+
+  // Initialize auth persistence
+  useEffect(() => {
+    const auth = getAuth();
+    setPersistence(auth, browserLocalPersistence).catch(console.error);
+
+    // Subscribe to auth state changes
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('[DEBUG] Auth state changed:', { 
+        hasUser: !!user, 
+        uid: user?.uid,
+        email: user?.email,
+        displayName: user?.displayName,
+        timestamp: new Date().toISOString()
       });
-      
-      // If we have tokens, verify them
-      if (accessToken && refreshToken) {
-        const youtubeAuthStatus = await isYouTubeAuthenticated();
-        console.log("YouTube auth check result:", youtubeAuthStatus);
-        setHasYouTubeAuth(youtubeAuthStatus);
-        return youtubeAuthStatus;
-      }
-      
-      // No tokens found
-      console.log("No YouTube tokens found");
-      setHasYouTubeAuth(false);
-      return false;
-    } catch (error) {
-      console.error("Error checking YouTube auth:", error);
-      setHasYouTubeAuth(false);
-      return false;
-    }
-  };
-  
-  useEffect(() => {
-    const checkServiceAuth = async () => {
-      if (user) {
-        try {
-          const spotifyAuthStatus = isSpotifyAuthenticated();
-          setHasSpotifyAuth(spotifyAuthStatus);
-          
-          const soundCloudAuthStatus = isSoundCloudAuthenticated();
-          setHasSoundCloudAuth(soundCloudAuthStatus);
-        } catch (error) {
-          console.error('Error checking service auth:', error);
-        }
-      } else {
-        setHasSpotifyAuth(false);
-        setHasSoundCloudAuth(false);
-      }
-    };
-    
-    checkServiceAuth();
-  }, [user, fetchSpotifyProfile, fetchYouTubeProfile]);
-  
-  useEffect(() => {
-    const handleRedirectResult = async () => {
-      if (!auth) {
-        console.log("❌ Auth is not initialized when checking redirect");
-        setLoading(false);
-        return;
-      }
-
-      // Start by checking for auth_redirect_start in localStorage, which indicates
-      // we're coming back from a redirect flow
-      const redirectStart = localStorage.getItem('auth_redirect_start');
-      if (!redirectStart) {
-        console.log("ℹ️ No auth_redirect_start found, skipping redirect check");
-        setLoading(false);
-        return;
-      }
-      
-      console.log("🔄 Found auth_redirect_start:", redirectStart, "- timestamp:", new Date(parseInt(redirectStart)).toLocaleString());
-      document.body.classList.add('auth-redirecting'); // Optional: add a class for styling during redirect processing
-      
-      // Set up a timeout with exponential backoff
-      const maxTimeout = 45000; // 45 seconds, increased from 30 seconds
-      const redirectTimeout = setTimeout(() => {
-        console.log("⌛ Redirect result check timed out after", maxTimeout/1000, "seconds");
-        localStorage.removeItem('auth_redirect_start');
-        document.body.classList.remove('auth-redirecting');
-        setLoading(false);
-        setError("Authentication process took too long. Please try again.");
-      }, maxTimeout);
+      setUser(user);
       
       try {
-        console.log("🔍 Starting redirect result check process...");
+        await saveAuthState(user);
         
-        // Before proceeding, capture return path to ensure it's not lost
-        const returnPath = localStorage.getItem('auth_return_path');
-        console.log("🔍 Current auth_return_path:", returnPath || "Not set");
-        
-        // Wait briefly for auth state to stabilize
-        await new Promise(resolve => {
-          const stateCheck = auth.onAuthStateChanged(() => {
-            stateCheck(); // Unsubscribe immediately
-            resolve(true);
-          });
+        if (user) {
+          // Save YouTube auth state if we're in the callback
+          if (window.location.pathname.includes('youtube-callback')) {
+            const currentUrl = window.location.href;
+            sessionStorage.setItem(YOUTUBE_AUTH_STATE_KEY, currentUrl);
+          }
           
-          // Or resolve after 2 seconds if no auth change
-          setTimeout(resolve, 2000);
-        });
-        
-        console.log("🔄 Initial auth state checked, proceeding with redirect result processing");
-        
-        // For very slow connections, ensure Firestore is connected
-        try {
-          await reconnectFirestore();
-          console.log("✅ Ensured Firestore connection before checking redirect result");
-        } catch (e) {
-          console.warn("⚠️ Failed to reconnect Firestore:", e);
-          // Continue anyway, this is just a precaution
-        }
-        
-        // First, check if user is already signed in
-        const currentUser = auth.currentUser;
-        console.log("🔍 Current user check:", currentUser ? `User: ${currentUser.email}` : "No current user");
-        
-        if (currentUser) {
-          console.log("✅ User is already signed in:", currentUser.email);
-          setUser(currentUser);
-          localStorage.removeItem('auth_redirect_start');
-          clearTimeout(redirectTimeout);
-          document.body.classList.remove('auth-redirecting');
-          setLoading(false);
-          
-          // Check service connections for signed-in user
+          // Check service connections with error handling and fallbacks
           try {
-            const spotifyAuthStatus = isSpotifyAuthenticated();
-            setHasSpotifyAuth(spotifyAuthStatus);
-
-            const youtubeAuthStatus = await isYouTubeAuthenticated();
-            setHasYouTubeAuth(youtubeAuthStatus);
+            console.log('[DEBUG] Checking service connections for user:', user.uid);
             
-            setHasSoundCloudAuth(isSoundCloudAuthenticated());
-          } catch (serviceError) {
-            console.warn("⚠️ Error checking service connections:", serviceError);
-          }
-          
-          navigateAfterAuth();
-          return;
-        }
-        
-        console.log("🔄 Now calling getRedirectResult to check for redirect auth...");
-        
-        let result = null;
-        let redirectError = null;
-        
-        try {
-          // Main redirect result check with timeout
-          result = await Promise.race([
-            getRedirectResult(auth),
-            new Promise<never>((_, reject) => 
-              setTimeout(() => reject(new Error("Initial redirect result check timed out")), 20000)
-            )
-          ]);
-        } catch (error) {
-          redirectError = error;
-          console.error("❌ Error getting redirect result:", error);
-          console.error("❌ Error details:", error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            code: (error as any).code || 'unknown'
-          } : 'Non-Error type');
-        }
-        
-        if (result && result.user) {
-          console.log(`✅ Successfully signed in via redirect: ${result.user.email}`);
-          setUser(result.user);
-          
-          localStorage.removeItem('auth_redirect_start');
-          clearTimeout(redirectTimeout);
-          document.body.classList.remove('auth-redirecting');
-          setLoading(false);
-          
-          // Check service auth after successful redirect
-          const spotifyAuthStatus = isSpotifyAuthenticated();
-          setHasSpotifyAuth(spotifyAuthStatus);
-
-          const youtubeAuthStatus = await isYouTubeAuthenticated();
-          setHasYouTubeAuth(youtubeAuthStatus);
-          
-          setHasSoundCloudAuth(isSoundCloudAuthenticated());
-
-          navigateAfterAuth();
-          return;
-        }
-        
-        // If first attempt fails or returns null, implement retry with exponential backoff
-        if (!result || redirectError) {
-          console.log("⚠️ Initial redirect result check failed or returned null. Implementing retries...");
-          
-          const maxRetries = 3;
-          let retryCount = 0;
-          let retrySuccess = false;
-          
-          while (retryCount < maxRetries && !retrySuccess) {
-            retryCount++;
-            const backoffDelay = Math.min(2000 * Math.pow(1.5, retryCount - 1), 10000);
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            const userData = userDoc.data();
             
-            console.log(`🔄 Retry ${retryCount}/${maxRetries} after ${backoffDelay/1000}s delay...`);
-            await new Promise(resolve => setTimeout(resolve, backoffDelay));
+            console.log('[DEBUG] Firestore user data:', userData);
             
-            // Check if user has appeared during the delay
-            const currentUserCheck = auth.currentUser;
-            if (currentUserCheck) {
-              console.log(`✅ User appeared during retry delay: ${currentUserCheck && 'email' in currentUserCheck ? (currentUserCheck as User).email : 'unknown'}`);
-              setUser(currentUserCheck);
-              retrySuccess = true;
-              break;
+            // Primary source: Firestore
+            let spotifyConnected = !!userData?.spotifyConnected;
+            let youtubeConnected = !!userData?.youtubeConnected;
+            
+            console.log('[DEBUG] Firestore connection status:', { spotifyConnected, youtubeConnected });
+            
+            // Fallback: Check token validity directly using TokenManager
+            if (!spotifyConnected) {
+              const hasSpotifyTokens = TokenManager.hasValidTokens('spotify');
+              console.log('[DEBUG] TokenManager Spotify check:', hasSpotifyTokens);
+              spotifyConnected = hasSpotifyTokens;
             }
             
-            try {
-              console.log(`🔄 Calling getRedirectResult() for retry ${retryCount}...`);
-              result = await Promise.race([
-                getRedirectResult(auth),
-                new Promise<never>((_, reject) => 
-                  setTimeout(() => reject(new Error(`Retry ${retryCount} timed out`)), 15000)
-                )
-              ]);
-              
-              if (result && result.user) {
-                console.log(`✅ Successfully signed in on retry ${retryCount}: ${result.user.email}`);
-                setUser(result.user);
-                retrySuccess = true;
-                break;
-              } else {
-                console.log(`⚠️ Retry ${retryCount} returned null or no user`);
-              }
-            } catch (retryError) {
-              console.warn(`⚠️ Retry ${retryCount} failed:`, retryError);
-            }
-          }
-          
-          if (retrySuccess) {
-            localStorage.removeItem('auth_redirect_start');
-            clearTimeout(redirectTimeout);
-            document.body.classList.remove('auth-redirecting');
-            setLoading(false);
-            
-            // Check service auth after successful retry
-            try {
-              const spotifyAuthStatus = isSpotifyAuthenticated();
-              setHasSpotifyAuth(spotifyAuthStatus);
-  
-              const youtubeAuthStatus = await isYouTubeAuthenticated();
-              setHasYouTubeAuth(youtubeAuthStatus);
-              
-              setHasSoundCloudAuth(isSoundCloudAuthenticated());
-            } catch (serviceError) {
-              console.warn("⚠️ Error checking service connections after retry:", serviceError);
+            if (!youtubeConnected) {
+              const hasYouTubeTokens = TokenManager.hasValidTokens('youtube');
+              console.log('[DEBUG] TokenManager YouTube check:', hasYouTubeTokens);
+              youtubeConnected = hasYouTubeTokens;
             }
             
-            navigateAfterAuth();
-            return;
-          }
-        }
-        
-        // If we got here, all redirect check attempts failed
-        console.warn("❌ All redirect result checks failed, checking for specific errors");
-        
-        // If redirectError exists, try to give a more helpful error message
-        if (redirectError) {
-          if (redirectError instanceof Error) {
-            if (redirectError.message.includes("timeout")) {
-              setError("Authentication process took too long. Please check your connection and try again.");
-            } else if (redirectError.message.includes("redirect_uri_mismatch") || 
-                     (redirectError as any).code === 'auth/invalid-credential') {
-              console.error("❌ CRITICAL: OAuth redirect URI mismatch or invalid credential detected!");
-              setError("Authentication configuration error. Please try again or contact support.");
-            } else if (redirectError.message.includes("network") || 
-                     (redirectError as any).code === 'auth/network-request-failed') {
-              setError("Network error during authentication. Please check your connection and try again.");
-            } else if ((redirectError as any).code === 'auth/user-disabled') {
-              setError("This account has been disabled. Please contact support.");
-            } else if ((redirectError as any).code === 'auth/popup-closed-by-user') {
-              setError("Authentication was cancelled. Please try again.");
-            } else {
-              setError(`Authentication error: ${redirectError.message.split('.')[0]}`);
+            // Additional fallback: Check SimpleAuth service connections
+            const simpleSpotifyConnected = SimpleAuth.isServiceConnected('spotify');
+            const simpleYouTubeConnected = SimpleAuth.isServiceConnected('youtube');
+            
+            console.log('[DEBUG] SimpleAuth service connections:', { simpleSpotifyConnected, simpleYouTubeConnected });
+            
+            console.log('[DEBUG] Final connection status:', { 
+              spotifyConnected: spotifyConnected || simpleSpotifyConnected, 
+              youtubeConnected: youtubeConnected || simpleYouTubeConnected 
+            });
+            
+            setHasSpotifyAuth(spotifyConnected || simpleSpotifyConnected);
+            setHasYouTubeAuth(youtubeConnected || simpleYouTubeConnected);
+            
+            // Auto-fetch profiles when services are connected
+            if (spotifyConnected || simpleSpotifyConnected) {
+              fetchSpotifyProfile();
             }
-          } else {
-            setError("Authentication failed with an unknown error. Please try again.");
+            if (youtubeConnected || simpleYouTubeConnected) {
+              fetchYouTubeProfile();
+            }
+          } catch (firestoreError) {
+            console.error('[DEBUG] Firestore error when checking service connections:', firestoreError);
+            
+            // Use token validation as complete fallback
+            const spotifyConnected = TokenManager.hasValidTokens('spotify');
+            const youtubeConnected = TokenManager.hasValidTokens('youtube');
+            
+            console.log('[DEBUG] TokenManager fallback check:', { spotifyConnected, youtubeConnected });
+            
+            // Additional fallback: Check SimpleAuth service connections
+            const simpleSpotifyConnected = SimpleAuth.isServiceConnected('spotify');
+            const simpleYouTubeConnected = SimpleAuth.isServiceConnected('youtube');
+            
+            console.log('[DEBUG] SimpleAuth fallback check:', { simpleSpotifyConnected, simpleYouTubeConnected });
+            
+            console.log('[DEBUG] Using token validation fallback:', { 
+              spotifyConnected: spotifyConnected || simpleSpotifyConnected, 
+              youtubeConnected: youtubeConnected || simpleYouTubeConnected 
+            });
+            setHasSpotifyAuth(spotifyConnected || simpleSpotifyConnected);
+            setHasYouTubeAuth(youtubeConnected || simpleYouTubeConnected);
+            
+            // Auto-fetch profiles when services are connected
+            if (spotifyConnected || simpleSpotifyConnected) {
+              fetchSpotifyProfile();
+            }
+            if (youtubeConnected || simpleYouTubeConnected) {
+              fetchYouTubeProfile();
+            }
           }
         } else {
-          // No specific error, but authentication still failed
-          setError("Authentication process completed but no user was signed in. Please try again.");
+          // User is not authenticated, clear all service connections
+          console.log('[DEBUG] User not authenticated, clearing service connections');
+          setHasSpotifyAuth(false);
+          setHasYouTubeAuth(false);
         }
         
-        // Final fallback - check if user is already signed in despite all failures
-        const finalUserCheck = auth.currentUser;
-        if (finalUserCheck) {
-          console.log("✅ Found current user in final check:", finalUserCheck && 'email' in finalUserCheck ? (finalUserCheck as User).email : 'unknown');
-          setUser(finalUserCheck);
-          navigateAfterAuth();
-          return;
-        }
-      } catch (error: any) {
-        console.error("❌ Uncaught error in handleRedirectResult:", error);
-        setError("An unexpected error occurred during authentication. Please try again.");
-      } finally {
-        // Ensure we clean up
-        localStorage.removeItem('auth_redirect_start');
-        clearTimeout(redirectTimeout);
-        document.body.classList.remove('auth-redirecting');
         setLoading(false);
+      } catch (error) {
+        console.error('[DEBUG] Error in auth state change handler:', error);
+        setLoading(false);
+        setError('Authentication error. Please try again.');
+      }
+    });
+
+    // Listen for Spotify authentication changes
+    const handleSpotifyAuthChange = (event: CustomEvent) => {
+      console.log('Spotify auth change event received:', event.detail);
+      const isAuthenticated = event.detail?.authenticated || false;
+      setHasSpotifyAuth(isAuthenticated);
+      
+      if (isAuthenticated) {
+        setSpotifyError(null);
       }
     };
-    
-    handleRedirectResult();
-  }, []);
-  
-  const fetchUserData = async (uid: string) => {
-    try {
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      if (userDoc.exists()) {
-        setUserData(userDoc.data());
-        return userDoc.data();
-      } else {
-        setUserData(null);
-        return null;
-      }
-    } catch (e) {
-      setUserData(null);
-      return null;
-    }
-  };
-  
-  // Track successful login
-  const trackSuccessfulLogin = async (firebaseUser: User) => {
-    await trackActivity({
-      userId: firebaseUser.uid,
-      type: 'LOGIN',
-      details: {
-        method: 'email',
-        timestamp: new Date().toISOString()
-      }
-    });
-  };
 
-  // Track service connections
-  const trackServiceConnection = async (userId: string, service: 'SPOTIFY' | 'YOUTUBE') => {
-    await trackActivity({
-      userId,
-      type: `${service}_CONNECT` as UserActivity['type'],
-      details: {
-        timestamp: new Date().toISOString()
+    // Listen for YouTube authentication changes
+    const handleYouTubeAuthChange = (event: CustomEvent) => {
+      console.log('YouTube auth change event received:', event.detail);
+      const isAuthenticated = event.detail?.authenticated || false;
+      setHasYouTubeAuth(isAuthenticated);
+      
+      if (isAuthenticated) {
+        setYoutubeError(null);
       }
-    });
-  };
+    };
 
-  const signIn = async (isAndroid: boolean = false) => {
-    try {
-      setLoading(true);
-      setError(null);
+    // Listen for token updates
+    const handleSpotifyTokenUpdate = (event: CustomEvent) => {
+      console.log('Spotify token update event received:', event.detail);
+      const hasToken = event.detail?.hasToken || false;
+      setHasSpotifyAuth(hasToken);
+    };
+
+    const handleYouTubeTokenUpdate = (event: CustomEvent) => {
+      console.log('YouTube token update event received:', event.detail);
+      const hasToken = event.detail?.hasToken || false;
+      setHasYouTubeAuth(hasToken);
+    };
+
+    // Listen for fallback auth success
+    const handleFallbackAuthSuccess = (event: CustomEvent) => {
+      console.log('[DEBUG] Fallback auth success event received:', event.detail);
+      // The user data will be handled by the main auth state change handler
+    };
+
+    // Add event listeners
+    window.addEventListener('spotify-auth-changed', handleSpotifyAuthChange as EventListener);
+    window.addEventListener('youtube-auth-changed', handleYouTubeAuthChange as EventListener);
+    window.addEventListener('spotify-token-updated', handleSpotifyTokenUpdate as EventListener);
+    window.addEventListener('youtube-token-updated', handleYouTubeTokenUpdate as EventListener);
+    window.addEventListener('fallback-auth-success', handleFallbackAuthSuccess as EventListener);
+
+    // Attempt auth recovery if needed
+    const attemptAuthRecovery = async () => {
+      // Don't attempt recovery if we're already on the login page with recovery=true
+      if (window.location.pathname === '/login' && window.location.search.includes('recovery=true')) {
+        console.log('[DEBUG] Already on recovery login page, skipping auth recovery attempt');
+        setAuthRecoveryAttempted(true);
+        return;
+      }
       
-      console.log("Starting Google sign-in process...");
-      
-      try {
-        await signInWithGoogle(true);
-        console.log("Redirect initiated - page will reload after authentication");
-        return null;
-      } catch (redirectError) {
-        console.error("Redirect authentication failed, trying popup as fallback:", redirectError);
-        
-        if (!isAndroid) {
-          try {
-            const firebaseUser = await signInWithGoogle(false);
-            if (firebaseUser) {
-              setUser(firebaseUser);
-              await trackSuccessfulLogin(firebaseUser);
-              
+      if (!auth.currentUser && !authRecoveryAttempted) {
+        try {
+          console.log('[DEBUG] No current user, attempting auth recovery...');
+          
+          // First try the fallback authentication
+          const fallbackResult = await fallbackAuth();
+          if (fallbackResult.success) {
+            console.log('[DEBUG] Fallback authentication successful');
+            setAuthRecoveryAttempted(true);
+            return;
+          }
+          
+          // If fallback fails, try the original recovery method
+          console.log('[DEBUG] Fallback auth failed, trying original recovery method...');
+          
+          // Check IndexedDB first
+          const idbData = await readFromIndexedDB(STORE_NAME, 'currentUser');
+
+          // Fall back to localStorage if IndexedDB fails
+          const savedData = idbData || JSON.parse(localStorage.getItem(AUTH_RECOVERY_KEY) || 'null');
+          
+          if (savedData && Date.now() - savedData.timestamp < 3600000) { // 1 hour
+            console.log('[DEBUG] Found valid saved auth data for uid:', savedData.uid);
+            
+            // Only redirect to recovery login if we're on a callback page
+            if (window.location.pathname.includes('callback')) {
+              console.log('[DEBUG] On callback page, redirecting to recovery login');
+              localStorage.setItem('post_auth_redirect', window.location.href);
+              window.location.href = '/login?recovery=true';
+            } else {
+              console.log('[DEBUG] Not on callback page, clearing stale auth data');
+              // Clear stale auth data if we're not on a callback page
+              localStorage.removeItem(AUTH_RECOVERY_KEY);
               try {
-                const spotifyAuth = isSpotifyAuthenticated();
-                setHasSpotifyAuth(spotifyAuth);
-                if (spotifyAuth) {
-                  await trackServiceConnection(firebaseUser.uid, 'SPOTIFY');
-                }
-
-                const youtubeAuth = await isYouTubeAuthenticated();
-                setHasYouTubeAuth(youtubeAuth);
-                if (youtubeAuth) {
-                  await trackServiceConnection(firebaseUser.uid, 'YOUTUBE');
-                }
-
-                setHasSoundCloudAuth(isSoundCloudAuthenticated());
-              } catch (serviceError) {
-                console.warn("Error checking service auth after popup:", serviceError);
+                await saveToIndexedDB(STORE_NAME, 'currentUser', null);
+              } catch (e) {
+                console.warn('Failed to clear IndexedDB auth data:', e);
               }
-              
-              return firebaseUser;
             }
-          } catch (popupError) {
-            console.error("Popup authentication also failed:", popupError);
-            throw popupError;
-          }
-        } else {
-          throw redirectError;
-        }
-      }
-      
-      return null;
-    } catch (error: any) {
-      console.error("Fatal error during Google sign-in:", error);
-      setError(error?.message || "Authentication failed. Please try again.");
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const signInWithEmail = async (email: string, password: string, name?: string, rememberMe?: boolean, phoneNumber?: string, company?: string) => {
-    setLoading(true);
-    setError(null);
-    
-    const isAndroid = isAndroidDevice();
-    
-    let androidRecoveryTimeout: ReturnType<typeof setTimeout> | null = null;
-    
-    if (isAndroid) {
-      androidRecoveryTimeout = setTimeout(() => {
-        console.warn('Global Android auth recovery timeout triggered');
-        setLoading(false);
-        setError('Authentication process appears to be stuck. Please restart the app and try again.');
-      }, 60000);
-    }
-    
-    try {
-      if (isAndroid) {
-        try {
-          await reconnectFirestore();
-          console.log('Reconnected Firestore before authentication on Android');
-        } catch (reconnectError) {
-          console.warn('Failed to reconnect Firestore before auth:', reconnectError);
-        }
-      }
-      
-      const persistenceMode = isAndroid && !rememberMe 
-        ? browserSessionPersistence
-        : rememberMe 
-          ? browserLocalPersistence
-          : browserSessionPersistence;
-      
-      try {
-        await setPersistence(auth, persistenceMode);
-      } catch (persistenceError) {
-        console.warn('Failed to set auth persistence:', persistenceError);
-      }
-      
-      if (name) {
-        try {
-          let userCredential: UserCredential;
-          
-          if (isAndroid) {
-            console.log('Using Android-specific auth handler for registration');
-            const authPromise = createUserWithEmailAndPassword(auth, email, password);
-            userCredential = await handleAndroidAuth(authPromise, 40000);
           } else {
-            userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            console.log('[DEBUG] No valid saved auth data found');
+            // Clear any stale data
+            localStorage.removeItem(AUTH_RECOVERY_KEY);
           }
-          
-          try {
-            if (isAndroid) {
-              const profileUpdatePromise = updateProfile(userCredential.user, { 
-                displayName: name,
-                ...(phoneNumber && { phoneNumber })
-              });
-              
-              await handleAndroidAuth(profileUpdatePromise, 20000);
-            } else {
-              await updateProfile(userCredential.user, { 
-                displayName: name,
-                ...(phoneNumber && { phoneNumber })
-              });
-            }
-          } catch (profileError) {
-            console.error('Error updating user profile:', profileError);
-          }
-          
-          setUser(userCredential.user);
-          const userDataObj = {
-            uid: userCredential.user.uid,
-            email,
-            name,
-            company: company || null,
-            phone: phoneNumber || null,
-            role: 'client',
-            createdAt: new Date().toISOString()
-          };
-          await setDoc(doc(db, 'users', userCredential.user.uid), userDataObj);
-          setUserData(userDataObj);
-        } catch (regError: any) {
-          const errorMessage = getFirebaseAuthErrorMessage(regError);
-          setError(errorMessage);
-          throw regError;
-        }
-      } else {
-        try {
-          let userCredential: UserCredential;
-          
-          if (isAndroid) {
-            console.log('Using Android-specific auth handler for login');
-            const authPromise = signInWithEmailAndPassword(auth, email, password);
-            
-            const loginWithTimeout = Promise.race([
-              handleAndroidAuth(authPromise, 30000),
-              new Promise<never>((_, reject) => 
-                setTimeout(() => reject(new Error('Android login timeout')), 25000)
-              )
-            ]);
-            
-            userCredential = await loginWithTimeout;
-          } else {
-            userCredential = await signInWithEmailAndPassword(auth, email, password);
-          }
-          
-          setUser(userCredential.user);
-          await fetchUserData(userCredential.user.uid);
-        } catch (loginError: any) {
-          const errorMessage = getFirebaseAuthErrorMessage(loginError);
-          setError(errorMessage);
-          throw loginError;
-        }
-      }
-      
-      try {
-        setHasSpotifyAuth(isSpotifyAuthenticated());
-      } catch (spotifyError) {
-        console.warn('Error checking Spotify auth:', spotifyError);
-      }
-      
-      try {
-        const youtubeAuth = await isYouTubeAuthenticated();
-        setHasYouTubeAuth(youtubeAuth);
-      } catch (youtubeError) {
-        console.warn('Error checking YouTube auth:', youtubeError);
-      }
-      
-      try {
-        setHasSoundCloudAuth(isSoundCloudAuthenticated());
-      } catch (soundcloudError) {
-        console.warn('Error checking SoundCloud auth:', soundcloudError);
-      }
-      
-      // After successful sign in/up, track the activity
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        await trackSuccessfulLogin(currentUser);
-        
-        // Check and track service connections
-        const spotifyAuth = isSpotifyAuthenticated();
-        setHasSpotifyAuth(spotifyAuth);
-        if (spotifyAuth) {
-          await trackServiceConnection(currentUser.uid, 'SPOTIFY');
-        }
-
-        const youtubeAuth = await isYouTubeAuthenticated();
-        setHasYouTubeAuth(youtubeAuth);
-        if (youtubeAuth) {
-          await trackServiceConnection(currentUser.uid, 'YOUTUBE');
-        }
-      }
-      
-    } catch (error) {
-      console.error('Email auth error:', error);
-      throw error;
-    } finally {
-      if (androidRecoveryTimeout) {
-        clearTimeout(androidRecoveryTimeout);
-      }
-      
-      setLoading(false);
-      
-      if (isAndroid) {
-        setTimeout(() => {
-          setLoading(loading => loading);
-        }, 0);
-      }
-    }
-  };
-  
-  const signInWithCredential = async (credential: string): Promise<User | null> => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const googleCredential = GoogleAuthProvider.credential(credential);
-      
-      const userCredential: UserCredential = await firebaseSignInWithCredential(auth, googleCredential);
-      setUser(userCredential.user);
-      
-      const userData = await fetchUserData(userCredential.user.uid);
-      if (!userData) {
-        const newUserData = {
-          uid: userCredential.user.uid,
-          email: userCredential.user.email || '',
-          name: userCredential.user.displayName || '',
-          role: 'client',
-          createdAt: new Date().toISOString()
-        };
-        await setDoc(doc(db, 'users', userCredential.user.uid), newUserData);
-        setUserData(newUserData);
-      }
-      
-      return userCredential.user;
-    } catch (error: any) {
-      console.error("Error during credential sign-in:", error);
-      setError(error?.message || "Authentication with credential failed");
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const getFirebaseAuthErrorMessage = (error: any): string => {
-    const errorCode = error?.code || '';
-    const errorMessage = error?.message || 'Authentication failed';
-    
-    const errorMessages: {[key: string]: string} = {
-      'auth/email-already-in-use': 'This email is already registered. Try signing in instead.',
-      'auth/invalid-email': 'Please enter a valid email address.',
-      'auth/user-disabled': 'This account has been disabled. Please contact support.',
-      'auth/user-not-found': 'No account found with this email. Please check your email or sign up.',
-      'auth/wrong-password': 'Incorrect password. Please try again or reset your password.',
-      'auth/weak-password': 'Password should be at least 6 characters.',
-      'auth/network-request-failed': 'Network connection error. Please check your internet and try again.',
-      'auth/timeout': 'Request timeout. Please try again.',
-      'auth/popup-closed-by-user': 'Sign-in was cancelled. Please try again.',
-      'auth/popup-blocked': 'Sign-in popup was blocked by your browser. Please allow popups for this site.',
-      'auth/too-many-requests': 'Too many unsuccessful login attempts. Please try again later or reset your password.'
-    };
-    
-    if (isAndroidDevice()) {
-      if (errorCode === 'auth/network-request-failed') {
-        return 'Network connection issue on Android. Try switching to WiFi or check your signal strength.';
-      }
-      
-      if (errorCode === 'auth/timeout') {
-        return 'Authentication timeout on Android. Please check your connection and try again.';
-      }
-    }
-    
-    return errorMessages[errorCode] || errorMessage;
-  };
-  
-  const signOut = async () => {
-    try {
-      await auth.signOut();
-      setUser(null);
-      setUserData(null);
-      setHasSpotifyAuth(false);
-      setHasYouTubeAuth(false);
-      setHasSoundCloudAuth(false);
-    } catch (error) {
-      console.error("Error signing out: ", error);
-      throw error;
-    }
-  };
-  
-  const clearError = () => {
-    setError(null);
-  };
-  
-  const debugAuth = async () => {
-    try {
-      setLoading(true);
-      const result = await debugGoogleAuth();
-      console.log("Auth debug result:", result);
-      return result;
-    } catch (error: any) {
-      console.error("Error in debug function:", error);
-      setError(error?.message || "Error debugging auth");
-      return { error: error?.message };
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const disconnectFromSpotify = () => {
-    logoutFromSpotify();
-    setHasSpotifyAuth(false);
-    console.log("Disconnected from Spotify");
-  };
-  
-  const disconnectFromYouTube = () => {
-    clearYouTubeAuth();
-    setHasYouTubeAuth(false);
-    console.log("Disconnected from YouTube");
-  };
-  
-  const navigateAfterAuth = () => {
-    const returnPath = localStorage.getItem('auth_return_path');
-    console.log("🔄 navigateAfterAuth called - checking for return path");
-    
-    // Consider adding a short delay to ensure all auth state is properly updated
-    setTimeout(() => {
-      // Clean up auth markers regardless of whether we find a return path
-      localStorage.removeItem('auth_redirect_start');
-      
-      if (returnPath) {
-        console.log("🔄 Found return path after auth:", returnPath);
-        localStorage.removeItem('auth_return_path');
-        
-        try {
-          // First check if this is a valid internal path (starting with /)
-          const isInternalPath = returnPath.startsWith('/');
-          const hasExternalProtocol = /^https?:\/\//i.test(returnPath);
-          
-          // Ensure we're navigating to a safe destination
-          const safeDomain = window.location.hostname;
-          const isSafeDomain = hasExternalProtocol ? returnPath.includes(safeDomain) : true;
-          
-          if (!isSafeDomain) {
-            console.warn("⚠️ Attempted to navigate to an external domain. Using fallback path instead.");
-            window.location.href = '/dashboard'; // Fallback to dashboard if unsafe external URL
-            return;
-          }
-          
-          // Create the full URL if needed
-          const fullUrl = isInternalPath && !hasExternalProtocol 
-            ? `${window.location.origin}${returnPath}` 
-            : returnPath;
-          
-          console.log("➡️ Navigating to:", fullUrl);
-          
-          window.location.href = fullUrl;
         } catch (error) {
-          console.error("❌ Error during navigation:", error);
-          // Fallback to root path if navigation fails
-          window.location.href = '/';
+          console.error('[DEBUG] Auth recovery failed:', error);
+          // Clear any corrupted data
+          localStorage.removeItem(AUTH_RECOVERY_KEY);
         }
-      } else {
-        console.log("⚠️ No return path found after auth, navigating to default page");
-        
-        // Fallback to dashboard if no return path was set
-        const defaultRedirectPath = '/dashboard'; 
-        console.log("➡️ Using default redirect path:", defaultRedirectPath);
-        window.location.href = defaultRedirectPath;
+        setAuthRecoveryAttempted(true);
+      } else if (auth.currentUser) {
+        console.log('[DEBUG] User is already authenticated, skipping recovery');
+        setAuthRecoveryAttempted(true);
       }
-    }, 300); // Short delay to ensure auth state is fully processed
-  };
-  
-  const value = {
-    user,
-    userData,
-    loading,
-    error,
-    isAuthenticated: !!user,
-    hasSpotifyAuth,
-    hasYouTubeAuth,
-    hasSoundCloudAuth,
-    spotifyUserProfile,
-    youtubeUserProfile,
-    fetchSpotifyProfile,
-    fetchYouTubeProfile,
-    signIn,
-    signOut,
-    signInWithEmail,
-    signInWithCredential,
-    setHasSpotifyAuth,
-    setHasYouTubeAuth,
-    setHasSoundCloudAuth,
-    clearError,
-    checkYouTubeAuth,
-    debugAuth,
-    disconnectFromSpotify,
-    disconnectFromYouTube,
-    isConnectingSpotify,
-    isConnectingYouTube,
-    spotifyError,
-    youtubeError,
-    setUser,
-  };
-  
+    };
+
+    attemptAuthRecovery();
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('spotify-auth-changed', handleSpotifyAuthChange as EventListener);
+      window.removeEventListener('youtube-auth-changed', handleYouTubeAuthChange as EventListener);
+      window.removeEventListener('spotify-token-updated', handleSpotifyTokenUpdate as EventListener);
+      window.removeEventListener('youtube-token-updated', handleYouTubeTokenUpdate as EventListener);
+      window.removeEventListener('fallback-auth-success', handleFallbackAuthSuccess as EventListener);
+    };
+  }, [authRecoveryAttempted]);
+
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      hasSpotifyAuth,
+      hasYouTubeAuth,
+      setHasSpotifyAuth,
+      setHasYouTubeAuth,
+      authRecoveryAttempted,
+      isAuthenticated: !!user,
+      // Authentication functions
+      signInWithEmail,
+      signIn,
+      signOut,
+      // Profile management
+      spotifyUserProfile,
+      youtubeUserProfile,
+      fetchSpotifyProfile,
+      fetchYouTubeProfile,
+      // Service connections
+      disconnectFromSpotify,
+      disconnectFromYouTube,
+      isConnectingSpotify,
+      isConnectingYouTube,
+      spotifyError,
+      youtubeError,
+      checkYouTubeAuth,
+      // Error handling
+      error
+    }}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }; 

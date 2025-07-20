@@ -57,6 +57,20 @@ const SimpleLogin: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  
+  // Check if we're in recovery mode
+  useEffect(() => {
+    const isRecovery = window.location.search.includes('recovery=true');
+    setIsRecoveryMode(isRecovery);
+    
+    if (isRecovery) {
+      console.log('[DEBUG] Login page in recovery mode');
+      // Clear any stale auth data when in recovery mode
+      localStorage.removeItem('auth_recovery_data');
+      sessionStorage.removeItem('youtube_callback_url');
+    }
+  }, []);
   
   // Get the redirect path from location state
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/app';
@@ -205,10 +219,13 @@ const SimpleLogin: React.FC = () => {
                   </span>
                 </div>
                 <h2 className="text-2xl font-bold text-white mb-2">
-                  {isSignUp ? 'Create your account' : 'Welcome back'}
+                  {isRecoveryMode ? 'Authentication Recovery' : (isSignUp ? 'Create your account' : 'Welcome back')}
                 </h2>
                 <p className="text-gray-300">
-                  {isSignUp ? 'Sign up to start swapping playlists' : 'Sign in to continue'}
+                  {isRecoveryMode 
+                    ? 'Please sign in again to continue with your music service connection'
+                    : (isSignUp ? 'Sign up to start swapping playlists' : 'Sign in to continue')
+                  }
                 </p>
               </div>
               {displayError && (
@@ -221,6 +238,20 @@ const SimpleLogin: React.FC = () => {
                   <p className="text-red-300 text-sm flex items-center">
                     <span className="w-2 h-2 bg-red-400 rounded-full mr-2"></span>
                     {displayError}
+                  </p>
+                </motion.div>
+              )}
+              
+              {/* Recovery mode indicator */}
+              {isRecoveryMode && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-6 p-4 bg-blue-500/20 border border-blue-500/30 rounded-xl backdrop-blur-sm"
+                >
+                  <p className="text-blue-300 text-sm flex items-center">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+                    Recovery Mode: Your previous session expired. Please sign in again.
                   </p>
                 </motion.div>
               )}

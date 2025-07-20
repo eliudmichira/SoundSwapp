@@ -47,12 +47,31 @@ const EnhancedConnectionCard: React.FC<EnhancedConnectionCardProps> = ({
     youtubeUserProfile,
     fetchSpotifyProfile,
     fetchYouTubeProfile,
+    user
   } = useAuth();
 
   const [isFlipped, setIsFlipped] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const disconnectButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Clear auth error when user logs in
+  useEffect(() => {
+    if (user) {
+      setAuthError(null);
+    }
+  }, [user]);
+
+  // Handle connect with auth check
+  const handleConnect = async () => {
+    if (!user) {
+      setAuthError('Please sign in to connect your account');
+      return;
+    }
+    setAuthError(null);
+    onConnect();
+  };
 
   // Determine connected status and current profile based on platform
   const connected = externalConnected !== undefined ? externalConnected : (platform === 'spotify' ? hasSpotifyAuth : hasYouTubeAuth);
@@ -338,13 +357,23 @@ const EnhancedConnectionCard: React.FC<EnhancedConnectionCardProps> = ({
                   View Details / Disconnect
                 </GlowButton>
               ) : (
-                <GlowButton 
-                  variant={platformConfig.buttonVariant} 
-                  className="w-full max-w-xs py-2.5"
-                  onClick={(e) => { e.stopPropagation(); onConnect(); }}
+                <GlowButton
+                  onClick={handleConnect}
                   disabled={isConnecting}
+                  variant={platformConfig.buttonVariant}
+                  className="w-full max-w-xs py-2.5"
                 >
-                  {isConnecting ? 'Connecting...' : `Connect ${platformConfig.name}`}
+                  {isConnecting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Connecting...
+                    </span>
+                  ) : (
+                    `Connect ${platformConfig.name}`
+                  )}
                 </GlowButton>
               )}
               <p className="text-xs text-muted-foreground mt-2 px-1">
@@ -364,6 +393,13 @@ const EnhancedConnectionCard: React.FC<EnhancedConnectionCardProps> = ({
           isFlipped={isFlipped}
         />
       </div>
+
+      {/* Add error message display */}
+      {authError && (
+        <div className="absolute bottom-4 left-4 right-4 bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-red-400 text-sm">
+          {authError}
+        </div>
+      )}
     </motion.div>
   );
 };

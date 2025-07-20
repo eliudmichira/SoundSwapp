@@ -334,9 +334,41 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // In a real app, you would show a toast notification here
   };
   
+  // Helper function to refresh authentication state
+  const refreshAuthState = useCallback(() => {
+    const isSpotifyAuthed = isSpotifyAuthenticated();
+    console.log('Refreshing auth state:', { 
+      user: user?.uid, 
+      isSpotifyAuthed,
+      hasSpotifyAuth: isSpotifyAuthed
+    });
+    
+    // Dispatch event to notify auth state change
+    if (isSpotifyAuthed) {
+      window.dispatchEvent(new CustomEvent('spotify-auth-changed', { 
+        detail: { authenticated: true } 
+      }));
+    }
+  }, [user]);
+  
   const fetchSpotifyPlaylists = useCallback(async () => {
-    if (!user || !isSpotifyAuthenticated()) {
-      dispatch({ type: 'SET_ERROR', payload: 'You need to authenticate with Spotify first' });
+    // First check if user is authenticated
+    if (!user) {
+      dispatch({ type: 'SET_ERROR', payload: 'You need to sign in to access Spotify playlists' });
+      return;
+    }
+    
+    // Check Spotify authentication with detailed logging
+    const isAuthed = isSpotifyAuthenticated();
+    console.log('Spotify auth check:', { 
+      user: user.uid, 
+      isAuthed, 
+      hasAccessToken: !!localStorage.getItem('soundswapp_spotify_access_token'),
+      hasExpiresAt: !!localStorage.getItem('soundswapp_spotify_expires_at')
+    });
+    
+    if (!isAuthed) {
+      dispatch({ type: 'SET_ERROR', payload: 'You need to authenticate with Spotify first. Please reconnect your Spotify account.' });
       return;
     }
     
@@ -358,10 +390,22 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SELECTING_PLAYLIST });
     } catch (error) {
       console.error('Error fetching Spotify playlists:', error);
-      dispatch({ 
-        type: 'SET_ERROR', 
-        payload: error instanceof Error ? error.message : 'Failed to fetch Spotify playlists'
-      });
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to fetch Spotify playlists';
+      if (error instanceof Error) {
+        if (error.message.includes('401') || error.message.includes('Authentication')) {
+          errorMessage = 'Spotify authentication expired. Please reconnect your Spotify account.';
+        } else if (error.message.includes('403')) {
+          errorMessage = 'You do not have permission to access Spotify playlists.';
+        } else if (error.message.includes('429')) {
+          errorMessage = 'Rate limit exceeded. Please try again later.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      dispatch({ type: 'SET_ERROR', payload: errorMessage });
     }
   }, [user, dispatch]);
   

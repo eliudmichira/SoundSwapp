@@ -6,6 +6,14 @@ import usePageLifecycle from '../hooks/usePageLifecycle';
 // Add import for mobile utilities
 import { isMobileDevice, optimizeForMobile } from '../lib/utils';
 
+// Declare global window interface
+declare global {
+  interface Window {
+    APP_INITIALIZED?: boolean;
+    HTML_PRELOADER_PROGRESS?: number;
+  }
+}
+
 interface AppInitializerProps {
   children: React.ReactNode;
 }
@@ -38,6 +46,22 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
       return cleanupFunction;
     }
   }, [mobileOptimized]);
+  
+  // Fallback: Dispatch app-initialized event after a reasonable timeout
+  // This ensures the HTML preloader doesn't timeout even if React takes too long
+  useEffect(() => {
+    const fallbackTimeout = setTimeout(() => {
+      if (!window.APP_INITIALIZED) {
+        console.log('Fallback timeout - dispatching app-initialized event');
+        window.dispatchEvent(new CustomEvent('app-initialized', {
+          detail: { progress: 100 }
+        }));
+        window.APP_INITIALIZED = true;
+      }
+    }, 5000); // 5 second fallback timeout
+    
+    return () => clearTimeout(fallbackTimeout);
+  }, []);
   
   // Simulate loading progress for better UX
   useEffect(() => {
@@ -86,6 +110,15 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
     if (progress >= 100 && !initialLoadComplete) {
       const completeTimer = setTimeout(() => {
         setInitialLoadComplete(true);
+        
+        // Dispatch app-initialized event for HTML preloader
+        window.dispatchEvent(new CustomEvent('app-initialized', {
+          detail: { progress: 100 }
+        }));
+        console.log('App initialization complete - dispatched app-initialized event');
+        
+        // Set global flag to indicate app is initialized
+        window.APP_INITIALIZED = true;
       }, 500); // Small delay after reaching 100% for smooth transition
       
       return () => clearTimeout(completeTimer);
@@ -101,6 +134,13 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
           console.warn('Mobile safety timeout triggered - forcing app to load');
           setProgress(100);
           setInitialLoadComplete(true);
+          
+          // Dispatch app-initialized event even on safety timeout
+          window.dispatchEvent(new CustomEvent('app-initialized', {
+            detail: { progress: 100 }
+          }));
+          console.log('Mobile safety timeout - dispatched app-initialized event');
+          window.APP_INITIALIZED = true;
         }
       }, 10000); // 10 second safety timeout for mobile devices
       

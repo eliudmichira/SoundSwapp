@@ -4,15 +4,27 @@
 // Helper to get the base URL dynamically
 const getBaseUrl = () => {
   if (typeof window !== 'undefined') {
-    // For client-side, prefer firebaseapp.com domain for consistency
-    const host = window.location.host;
-    if (host.includes('web.app')) {
-      return 'https://soundswapp.firebaseapp.com';
-    }
+    // For client-side, use current domain
     return window.location.origin;
   }
   // For server-side or default to production URL
   return import.meta.env.VITE_APP_URL || 'https://soundswapp.firebaseapp.com';
+};
+
+// Get all valid redirect URIs
+const getValidRedirectUris = () => [
+  'https://soundswapp.firebaseapp.com/callback',
+  'https://soundswapp.web.app/callback'
+];
+
+// Get the appropriate redirect URI based on current domain
+const getRedirectUri = () => {
+  if (typeof window !== 'undefined') {
+    const currentDomain = window.location.origin;
+    return `${currentDomain}/callback`;
+  }
+  // Default to firebaseapp.com domain
+  return 'https://soundswapp.firebaseapp.com/callback';
 };
 
 // Validate required environment variables
@@ -25,25 +37,26 @@ const validateEnvVar = (name: string, value?: string): string => {
 
 // Firebase configuration with validation
 export const firebaseConfig = {
-  apiKey: validateEnvVar('VITE_FIREBASE_API_KEY', import.meta.env.VITE_FIREBASE_API_KEY),
-  authDomain: validateEnvVar('VITE_FIREBASE_AUTH_DOMAIN', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN),
-  projectId: validateEnvVar('VITE_FIREBASE_PROJECT_ID', import.meta.env.VITE_FIREBASE_PROJECT_ID),
-  storageBucket: validateEnvVar('VITE_FIREBASE_STORAGE_BUCKET', import.meta.env.VITE_FIREBASE_STORAGE_BUCKET),
-  messagingSenderId: validateEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID', import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
-  appId: validateEnvVar('VITE_FIREBASE_APP_ID', import.meta.env.VITE_FIREBASE_APP_ID),
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID // Optional
+  apiKey: 'AIzaSyCSjfXh6sHtx1rr1-WLR4ffFHf5lB8gFEA',
+  authDomain: 'soundswapp.firebaseapp.com',
+  projectId: 'soundswapp',
+  storageBucket: 'soundswapp.firebasestorage.app',
+  messagingSenderId: '968024909043',
+  appId: '1:968024909043:web:a581b572e9dca32ee70386',
+  measurementId: 'G-8X2N0XJKLT'
 };
 
 // Spotify API credentials
 export const spotifyConfig = {
-  clientId: validateEnvVar('VITE_SPOTIFY_CLIENT_ID', import.meta.env.VITE_SPOTIFY_CLIENT_ID),
-  clientSecret: validateEnvVar('VITE_SPOTIFY_CLIENT_SECRET', import.meta.env.VITE_SPOTIFY_CLIENT_SECRET),
-  redirectUri: import.meta.env.VITE_SPOTIFY_REDIRECT_URI || `${getBaseUrl()}/callback`
+  clientId: import.meta.env.VITE_SPOTIFY_CLIENT_ID || '00c8de708f5d471eabb281146cf195bc',
+  clientSecret: import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || 'b9049fc180f5459684ee75dbb0509e06',
+  redirectUri: getRedirectUri(),
+  validRedirectUris: getValidRedirectUris()
 };
 
 // YouTube API credentials
 export const youtubeConfig = {
-  clientId: validateEnvVar('VITE_YOUTUBE_CLIENT_ID', import.meta.env.VITE_YOUTUBE_CLIENT_ID),
-  clientSecret: validateEnvVar('VITE_YOUTUBE_CLIENT_SECRET', import.meta.env.VITE_YOUTUBE_CLIENT_SECRET),
+  clientId: import.meta.env.VITE_YOUTUBE_CLIENT_ID || '968024909043-qv0sceqajnebc6m3088eoq519n3epbua.apps.googleusercontent.com',
+  clientSecret: import.meta.env.VITE_YOUTUBE_CLIENT_SECRET || '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',
   redirectUri: import.meta.env.VITE_YOUTUBE_REDIRECT_URI || `${getBaseUrl()}/youtube-callback`
 };

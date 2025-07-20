@@ -13,22 +13,22 @@ interface ShareModalProps {
 export const ShareModal: React.FC<ShareModalProps> = ({ 
   isOpen, 
   onClose, 
-  url = '', 
+  url = window.location.href, 
   title = 'Share',
   description = 'Check out this playlist conversion!'
 }) => {
   const [copied, setCopied] = useState(false);
   const [canShare, setCanShare] = useState(false);
+  const shareUrl = url || window.location.href;
 
   useEffect(() => {
     // Check if Web Share API is supported
-    setCanShare('share' in navigator);
+    setCanShare(typeof navigator !== 'undefined' && 'share' in navigator);
   }, []);
 
   const handleCopy = async () => {
-    if (!url) return;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -37,13 +37,12 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   const handleShare = async () => {
-    if (!url) return;
     if (canShare) {
       try {
         await navigator.share({
           title: title || 'SoundSwapp',
           text: description,
-          url: url
+          url: shareUrl
         });
       } catch (err) {
         if (err instanceof Error && err.name !== 'AbortError') {
@@ -54,10 +53,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       handleCopy();
     }
   };
-
-  if (!url) {
-    return null;
-  }
 
   return (
     <AnimatePresence>
@@ -92,7 +87,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               <div className="flex items-center gap-2 mb-4">
                 <input
                   type="text"
-                  value={url}
+                  value={shareUrl}
                   readOnly
                   className="flex-1 p-2 text-sm border rounded-lg bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
                 />

@@ -27,6 +27,7 @@ const EnhancedConnectionSection = () => {
   // Auth and connection states
   const { 
     user,
+    loading,
     hasSpotifyAuth,
     hasYouTubeAuth,
     spotifyUserProfile,
@@ -50,10 +51,71 @@ const EnhancedConnectionSection = () => {
   const [isFlowerMenuOpen, setIsFlowerMenuOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [isConnecting, setIsConnecting] = useState({ spotify: false, youtube: false });
+  const [connectionStatus, setConnectionStatus] = useState({ spotify: 'unknown', youtube: 'unknown' });
   
-    // No refs needed for simplified version  
-      // No animation effects in this version
+  // Listen for auth state changes from Spotify and YouTube
+  useEffect(() => {
+    console.log("Setting up auth event listeners");
+    
+    // Listen for Spotify auth events
+    const handleSpotifyAuthChange = (event: CustomEvent) => {
+      console.log("Spotify auth changed event received:", event.detail);
+      refreshConnections();
+    };
+    
+    // Listen for YouTube auth events
+    const handleYouTubeAuthChange = (event: CustomEvent) => {
+      console.log("YouTube auth changed event received:", event.detail);
+      refreshConnections();
+    };
+    
+    // Listen for auth completion from popup windows
+    const handleMessage = (event: MessageEvent) => {
+      // Verify origin for security
+      if (event.origin !== window.location.origin) return;
+      
+      if (event.data && event.data.type === 'spotify-auth-complete') {
+        console.log("Received spotify-auth-complete message:", event.data);
+        refreshConnections();
+      }
+      
+      if (event.data && event.data.type === 'youtube-auth-complete') {
+        console.log("Received youtube-auth-complete message:", event.data);
+        refreshConnections();
+      }
+    };
+    
+    // Add event listeners
+    window.addEventListener('spotify-auth-changed', handleSpotifyAuthChange as EventListener);
+    window.addEventListener('youtube-auth-changed', handleYouTubeAuthChange as EventListener);
+    window.addEventListener('message', handleMessage);
+    
+    // Refresh connections on mount
+    refreshConnections();
+    
+    // Clean up event listeners
+    return () => {
+      window.removeEventListener('spotify-auth-changed', handleSpotifyAuthChange as EventListener);
+      window.removeEventListener('youtube-auth-changed', handleYouTubeAuthChange as EventListener);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [refreshConnections]);
 
+  // Update connection status when auth state changes
+  useEffect(() => {
+    setConnectionStatus(prev => ({
+      ...prev,
+      spotify: hasSpotifyAuth ? 'connected' : 'disconnected',
+      youtube: hasYouTubeAuth ? 'connected' : 'disconnected'
+    }));
+  }, [hasSpotifyAuth, hasYouTubeAuth]);
+  
+  // Refresh connections on mount to ensure UI state is synchronized
+  useEffect(() => {
+    console.log('EnhancedConnectionSection: Refreshing connections on mount');
+    refreshConnections();
+  }, [refreshConnections]);
+  
   // Handle icon ripple effect
   const handleIconRipple = (e: React.MouseEvent) => {
     setShowRipple({ x: 10, y: 10, timestamp: Date.now() });
@@ -88,39 +150,117 @@ const EnhancedConnectionSection = () => {
   // Handle Spotify connection
   const handleSpotifyConnect = async () => {
     try {
+      console.log('Initiating Spotify connection...');
       setIsConnecting(prev => ({ ...prev, spotify: true }));
-      initSpotifyAuth();
+      
+      // Store current path to return to after auth
+      localStorage.setItem('spotify_auth_return_path', window.location.pathname);
+      
+      const result = await initSpotifyAuth();
+      if (!result.success) {
+        console.error('Failed to initiate Spotify auth:', result.error);
+      } else {
+        console.log('Spotify auth initiated successfully');
+      }
     } catch (error) {
-      console.error('Failed to connect to Spotify:', error);
+      console.error('Exception in Spotify connection:', error);
     } finally {
-      setIsConnecting(prev => ({ ...prev, spotify: false }));
+      // Only set connecting to false if we're not redirecting
+      // (in case of popup flow, we want to keep the connecting state)
+      if (document.hasFocus()) {
+        setIsConnecting(prev => ({ ...prev, spotify: false }));
+      }
     }
   };
 
   // Handle YouTube connection
   const handleYouTubeConnect = async () => {
     try {
+      console.log('Initiating YouTube connection...');
       setIsConnecting(prev => ({ ...prev, youtube: true }));
+      
+      // Store current path to return to after auth
+      localStorage.setItem('youtube_auth_return_path', window.location.pathname);
+      
       await signInWithGoogle();
-      await refreshConnections(); // Refresh connections after YouTube auth
+      console.log('Google sign-in completed, refreshing connections...');
+      await refreshConnections();
     } catch (error) {
-      console.error('Failed to connect to YouTube:', error);
+      console.error('Exception in YouTube connection:', error);
     } finally {
-      setIsConnecting(prev => ({ ...prev, youtube: false }));
+      // Only set connecting to false if we're not redirecting
+      if (document.hasFocus()) {
+        setIsConnecting(prev => ({ ...prev, youtube: false }));
+      }
     }
   };
 
   // Handle manual refresh
   const handleManualRefresh = async () => {
     try {
+      console.log("Manual refresh requested");
       await refreshConnections();
     } catch (error) {
       console.error('Failed to refresh connections:', error);
     }
   };
 
+  // Debug section to show authentication state
+  const renderDebugInfo = () => {
+    if (process.env.NODE_ENV === 'development') {
+      return (
+        <div className="mb-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-300">
+          <h4 className="font-semibold mb-2">Debug Info:</h4>
+          <div className="space-y-1">
+            <div>User: {user ? `${user.email} (${user.uid})` : 'Not authenticated'}</div>
+            <div>Spotify Auth: {hasSpotifyAuth ? 'Connected' : 'Not connected'}</div>
+            <div>YouTube Auth: {hasYouTubeAuth ? 'Connected' : 'Not connected'}</div>
+            <div>Loading: {loading ? 'Yes' : 'No'}</div>
+            <div className="mt-2 p-2 bg-yellow-500/20 border border-yellow-500/30 rounded">
+              <strong>Development Mode:</strong> Connection buttons will work even without authentication for testing purposes.
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Authentication status indicator
+  const renderAuthStatus = () => {
+    if (!user && process.env.NODE_ENV !== 'development') {
+      return (
+        <motion.div 
+          className="mb-6 p-4 bg-yellow-500/20 border border-yellow-500/30 rounded-xl backdrop-blur-sm"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-yellow-300 font-medium mb-1">Authentication Required</h3>
+              <p className="text-yellow-200/80 text-sm">Please sign in to connect your music services</p>
+            </div>
+            <button
+              onClick={() => window.location.href = '/login'}
+              className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-sm"
+            >
+              Sign In
+            </button>
+          </div>
+        </motion.div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 ${isDarkMode ? 'bg-transparent' : 'bg-gray-50'}`}>
+      {/* Debug info */}
+      {renderDebugInfo()}
+      
+      {/* Auth status */}
+      {renderAuthStatus()}
+      
       {/* Theme toggle */}
       <motion.div 
         className="absolute top-4 right-4 z-50"
@@ -158,6 +298,38 @@ const EnhancedConnectionSection = () => {
         <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
           Sign in to both platforms to easily convert playlists between services
         </p>
+        
+        {/* Add refresh button */}
+        <button 
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className={`mt-4 px-4 py-2 rounded-lg flex items-center justify-center gap-2 ${
+            isDarkMode 
+              ? 'bg-gray-800/50 hover:bg-gray-700/50 text-gray-300' 
+              : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+          } text-sm transition-colors`}
+        >
+          {isRefreshing ? (
+            <>
+              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>Refreshing...</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>Refresh Connections</span>
+            </>
+          )}
+        </button>
+        
+        {connectionError && (
+          <p className="text-red-500 text-sm mt-2">Error: {connectionError}</p>
+        )}
       </motion.div>
 
       {/* Main container */}
