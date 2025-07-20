@@ -48,15 +48,15 @@ export const firebaseConfig = {
 
 // Spotify API credentials
 export const spotifyConfig = {
-  clientId: import.meta.env.VITE_SPOTIFY_CLIENT_ID || '00c8de708f5d471eabb281146cf195bc',
-  clientSecret: import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || 'b9049fc180f5459684ee75dbb0509e06',
+  clientId: import.meta.env.VITE_SPOTIFY_CLIENT_ID || '',
+  clientSecret: import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || '',
   redirectUri: getRedirectUri(),
   validRedirectUris: getValidRedirectUris()
 };
 
 // YouTube API credentials
 export const youtubeConfig = {
-  clientId: import.meta.env.VITE_YOUTUBE_CLIENT_ID || '968024909043-qv0sceqajnebc6m3088eoq519n3epbua.apps.googleusercontent.com',
-  clientSecret: import.meta.env.VITE_YOUTUBE_CLIENT_SECRET || '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',
+  clientId: import.meta.env.VITE_YOUTUBE_CLIENT_ID || '',
+  clientSecret: import.meta.env.VITE_YOUTUBE_CLIENT_SECRET || '',
   redirectUri: import.meta.env.VITE_YOUTUBE_REDIRECT_URI || `${getBaseUrl()}/youtube-callback`
 };
