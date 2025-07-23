@@ -437,7 +437,7 @@ export const ParticleField: React.FC<ParticleFieldProps> = ({
   return (
     <div 
       ref={containerRef}
-      className={cn("absolute inset-0 overflow-hidden", interactive ? "pointer-events-auto" : "pointer-events-none", className)}
+      className={cn("absolute inset-0 overflow-hidden pointer-events-none", className)}
     >
       {particles.map((particle) => {
         // Get current position from state or use default

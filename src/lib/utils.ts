@@ -54,82 +54,79 @@ export const detectConnectionQuality = (): 'good' | 'slow' | 'limited' | 'offlin
   return 'good';
 };
 
-/**
- * Optimize the application for mobile devices
- * Call this function early in your application lifecycle
- */
-export const optimizeForMobile = () => {
-  const isMobile = isMobileDevice() || window.innerWidth < 768;
+// optimizeForMobile is temporarily disabled for debugging mobile rendering issues.
+// export const optimizeForMobile = () => {
+//   const isMobile = isMobileDevice() || window.innerWidth < 768;
   
-  if (isMobile) {
-    // 1. Add mobile class to body
-    document.body.classList.add('is-mobile');
-    document.documentElement.classList.add('is-mobile-device');
+//   if (isMobile) {
+//     // 1. Add mobile class to body
+//     document.body.classList.add('is-mobile');
+//     document.documentElement.classList.add('is-mobile-device');
     
-    // 2. Set viewport based on device
-    if (isIOSDevice()) {
-      // iOS-specific optimizations
-      const viewportMeta = document.querySelector('meta[name="viewport"]');
-      if (viewportMeta) {
-        viewportMeta.setAttribute('content', 
-          'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
-      }
-    }
+//     // 2. Set viewport based on device
+//     if (isIOSDevice()) {
+//       // iOS-specific optimizations
+//       const viewportMeta = document.querySelector('meta[name="viewport"]');
+//       if (viewportMeta) {
+//         viewportMeta.setAttribute('content', 
+//           'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+//       }
+//     }
     
-    // 3. Reduce animation complexity
-    // Reduce animation frame rate for complex animations
-    const originalRequestAnimationFrame = window.requestAnimationFrame;
-    window.requestAnimationFrame = (callback) => {
-      // Only throttle if explicitly marked as complex
-      if (document.documentElement.classList.contains('complex-animation-running')) {
-        return window.setTimeout(() => callback(performance.now()), 33); // ~30fps
-      }
-      return originalRequestAnimationFrame(callback);
-    };
+//     // 3. Reduce animation complexity
+//     // Reduce animation frame rate for complex animations
+//     const originalRequestAnimationFrame = window.requestAnimationFrame;
+//     window.requestAnimationFrame = (callback) => {
+//       // Only throttle if explicitly marked as complex
+//       if (document.documentElement.classList.contains('complex-animation-running')) {
+//         return window.setTimeout(() => callback(performance.now()), 33); // ~30fps
+//       }
+//       return originalRequestAnimationFrame(callback);
+//     };
     
-    // 4. Listen for orientation changes
-    const updateOrientation = () => {
-      const isPortrait = window.innerHeight > window.innerWidth;
-      document.body.classList.toggle('portrait', isPortrait);
-      document.body.classList.toggle('landscape', !isPortrait);
+//     // 4. Listen for orientation changes
+//     const updateOrientation = () => {
+//       const isPortrait = window.innerHeight > window.innerWidth;
+//       document.body.classList.toggle('portrait', isPortrait);
+//       document.body.classList.toggle('landscape', !isPortrait);
       
-      // Dispatch a custom event for components to react
-      window.dispatchEvent(new CustomEvent('orientationchange', {
-        detail: { isPortrait }
-      }));
-    };
+//       // Dispatch a custom event for components to react
+//       window.dispatchEvent(new CustomEvent('orientationchange', {
+//         detail: { isPortrait }
+//       }));
+//     };
     
-    // 5. Setup listeners
-    window.addEventListener('resize', updateOrientation, { passive: true });
-    updateOrientation(); // Initial call
+//     // 5. Setup listeners
+//     window.addEventListener('resize', updateOrientation, { passive: true });
+//     updateOrientation();
     
-    // 6. Fix common mobile browser bugs
-    // Fix for delayed focus on inputs
-    document.addEventListener('touchend', (e) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
-        // Small delay to prevent conflicts with other handlers
-        setTimeout(() => {
-          (target as HTMLInputElement).focus();
-        }, 100);
-      }
-    }, { passive: true });
+//     // 6. Fix common mobile browser bugs
+//     // Fix for delayed focus on inputs
+//     document.addEventListener('touchend', (e) => {
+//       const target = e.target as HTMLElement;
+//       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+//         // Small delay to prevent conflicts with other handlers
+//         setTimeout(() => {
+//           (target as HTMLInputElement).focus();
+//         }, 100);
+//       }
+//     }, { passive: true });
     
-    // 7. Optimize scroll performance
-    document.documentElement.classList.add('smooth-scroll');
+//     // 7. Optimize scroll performance
+//     document.documentElement.classList.add('smooth-scroll');
     
-    return {
-      isMobile: true,
-      cleanupFunction: () => {
-        window.removeEventListener('resize', updateOrientation);
-        // Restore original RAF
-        window.requestAnimationFrame = originalRequestAnimationFrame;
-      }
-    };
-  }
+//     return {
+//       isMobile: true,
+//       cleanupFunction: () => {
+//         window.removeEventListener('resize', updateOrientation);
+//         // Restore original RAF
+//         window.requestAnimationFrame = originalRequestAnimationFrame;
+//       }
+//     };
+//   }
   
-  return { isMobile: false, cleanupFunction: () => {} };
-};
+//   return { isMobile: false, cleanupFunction: () => {} };
+// };
 
 /**
  * Comprehensive mobile device detection and information

@@ -2,9 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Service Worker Cleanup -->
+    <!-- Service Worker Cleanup: Unregister all service workers on load -->
     <script>
-      // Unregister any existing service workers
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(registrations) {
           for(let registration of registrations) {
@@ -112,18 +111,7 @@
     </script>
     
     <!-- Primary Content Security Policy - Made more permissive for development -->
-    <meta http-equiv="Content-Security-Policy" content="
-      default-src 'self';
-      script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.google.com https://*.gstatic.com https://*.googleapis.com https://*.googletagmanager.com https://accounts.scdn.co https://*.google-analytics.com;
-      script-src-elem 'self' 'unsafe-eval' 'unsafe-inline' https://*.google.com https://*.gstatic.com https://*.googleapis.com https://*.googletagmanager.com https://accounts.scdn.co https://*.google-analytics.com;
-      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-      img-src 'self' data: https:;
-      media-src 'self' https:;
-      connect-src 'self' https://* http://* wss://* https://*.spotify.com https://accounts.spotify.com https://api.spotify.com;
-      font-src 'self' https://fonts.gstatic.com;
-      frame-src 'self' https://* http://*;
-      worker-src 'self';
-    ">
+    <!-- REMOVED CSP META TAG TO ALLOW FIREBASE HOSTING HEADER TO TAKE EFFECT -->
     <!-- Cross-Origin-Opener-Policy -->
     <meta http-equiv="Cross-Origin-Opener-Policy" content="unsafe-none" />
     <title>SoundSwapp - Sync Your Music Across All Platforms</title>
@@ -140,8 +128,7 @@
     <meta property="twitter:title" content="SoundSwapp - Sync Your Music Across All Platforms" />
     <meta property="twitter:description" content="Seamlessly sync your music playlists across Spotify, YouTube Music, and more with one click." />
     <meta property="twitter:image" content="/images/og-image.png" />
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/manifest.json" />
+    <!-- Removed PWA manifest and related meta tags to disable PWA features -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">

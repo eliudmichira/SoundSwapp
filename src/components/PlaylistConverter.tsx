@@ -18,6 +18,7 @@ import { useMousePosition } from '../hooks/useMousePosition';
 import { Link as LucideLink, RefreshCw, Youtube as LucideYoutube, Bolt, Shield, User as UserIcon, Monitor, Github, Twitter, Instagram, Send, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
+import SoundSwappLogo from '../assets/SoundSwappLogo';
 
 // Add custom CSS for animations and orbital flow
 const styles = {
@@ -1028,8 +1029,9 @@ export default function PlaylistConverter() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.5 }}
               >
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent mb-4 inline-block">
-                Playlist Converter
+                <h2 className="flex items-center gap-2 text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent mb-4 inline-block">
+                  <SoundSwappLogo width={32} height={32} />
+                  SoundSwapp
                 </h2>
                 <p className="text-gray-400 mb-6">Convert between music platforms effortlessly with our modern, type-safe solution.</p>
                 <div className="flex space-x-5">

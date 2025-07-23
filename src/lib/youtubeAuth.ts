@@ -220,6 +220,7 @@ export const handleYouTubeCallback = async (): Promise<void> => {
     
     // Exchange code for tokens
     const tokenData = await exchangeCodeForToken(authCode);
+    console.log("Token data received from Google:", tokenData);
     
     if (!tokenData.access_token) {
       throw new Error('No access token received from token exchange');
@@ -233,6 +234,7 @@ export const handleYouTubeCallback = async (): Promise<void> => {
       refreshToken: tokenData.refresh_token,
       expiresAt: Date.now() + (tokenData.expires_in * 1000)
     });
+    console.log("Token should now be in localStorage:", localStorage.getItem('soundswapp_youtube_access_token'));
     
     // Update Firestore to mark YouTube as connected
     try {

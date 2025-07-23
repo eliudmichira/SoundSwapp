@@ -59,7 +59,7 @@ ChartJS.register(
 type Genre = PlaylistTypes.Genre;
 type Track = PlaylistTypes.Track;
 type Artist = PlaylistTypes.Artist;
-type PlaylistInsightsProps = PlaylistTypes.PlaylistInsightsProps;
+type PlaylistInsightsProps = PlaylistTypes.PlaylistInsightsProps & { tracks: any[] };
 
 // Enhanced animations
 const fadeInUp = {
@@ -85,12 +85,14 @@ const scaleOnHover = {
 const calculateAdvancedMetrics = (stats: PlaylistInsightsProps['stats']) => {
   const listeningTime = Math.round(stats.totalDuration / 3600000); // Convert ms to hours
   const avgTracksPerArtist = stats.uniqueArtists ? Math.round(stats.totalTracks / stats.uniqueArtists) : 0;
-  const diversityScore = stats.genres.length > 0 ? Math.round((stats.genres.length / stats.totalTracks) * 100) : 0;
+  // Diversity score: never exceed 100%, always safe for edge cases
+  const diversityScore = stats.totalTracks > 0
+    ? Math.min(100, Math.round((stats.genres.length / stats.totalTracks) * 100))
+    : 0;
   const vintageScore = stats.releaseYears ? 
     Math.round((Object.entries(stats.releaseYears)
       .filter(([year]) => parseInt(year) < 2000)
       .reduce((sum, [_, count]) => sum + count, 0) / stats.totalTracks) * 100) : 0;
-  
   return {
     listeningTime,
     avgTracksPerArtist,
@@ -489,14 +491,47 @@ const prepareYearData = (stats: PlaylistTypes.PlaylistStats) => {
   };
 };
 
+// Helper to detect if playlist is from YouTube (all tracks have duration_ms and popularity 0)
+function isYouTubePlaylist(tracks: Track[]) {
+  if (!tracks || tracks.length === 0) return false;
+  return tracks.every(track => (track.duration_ms === 0 || track.duration_ms === undefined) && (track.popularity === 0 || track.popularity === undefined));
+}
+
+// Helper to detect if playlist is from Spotify (at least one track has a nonzero duration_ms and a releaseYear)
+function isSpotifyPlaylist(tracks: Track[]) {
+  if (!tracks || tracks.length === 0) return false;
+  return tracks.some(track => (track.duration_ms ?? 0) > 0 && track.releaseYear);
+}
+
+// Helpers for formatting stats with graceful fallbacks
+function formatMinutes(minutes: number | null | undefined) {
+  if (minutes === null || minutes === undefined) return 'N/A';
+  if (minutes === 0) return 'N/A';
+  return `${minutes} mins`;
+}
+
+function formatNumber(num: number | null | undefined) {
+  if (num === null || num === undefined) return 'N/A';
+  if (num === 0) return 'N/A';
+  return num;
+}
+
+function formatPercent(percent: number | null | undefined) {
+  if (percent === null || percent === undefined) return 'N/A';
+  if (percent === 0) return 'N/A';
+  return `${percent}%`;
+}
+
 // Main component
-export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
-  const [activeView, setActiveView] = useState<'overview' | 'genres' | 'artists' | 'timeline' | 'insights'>('overview');
+export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProps) {
+  const [activeView, setActiveView] = useState<'overview' | 'genres' | 'artists' | 'musicTaste'>('overview');
   const [isInfoVisible, setIsInfoVisible] = useState<boolean>(false);
   const [selectedMetric, setSelectedMetric] = useState<'popularity' | 'duration' | 'release'>('popularity');
   const [showTooltip, setShowTooltip] = useState<{ x: number; y: number; content: string } | null>(null);
 
   const advancedMetrics = calculateAdvancedMetrics(stats);
+  const isYoutube = isYouTubePlaylist(tracks);
+  const isSpotify = isSpotifyPlaylist(tracks);
 
   return (
     <GlassmorphicContainer className="max-w-7xl mx-auto p-6 space-y-8" rounded="xl">
@@ -508,6 +543,22 @@ export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
       >
         <div className="flex items-center justify-center gap-3">
           <SoundSwappLogo size={48} className="animate-pulse-slow" />
+          {/* Show official YouTube logo for YouTube playlists, branding compliant */}
+          {isYoutube && (
+            <a
+              href="https://www.youtube.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="YouTube"
+              style={{ display: 'inline-block', padding: '8px' }}
+            >
+              <img
+                src="/images/yt_logo_rgb_dark.png"
+                alt="YouTube"
+                style={{ height: 32, minHeight: 20, maxHeight: 40, width: 'auto', objectFit: 'contain' }}
+              />
+            </a>
+          )}
           <h1 className="text-4xl font-bold bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent-pink)] bg-clip-text text-transparent">
             Playlist Insights
           </h1>
@@ -525,12 +576,11 @@ export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
         className="flex justify-center"
       >
         <GlassmorphicContainer className="flex p-1" rounded="xl">
-          {[
+          {[ 
             { key: 'overview', label: 'Overview', icon: BarChart3 },
             { key: 'genres', label: 'Genres', icon: PieChart },
             { key: 'artists', label: 'Artists', icon: Users },
-            { key: 'timeline', label: 'Timeline', icon: Calendar },
-            { key: 'insights', label: 'Insights', icon: Zap }
+            { key: 'musicTaste', label: 'Music Taste', icon: Heart }
           ].map(({ key, label, icon: Icon }) => (
             <motion.button
               key={key}
@@ -560,49 +610,42 @@ export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
             exit={{ opacity: 0, x: 20 }}
             className="space-y-8"
           >
-            {/* Key Metrics with glassmorphic effect */}
+            {/* Stats Cards with graceful fallbacks */}
             <motion.div
               variants={staggerChildren}
               initial="initial"
               animate="animate"
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
             >
-              <GlassmorphicContainer className="relative overflow-hidden" rounded="xl">
-                <StatCard
-                  icon={Music}
-                  title="Total Tracks"
-                  value={stats.totalTracks.toLocaleString()}
-                  subtitle={`${stats.uniqueArtists || 0} unique artists`}
-                  color="purple"
-                  trend="+12% vs last month"
-                />
-              </GlassmorphicContainer>
-              <GlassmorphicContainer className="relative overflow-hidden" rounded="xl">
-                <StatCard
-                  icon={Clock}
-                  title="Total Duration"
-                  value={`${Math.round(stats.totalDuration / 60)} mins`}
-                  color="blue"
-                />
-              </GlassmorphicContainer>
-              <GlassmorphicContainer className="relative overflow-hidden" rounded="xl">
-                <StatCard
-                  icon={Flame}
-                  title="Avg. Popularity"
-                  value={Math.round(stats.avgPopularity)}
-                  subtitle="Out of 100"
-                  color="red"
-                />
-              </GlassmorphicContainer>
-              <GlassmorphicContainer className="relative overflow-hidden" rounded="xl">
-                <StatCard
-                  icon={Award}
-                  title="Diversity Score"
-                  value={`${advancedMetrics.diversityScore}%`}
-                  subtitle="Genre variety index"
-                  color="green"
-                />
-              </GlassmorphicContainer>
+              <StatCard
+                icon={Music}
+                title="Total Tracks"
+                value={formatNumber(stats.totalTracks)}
+                subtitle={`${formatNumber(stats.uniqueArtists)} unique artists`}
+                color="purple"
+                trend={undefined}
+              />
+              <StatCard
+                icon={Clock}
+                title="Total Duration"
+                value={formatMinutes(stats.totalDuration)}
+                color="blue"
+                subtitle={stats.totalDuration === 0 ? 'Data not available' : undefined}
+              />
+              <StatCard
+                icon={Flame}
+                title="Avg. Popularity"
+                value={formatNumber(Math.round(stats.avgPopularity))}
+                subtitle={stats.avgPopularity === 0 ? 'Data not available' : 'Out of 100'}
+                color="red"
+              />
+              <StatCard
+                icon={Award}
+                title="Diversity Score"
+                value={formatPercent(advancedMetrics.diversityScore)}
+                subtitle={advancedMetrics.diversityScore === 0 ? 'Data not available' : 'Genre variety index'}
+                color="green"
+              />
             </motion.div>
 
             {/* Enhanced Chart Section */}
@@ -658,84 +701,59 @@ export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
               </div>
 
               {/* Chart Container with Enhanced Visualizations */}
-              <div className="h-80 relative">
-                <AnimatePresence mode="wait">
-                  {selectedMetric === 'popularity' && (
-                    <motion.div
-                      key="popularity"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.3 }}
-                      className="h-full"
-                    >
-                      <Doughnut 
-                        options={{
-                          ...chartOptions,
-                          plugins: {
-                            ...chartOptions.plugins,
-                            title: {
-                              display: true,
-                              text: 'Track Popularity Distribution',
-                              color: 'rgb(107, 114, 128)',
-                              font: {
-                                size: 16,
-                                weight: 'bold'
-                              }
-                            }
-                          }
-                        }} 
-                        data={preparePopularityData(stats)} 
-                      />
-                    </motion.div>
-                  )}
-                  {selectedMetric === 'duration' && (
-                    <motion.div
-                      key="duration"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.3 }}
-                      className="h-full"
-                    >
-                      <Pie 
-                        options={{
-                          ...chartOptions,
-                          plugins: {
-                            ...chartOptions.plugins,
-                            title: {
-                              display: true,
-                              text: 'Track Duration Distribution',
-                              color: 'rgb(107, 114, 128)',
-                              font: {
-                                size: 16,
-                                weight: 'bold'
-                              }
-                            }
-                          }
-                        }}
-                        data={prepareDurationData(stats)} 
-                      />
-                    </motion.div>
-                  )}
-                  {selectedMetric === 'release' && (
-                    <motion.div
-                      key="release"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.3 }}
-                      className="h-full flex flex-col"
-                    >
-                      <div className="flex-1">
-                        <Line 
+              {isYoutube ? (
+                <div className="text-center text-gray-500 my-8">
+                  Popularity and duration insights are not available for YouTube playlists due to API limitations.
+                </div>
+              ) : (
+                <div className="h-80 relative">
+                  <AnimatePresence mode="wait">
+                    {selectedMetric === 'popularity' && (
+                      <motion.div
+                        key="popularity"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.3 }}
+                        className="h-full"
+                      >
+                        <Doughnut 
                           options={{
                             ...chartOptions,
                             plugins: {
                               ...chartOptions.plugins,
                               title: {
                                 display: true,
-                                text: 'Tracks by Release Year',
+                                text: 'Track Popularity Distribution',
+                                color: 'rgb(107, 114, 128)',
+                                font: {
+                                  size: 16,
+                                  weight: 'bold'
+                                }
+                              }
+                            }
+                          }} 
+                          data={preparePopularityData(stats)} 
+                        />
+                      </motion.div>
+                    )}
+                    {selectedMetric === 'duration' && (
+                      <motion.div
+                        key="duration"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.3 }}
+                        className="h-full"
+                      >
+                        <Pie 
+                          options={{
+                            ...chartOptions,
+                            plugins: {
+                              ...chartOptions.plugins,
+                              title: {
+                                display: true,
+                                text: 'Track Duration Distribution',
                                 color: 'rgb(107, 114, 128)',
                                 font: {
                                   size: 16,
@@ -744,29 +762,13 @@ export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
                               }
                             }
                           }}
-                          data={prepareYearData(stats)} 
+                          data={prepareDurationData(stats)} 
                         />
-                      </div>
-                      <div className="mt-4">
-                        <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Decade Distribution</h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                          {Object.entries(stats.decadeDistribution || {})
-                            .sort(([a], [b]) => b.localeCompare(a))
-                            .map(([decade, count]) => {
-                              const percentage = ((count / stats.totalTracks) * 100).toFixed(1);
-                              return (
-                                <div key={decade} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
-                                  <div className="text-sm font-medium text-gray-900 dark:text-white">{decade}s</div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">{count} tracks ({percentage}%)</div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -916,9 +918,9 @@ export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
           </motion.div>
         )}
 
-        {activeView === 'insights' && (
+        {activeView === 'musicTaste' && (
           <motion.div
-            key="insights"
+            key="musicTaste"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
@@ -926,61 +928,15 @@ export function EnhancedPlaylistInsights({ stats }: PlaylistInsightsProps) {
           >
             <GlassmorphicContainer className="bg-gradient-to-br from-white/80 to-white/40 dark:from-gray-800/80 dark:to-gray-900/40 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-gray-700/50 shadow-lg p-6">
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-                <Zap className="text-yellow-500" size={20} />
-                Smart Insights
+                <Heart className="text-red-500" size={20} />
+                Music Taste
               </h3>
               <div className="space-y-6">
-                {/* Personalized insights based on data */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <GlassmorphicContainer className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Heart className="text-red-500" size={16} />
-                      <span className="font-medium text-gray-900 dark:text-white">Music Taste</span>
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Your playlist shows a strong preference for {stats.genres[0]?.name || 'diverse'} music with 
-                      {stats.avgPopularity > 70 ? ' highly popular' : stats.avgPopularity > 40 ? ' moderately popular' : ' underground'} tracks.
-                    </p>
-                  </GlassmorphicContainer>
-                  
-                  <GlassmorphicContainer className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Volume2 className="text-blue-500" size={16} />
-                      <span className="font-medium text-gray-900 dark:text-white">Listening Habits</span>
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      With {Math.round(stats.totalDuration / 60)} hours of music, you have about {Math.round(stats.totalDuration / 60)} hours of listening time.
-                    </p>
-                  </GlassmorphicContainer>
-                </div>
-
-                {/* Recommendations */}
-                <GlassmorphicContainer className="bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Sparkles className="text-green-500" size={16} />
-                    <span className="font-medium text-gray-900 dark:text-white">Recommendations</span>
-                  </div>
-                  <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                    {advancedMetrics.diversityScore < 30 && (
-                      <div className="flex items-center gap-2">
-                        <Shuffle size={14} />
-                        <span>Try exploring more genres to diversify your playlist</span>
-                      </div>
-                    )}
-                    {stats.avgPopularity < 40 && (
-                      <div className="flex items-center gap-2">
-                        <TrendingUp size={14} />
-                        <span>You enjoy discovering underground music - consider checking out similar artists</span>
-                      </div>
-                    )}
-                    {advancedMetrics.vintageScore > 50 && (
-                      <div className="flex items-center gap-2">
-                        <Clock size={14} />
-                        <span>You have great taste in classic music - explore more from those eras</span>
-                      </div>
-                    )}
-                  </div>
-                </GlassmorphicContainer>
+                <p className="text-gray-600 dark:text-gray-300 text-lg">
+                  {stats.genres && stats.genres.length > 0
+                    ? `Your playlist shows a strong preference for ${stats.genres[0].name} music with ${stats.avgPopularity > 70 ? 'highly popular' : stats.avgPopularity > 40 ? 'moderately popular' : 'underground'} tracks.`
+                    : 'No clear genre preference detected.'}
+                </p>
               </div>
             </GlassmorphicContainer>
           </motion.div>

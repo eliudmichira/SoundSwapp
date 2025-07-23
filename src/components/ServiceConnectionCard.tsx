@@ -25,13 +25,13 @@ export const ServiceConnectionCard = ({
   const serviceConfig = {
     spotify: {
       name: 'Spotify',
-      icon: '/spotify-icon.svg',
+      icon: '/images/spotify_logo.png',
       color: '#1DB954',
       hoverColor: '#1ed760'
     },
     youtube: {
       name: 'YouTube',
-      icon: '/youtube-icon.svg',
+      icon: '/images/yt_logo_rgb_dark.png',
       color: '#FF0000',
       hoverColor: '#ff1a1a'
     }

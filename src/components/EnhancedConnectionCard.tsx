@@ -308,11 +308,24 @@ const EnhancedConnectionCard: React.FC<EnhancedConnectionCardProps> = ({
               {isConnecting ? 'Connecting...' : (connected ? 'Connected' : 'Not Connected')}
             </div>
             
-            <div className={`p-3 rounded-full ${platformConfig.iconContainerBg} shadow-lg mb-3 mt-6 flex items-center justify-center`}>
-              {platformConfig.icon}
+            <div className="mb-3 mt-6 flex items-center justify-center">
+              {platform === 'youtube' && (
+                <img
+                  src="/images/YouTube connection card logo.png"
+                  alt="YouTube"
+                  style={{ height: 72, width: 72, objectFit: 'cover', display: 'block' }}
+                  className="h-18 w-18 rounded-full"
+                />
+              )}
+              {platform === 'spotify' && (
+                <img
+                  src="/images/Spotify_Primary_Logo_RGB_Green.png"
+                  alt="Spotify"
+                  style={{ height: 72, width: 72, objectFit: 'cover', display: 'block' }}
+                  className="h-18 w-18 rounded-full"
+                />
+              )}
             </div>
-            
-            <h3 className={`text-2xl md:text-3xl font-bold ${platformConfig.textColor} mb-1`}>{platformConfig.name}</h3>
             
             {connected && userProfile?.displayName && (
               <p className={`text-sm ${platformConfig.textColor} opacity-80 mb-2 truncate max-w-[90%]`}>
@@ -332,6 +345,7 @@ const EnhancedConnectionCard: React.FC<EnhancedConnectionCardProps> = ({
                 className="w-10 h-10 rounded-full mb-3 border-2 border-[var(--platform-indicator)] shadow-md object-cover"
               />
             )}
+            {/* Fallback: show official Spotify logo if no profile image and platform is Spotify */}
             
             <AnimatePresence>
               {connectionError && (

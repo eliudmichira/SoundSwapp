@@ -22,6 +22,7 @@ import { FloatingLabels } from './ui/FloatingLabels';
 import AnimatedGradientText from './ui/AnimatedGradientText';
 import LightingText from './ui/LightingText'; // Added import
 import SpotlightCard from './ui/SpotlightCard'; // Added import
+import SoundSwappLogo from '../assets/SoundSwappLogo';
 
 // Import Lucide React icons
 import { 
@@ -149,7 +150,7 @@ interface ConnectButtonProps {
 const ConnectButton: React.FC<ConnectButtonProps> = ({ platform, isConnected, onConnect, className }) => {
   const platformData = {
     spotify: {
-      icon: <FaSpotify className="h-5 w-5" />,
+      icon: <img src="/images/Spotify_Primary_Logo_RGB_Green.png" alt="Spotify" style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }} className="h-6 w-auto" />,
       text: 'Spotify',
       bgColor: 'bg-platform-spotify hover:bg-platform-spotify-hover',
       bgColorConnected: 'bg-platform-spotify-connected text-content-on-platform-spotify-connected'
@@ -662,7 +663,7 @@ const ModernPlaylistConverter: React.FC = () => {
       const selectedPlaylist = conversionState.spotifyPlaylists.find(p => p.id === conversionState.selectedPlaylistId);
       if (selectedPlaylist) {
         setPlaylistNameForExport(`${selectedPlaylist.name} (Converted)`);
-        setPlaylistDescriptionForExport(`Converted from ${sourcePlatform} using Playlist Converter`);
+        setPlaylistDescriptionForExport(`Converted from ${sourcePlatform} using SoundSwapp`);
       }
     }
   }, [conversionState.selectedPlaylistId, conversionState.spotifyPlaylists, sourcePlatform]);
@@ -805,7 +806,7 @@ const ModernPlaylistConverter: React.FC = () => {
     dispatch({ type: 'SELECT_PLAYLIST', payload: id });
     
     // Call the YouTube API to get tracks from this playlist
-    const accessToken = localStorage.getItem('youtube_access_token');
+    const accessToken = localStorage.getItem('soundswapp_youtube_access_token');
     
     if (!accessToken) {
       showToast('error', 'YouTube authentication token not found. Please reconnect.');
@@ -817,28 +818,48 @@ const ModernPlaylistConverter: React.FC = () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${id}`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      },
-      signal: controller.signal
-    })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`YouTube API error: ${response.status}`);
+    fetchAllYouTubePlaylistItems(id, accessToken)
+      .then(async allItems => {
+        if (!allItems || allItems.length === 0) {
+          console.warn('No tracks found in playlist or playlist is private/empty.');
+          setIsProcessing(false);
+          addToast({
+            type: 'error',
+            title: 'No tracks found',
+            message: 'This playlist appears to be empty or private.'
+          });
+          return;
         }
-        return response.json();
-      })
-      .then(data => {
-        clearTimeout(timeoutId);
-        
-        if (data && data.items && data.items.length > 0) {
-          // Convert YouTube playlist items to a format compatible with our tracks state
-          const tracks: Track[] = data.items.map((item: any) => {
+        // Step 1: Collect all videoIds
+        const videoIds = allItems.map((item: any) => item.snippet?.resourceId?.videoId || item.contentDetails?.videoId).filter(Boolean);
+        // Step 2: Fetch video details in batches of 50
+        const batches = [];
+        for (let i = 0; i < videoIds.length; i += 50) {
+          batches.push(videoIds.slice(i, i + 50));
+        }
+        let videoIdToYear: Record<string, number> = {};
+        for (const batch of batches) {
+          try {
+            const detailsResp = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${batch.join(',')}`, {
+              headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            if (detailsResp.ok) {
+              const detailsData = await detailsResp.json();
+              detailsData.items.forEach((video: any) => {
+                if (video.id && video.snippet && video.snippet.publishedAt) {
+                  videoIdToYear[video.id] = parseInt(video.snippet.publishedAt.split('-')[0], 10);
+                }
+              });
+            }
+          } catch (err) {
+            console.error('Error fetching video details batch:', err);
+          }
+        }
+        // Step 3: Map tracks with releaseYear
+        const tracks: Track[] = allItems.map((item: any) => {
             let videoTitle = item.snippet?.title || '';
             let artists = [item.snippet?.videoOwnerChannelTitle || 'Unknown'];
             let title = videoTitle;
-            
             // Smart parsing of video titles to extract artist and title
             const separators = [' - ', ' – ', ': ', ' "', " '", ' // '];
             for (const separator of separators) {
@@ -853,7 +874,7 @@ const ModernPlaylistConverter: React.FC = () => {
                 }
               }
             }
-            
+          const videoId = item.snippet?.resourceId?.videoId || item.contentDetails?.videoId;
             return {
               id: item.id || `yt-${Math.random().toString(36).substring(2, 9)}`,
               name: title,
@@ -863,53 +884,65 @@ const ModernPlaylistConverter: React.FC = () => {
               popularity: 0,
               explicit: false,
               searchQuery: `${artists[0]} ${title}`,
-              videoId: item.snippet?.resourceId?.videoId || item.contentDetails?.videoId
+            videoId,
+            releaseYear: videoIdToYear[videoId]?.toString()
             };
           });
-          
-          dispatch({ type: 'SET_TRACKS', payload: tracks as any }); // Use a type assertion for now
+        dispatch({ type: 'SET_TRACKS', payload: tracks as any });
           setIsProcessing(false);
-          
           setTimeout(() => {
             setCurrentWizardStep(3);
             document.getElementById('playlist-wizard-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 500);
-        } else {
-          addToast({
-            type: 'error',
-            title: 'No tracks found',
-            message: 'This playlist appears to be empty.'
-          });
-          setIsProcessing(false);
-        }
       })
       .catch(error => {
-        clearTimeout(timeoutId);
-        
+        setIsProcessing(false);
         console.error('Error fetching YouTube playlist tracks:', error);
-        
-        // More specific error message based on the error type
         let errorMessage = 'An error occurred trying to load the YouTube playlist.';
-        
         if (error.name === 'AbortError') {
           errorMessage = 'Request timed out. Please try again or check your internet connection.';
-        } else if (error.message.includes('401')) {
+        } else if (error.message && error.message.includes('401')) {
           errorMessage = 'YouTube authorization expired. Please reconnect your YouTube account.';
-        } else if (error.message.includes('403')) {
+        } else if (error.message && error.message.includes('403')) {
           errorMessage = 'You don\'t have permission to access this playlist.';
-        } else if (error.message.includes('404')) {
+        } else if (error.message && error.message.includes('404')) {
           errorMessage = 'Playlist not found. It may have been deleted or set to private.';
         }
-        
         addToast({
           type: 'error',
           title: 'Failed to load playlist',
           message: errorMessage
         });
-        
-        setIsProcessing(false);
       });
   }, [dispatch, addToast, showToast]);
+
+  // Helper to fetch all YouTube playlist items with pagination
+  async function fetchAllYouTubePlaylistItems(playlistId: string, accessToken: string) {
+    let allItems: any[] = [];
+    let nextPageToken = '';
+    let page = 1;
+    try {
+      do {
+        const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${playlistId}` + (nextPageToken ? `&pageToken=${nextPageToken}` : '');
+        const resp = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (!resp.ok) {
+          throw new Error(`YouTube API error: ${resp.status}`);
+        }
+        const data = await resp.json();
+        if (data.items && data.items.length > 0) {
+          allItems = allItems.concat(data.items);
+        }
+        nextPageToken = data.nextPageToken || '';
+        page++;
+      } while (nextPageToken);
+      return allItems;
+    } catch (err) {
+      console.error('Error fetching playlist items (pagination):', err);
+      return allItems;
+    }
+  }
 
   // Handle playlist URL submission with improved error handling
   const handlePlaylistUrlSubmit = useCallback(async (platform: PlatformKey) => {
@@ -1338,7 +1371,6 @@ const ModernPlaylistConverter: React.FC = () => {
               userName={user?.displayName || undefined}
               userPhoto={user?.photoURL || undefined}
               userMeta={user?.metadata}
-              // isDarkMode={isDark} // Removed as component uses useTheme internally
             />
             <EnhancedConnectionCard
               platform="youtube"
@@ -1351,7 +1383,6 @@ const ModernPlaylistConverter: React.FC = () => {
               userName={user?.displayName || undefined}
               userPhoto={user?.photoURL || undefined}
               userMeta={user?.metadata}
-              // isDarkMode={isDark} // Removed as component uses useTheme internally
             />
           </div>
           
@@ -1539,10 +1570,12 @@ const ModernPlaylistConverter: React.FC = () => {
                                 )}
                                 aria-label="Select Spotify as source platform"
                               >
-                                <FaSpotify className={cn(
-                                  "h-6 w-6",
-                                  sourcePlatform === 'spotify' ? "text-[#1DB954]" : "text-content-secondary dark:text-content-secondary-dark"
-                                )} />
+                                <img
+                                  src="/images/Spotify_Primary_Logo_RGB_Green.png"
+                                  alt="Spotify"
+                                  style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                  className="h-6 w-auto"
+                                />
                                 <span className={cn(
                                   sourcePlatform === 'spotify' 
                                     ? "text-[#1DB954] dark:text-[#1DB954]" 
@@ -1565,15 +1598,16 @@ const ModernPlaylistConverter: React.FC = () => {
                                 )}
                                 aria-label="Select YouTube as source platform"
                               >
-                                <Youtube className={cn(
-                                  "h-6 w-6",
-                                  sourcePlatform === 'youtube' ? "text-[#FF0000]" : "text-content-secondary dark:text-content-secondary-dark"
-                                )} />
-                                <span className={cn(
-                                  sourcePlatform === 'youtube' 
-                                    ? "text-[#FF0000] dark:text-[#FF0000]" 
-                                    : "text-content-primary dark:text-white"
-                                )}>YouTube</span>
+                                <img
+                                  src="/images/yt_logo_rgb_dark.png"
+                                  alt="YouTube"
+                                  style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                  className={cn(
+                                    "h-6 w-auto",
+                                    sourcePlatform === 'youtube' ? "" : "opacity-70 grayscale"
+                                  )}
+                                />
+                                {/* YouTube name removed */}
                               </GlowButton>
                             </div>
                           </div>
@@ -1599,15 +1633,13 @@ const ModernPlaylistConverter: React.FC = () => {
                                 )}
                                 aria-label="Select Spotify as destination platform"
                               >
-                                <FaSpotify className={cn(
-                                  "h-6 w-6",
-                                  destinationPlatform === 'spotify' ? "text-[#1DB954]" : "text-content-secondary dark:text-content-secondary-dark"
-                                )} />
-                                <span className={cn(
-                                  destinationPlatform === 'spotify' 
-                                    ? "text-[#1DB954] dark:text-[#1DB954]" 
-                                    : "text-content-primary dark:text-white"
-                                )}>Spotify</span>
+                                <img
+                                  src="/images/Spotify_Primary_Logo_RGB_Green.png"
+                                  alt="Spotify"
+                                  style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                  className="h-6 w-auto"
+                                />
+                                <span className="text-green-500 dark:text-green-400">Spotify</span>
                               </GlowButton>
                               
                               <GlowButton
@@ -1626,15 +1658,16 @@ const ModernPlaylistConverter: React.FC = () => {
                                 )}
                                 aria-label="Select YouTube as destination platform"
                               >
-                                <Youtube className={cn(
-                                  "h-6 w-6",
-                                  destinationPlatform === 'youtube' ? "text-[#FF0000]" : "text-content-secondary dark:text-content-secondary-dark"
-                                )} />
-                                <span className={cn(
-                                  destinationPlatform === 'youtube' 
-                                    ? "text-[#FF0000] dark:text-[#FF0000]" 
-                                    : "text-content-primary dark:text-white"
-                                )}>YouTube</span>
+                                <img
+                                  src="/images/yt_logo_rgb_dark.png"
+                                  alt="YouTube"
+                                  style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                  className={cn(
+                                    "h-6 w-auto",
+                                    destinationPlatform === 'youtube' ? "" : "opacity-70 grayscale"
+                                  )}
+                                />
+                                {/* YouTube name removed */}
                               </GlowButton>
                             </div>
                           </div>
@@ -1753,7 +1786,12 @@ const ModernPlaylistConverter: React.FC = () => {
                                   )}
                                 >
                                   <div className="flex items-center gap-2">
-                                    <FaSpotify className="h-5 w-5 text-[#1DB954]" />
+                                    <img
+                                      src="/images/Spotify_Primary_Logo_RGB_Green.png"
+                                      alt="Spotify"
+                                      style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                      className="h-6 w-auto"
+                                    />
                                     <span className="text-gray-900 dark:text-gray-900">Your Spotify Playlists</span>
                                   </div>
                                   <ChevronRight className="h-5 w-5 text-gray-400" />
@@ -2316,7 +2354,7 @@ const ModernPlaylistConverter: React.FC = () => {
                                 id="playlist-description"
                                 value={playlistDescriptionForExport}
                                 onChange={(e) => setPlaylistDescriptionForExport(e.target.value)}
-                                placeholder={`Converted from ${sourcePlatform} using Playlist Converter`}
+                                placeholder={`Converted from ${sourcePlatform} using SoundSwapp`}
                                 rows={2}
                                 className={cn(
                                   "w-full px-3 py-2 rounded border focus:ring-2 focus:ring-purple-500 focus:outline-none",
@@ -2553,7 +2591,12 @@ const ModernPlaylistConverter: React.FC = () => {
                                       )}
                                       aria-label="Open YouTube playlist in new tab"
                                     >
-                                      <Youtube size={14} className="text-[var(--youtube-icon-color-button)]"/>
+                                      <img
+                                        src="/images/yt_logo_rgb_dark.png"
+                                        alt="YouTube"
+                                        style={{ height: 18, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                        className="h-5 w-auto"
+                                      />
                                       <span className="text-[var(--youtube-text-button)]">View</span>
                                     </a>
                                   )}
@@ -2569,7 +2612,12 @@ const ModernPlaylistConverter: React.FC = () => {
                                       )}
                                       aria-label="Open Spotify playlist in new tab"
                                     >
-                                      <FaSpotify size={14} className="text-[var(--spotify-icon-color-button)]"/>
+                                      <img
+                                        src="/images/Spotify_Primary_Logo_RGB_Green.png"
+                                        alt="Spotify"
+                                        style={{ height: 14, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                        className="text-[var(--spotify-icon-color-button)]"
+                                      />
                                       <span className="text-[var(--spotify-text-button)]">View</span>
                                     </a>
                                   )}
@@ -2601,6 +2649,7 @@ const ModernPlaylistConverter: React.FC = () => {
                 >
                   <PlaylistInsights 
                     stats={generatePlaylistInsights(conversionState.tracks)}
+                    tracks={conversionState.tracks}
                   />
                 </GlassmorphicContainer>
               </motion.div>
@@ -2900,46 +2949,9 @@ const ModernPlaylistConverter: React.FC = () => {
           <div className="flex flex-col sm:flex-row justify-between items-center gap-6 mb-6">
             <div className="flex items-center gap-2 text-content-primary">
               <div className="soundswapp-logo">
-                <svg width="32" height="32" viewBox="0 0 36 36">
-                  <defs>
-                    <linearGradient id="soundswapp-footer-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="var(--brand-primary)" />
-                      <stop offset="35%" stopColor="var(--brand-accent-pink)" />
-                      <stop offset="100%" stopColor="var(--brand-secondary)" />
-                    </linearGradient>
-                    <filter id="footer-glow" x="-50%" y="-50%" width="200%" height="200%">
-                      <feGaussianBlur stdDeviation="1.2" result="blur" />
-                       <feOffset dy="0.5" result="offsetBlur" />
-                      <feMerge>
-                        <feMergeNode in="offsetBlur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                    <pattern id="footer-bg-pattern" patternUnits="userSpaceOnUse" width="10" height="10">
-                      <path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="rgba(255,255,255,0.02)" strokeWidth="0.3"/>
-                    </pattern>
-                  </defs>
-                  <circle cx="18" cy="18" r="18" fill="url(#soundswapp-footer-grad)" opacity="0.9" />
-                  <circle cx="18" cy="18" r="18" fill="url(#footer-bg-pattern)" opacity="0.4"/>
-                  
-                  <g filter="url(#footer-glow)" transform="translate(0.25, 0.25)">
-                    <path className="ss-letter-main-static" 
-                          d="M12.5 23.5 C10 23.5 8.5 21.5 9 19 C9.5 16.5 12.5 15.5 15 15.5 C17.5 15.5 19.5 14 19 11.5 C18.5 9 16.5 7.5 14 7.5" 
-                          stroke="white" fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path className="ss-letter-highlight-static" 
-                          d="M12.8 23 C10.5 23 9.3 21.3 9.7 19.2 C10.1 17.1 12.8 16.1 15 16.1 C17.2 16.1 18.8 14.7 18.4 12.5 C18.0 10.3 16.2 8.5 14 8.5"
-                          stroke="rgba(255,255,255,0.4)" fill="none" strokeWidth="0.7" strokeLinecap="round" strokeLinejoin="round"/>
-                    
-                    <path className="ss-letter-main-static" 
-                          d="M23.5 23.5 C26 23.5 27.5 21.5 27 19 C26.5 16.5 23.5 15.5 21 15.5 C18.5 15.5 16.5 14 17 11.5 C17.5 9 19.5 7.5 22 7.5"
-                          stroke="white" fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path className="ss-letter-highlight-static" 
-                          d="M23.2 23 C25.5 23 26.7 21.3 26.3 19.2 C25.9 17.1 23.2 16.1 21 16.1 C18.8 16.1 17.2 14.7 17.6 12.5 C18.0 10.3 19.8 8.5 22 8.5"
-                          stroke="rgba(255,255,255,0.4)" fill="none" strokeWidth="0.7" strokeLinecap="round" strokeLinejoin="round"/>
-                  </g>
-                </svg>
+                <SoundSwappLogo width={32} height={32} />
               </div>
-              <span className="text-xl font-bold soundswapp-gradient-text"><strong>Sound</strong>Swapp</span>
+              <span className="font-bold text-xl soundswapp-gradient-text">SoundSwapp</span>
             </div>
             <div className="flex gap-4">
               <a href="https://github.com/your-repo" target="_blank" rel="noopener noreferrer" className="text-content-tertiary hover:text-brand-primary transition-colors">
@@ -2957,9 +2969,9 @@ const ModernPlaylistConverter: React.FC = () => {
           </p>
           <p className="text-xs text-content-tertiary">
             &copy; {new Date().getFullYear()} SoundSwapp. All Rights Reserved. 
-            <Link to="/privacy" className="ml-2 hover:text-brand-primary underline">Privacy Policy</Link> 
+            <a href="/privacy.html" className="ml-2 hover:text-brand-primary underline" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
             <span className="mx-1">•</span>
-            <Link to="/terms" className="hover:text-brand-primary underline">Terms of Service</Link>
+            <a href="/terms.html" className="hover:text-brand-primary underline" target="_blank" rel="noopener noreferrer">Terms of Service</a>
           </p>
           <div className="mt-4 flex justify-center items-center gap-2">
             <span className="text-xs font-semibold bg-gradient-to-r from-purple-500 via-pink-500 to-blue-400 bg-clip-text text-transparent animate-gradient-x">

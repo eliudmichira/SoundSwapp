@@ -47,7 +47,7 @@ export const EnhancedHeroSection = () => {
   // Music platform icons with physics
   const platformIcons = [
     { icon: faSpotify, color: 'text-spotify', x: -20, y: -40, scale: 2.5, delay: 0, rotation: -5 },
-    { icon: faYoutube, color: 'text-youtube', x: 30, y: 60, scale: 2.2, delay: 0.2, rotation: 5 },
+    { icon: 'youtube-logo', color: 'text-youtube', x: 30, y: 60, scale: 2.2, delay: 0.2, rotation: 5 },
     { icon: faCompactDisc, color: 'text-brand-primary', x: 50, y: -50, scale: 1.8, delay: 0.6, rotation: 8 },
     { icon: faMicrophone, color: 'text-brand-accent-pink', x: 70, y: 10, scale: 1.2, delay: 0.8, rotation: -8 },
     { icon: faHeadphones, color: 'text-brand-secondary', x: -40, y: 70, scale: 1.3, delay: 1, rotation: 12 },
@@ -79,7 +79,7 @@ export const EnhancedHeroSection = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <div className="mr-3">
+            <div className="mr-3 flex items-center gap-2">
               <svg width="36" height="36" viewBox="0 0 36 36" className="text-brand-primary soundswapp-logo-hero">
                 <defs>
                   <linearGradient id="soundswapp-hero-grad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -161,6 +161,7 @@ export const EnhancedHeroSection = () => {
                   />
                 </g>
               </svg>
+              {/* Show official YouTube logo for dark backgrounds */}
             </div>
             <h1 className="text-2xl font-bold">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-brand-primary via-brand-accent-pink to-brand-secondary">
@@ -258,7 +259,15 @@ export const EnhancedHeroSection = () => {
                 transition: { duration: 0.3 }
               }}
             >
-              <FontAwesomeIcon icon={item.icon} className="text-4xl" />
+              {typeof item.icon === 'string' ? (
+                <img
+                  src="/images/YouTube connection card logo.png"
+                  alt="YouTube"
+                  style={{ height: 40, width: 'auto', objectFit: 'contain', display: 'block' }}
+                />
+              ) : (
+                <FontAwesomeIcon icon={item.icon} className="text-4xl" />
+              )}
             </motion.div>
           ))}
         </div>

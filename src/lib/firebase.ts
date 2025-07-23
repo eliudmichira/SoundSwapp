@@ -26,7 +26,9 @@ import {
   type DocumentData,
   type DocumentReference,
   type CollectionReference,
-  FirestoreError
+  FirestoreError,
+  setDoc,
+  getDocFromServer
 } from 'firebase/firestore';
 
 import { getStorage } from 'firebase/storage';
@@ -231,6 +233,47 @@ export const handleFirestoreError = (error: any) => {
     return 'Database connection error. Please try again.';
   }
 };
+
+/**
+ * Save insights for a user in Firestore under users/{userId}/insights
+ * @param {string} userId - The user's UID
+ * @param {object} insights - The insights object to save
+ */
+export async function saveUserInsights(userId: string, insights: any) {
+  await setDoc(
+    doc(db, 'users', userId),
+    { insights },
+    { merge: true }
+  );
+}
+
+/**
+ * Retrieve insights for a user from Firestore under users/{userId}/insights
+ * @param {string} userId - The user's UID
+ * @returns {Promise<any|null>} - The insights object or null if not found
+ */
+export async function getUserInsights(userId: string): Promise<any | null> {
+  try {
+    // Try to get the latest from the server
+    const docSnap = await getDocFromServer(doc(db, 'users', userId));
+    if (docSnap.exists()) {
+      return docSnap.data().insights || null;
+    }
+    return null;
+  } catch (err) {
+    // If server fetch fails (offline, etc.), fall back to cache
+    try {
+      const docSnap = await getDoc(doc(db, 'users', userId));
+      if (docSnap.exists()) {
+        return docSnap.data().insights || null;
+      }
+      return null;
+    } catch (err2) {
+      // If both fail, return null
+      return null;
+    }
+  }
+}
 
 // Export initialized services
 export {

@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft, faMusic } from '@fortawesome/free-solid-svg-icons';
 import { faGithub, faTwitter } from '@fortawesome/free-brands-svg-icons';
 import { useTheme } from '../lib/ThemeContext';
+import SoundSwappLogo from '../assets/SoundSwappLogo';
 
 export default function PrivacyPolicy() {
   const { isDark } = useTheme();
@@ -45,8 +46,8 @@ export default function PrivacyPolicy() {
           {/* Footer top section with logo and social links */}
           <div className="flex flex-col md:flex-row items-center justify-between mb-8">
             <div className="flex items-center mb-6 md:mb-0">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-purple-600 to-blue-500 flex items-center justify-center mr-3">
-                <FontAwesomeIcon icon={faMusic} className="text-white" />
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center mr-3">
+                <SoundSwappLogo width={40} height={40} />
               </div>
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-500 to-blue-400">
                 Playlist Converter

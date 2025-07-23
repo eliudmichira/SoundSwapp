@@ -3,32 +3,55 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Terms of Service - Playlist Converter</title>
-  <link rel="icon" type="image/png" href="/images/app-icon.png" />
+  <title>Terms of Service | SoundSwapp</title>
+  <link rel="stylesheet" href="/index.css">
   <style>
-    body { font-family: sans-serif; max-width: 700px; margin: 2rem auto; padding: 1rem; color: #222; }
-    h1 { color: #9333ea; }
-    a { color: #9333ea; }
+    body { font-family: 'Inter', Arial, sans-serif; background: #f7fafc; color: #222; margin: 0; padding: 0; }
+    .container { max-width: 700px; margin: 40px auto; background: #fff; border-radius: 18px; box-shadow: 0 4px 32px #0001; padding: 2.5rem 2rem; }
+    .brand-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+    .brand-header img { height: 48px; border-radius: 12px; background: #f7fafc; }
+    .brand-title { font-size: 2rem; font-weight: 800; background: linear-gradient(90deg, #FF7A59, #FF007A, #00C4CC); -webkit-background-clip: text; color: transparent; }
+    h1, h2, h3 { color: #FF7A59; }
+    a { color: #00C4CC; text-decoration: underline; }
+    .section { margin-bottom: 2rem; }
+    ul { margin-left: 1.5rem; }
   </style>
 </head>
 <body>
-  <h1>Terms of Service</h1>
-  <p><strong>Last updated:</strong> [DATE]</p>
-  <h2>Use of Service</h2>
-  <p>
-    By using Playlist Converter, you agree to use the app for personal, non-commercial purposes only. You are responsible for complying with the terms of Spotify and YouTube.
-  </p>
-  <h2>Third-Party APIs</h2>
-  <p>
-    This app uses the Spotify and YouTube APIs. You are responsible for following their terms of use. We are not affiliated with or endorsed by Spotify or YouTube.
-  </p>
-  <h2>No Warranty</h2>
-  <p>
-    Playlist Converter is provided "as is" without warranty of any kind. We do not guarantee the accuracy, reliability, or availability of the service.
-  </p>
-  <h2>Contact</h2>
-  <p>
-    For questions or concerns, contact us at <a href="mailto:your@email.com">your@email.com</a>.
-  </p>
+  <div class="container">
+    <div class="brand-header">
+      <img id="yt-logo" src="/images/yt_logo_rgb_light.png" alt="YouTube Logo" style="height: 40px; background: #fff; border-radius: 8px; padding: 2px 8px;" />
+      <img id="spotify-logo" src="/images/Spotify_Full_Logo_RGB_Green.png" alt="Spotify Logo" style="height: 40px; background: #fff; border-radius: 8px; padding: 2px 8px; margin-left: 8px;" />
+      <span class="brand-title" style="margin-left: 12px;">SoundSwapp</span>
+    </div>
+    <h1>Terms of Service</h1>
+    <div class="section">
+      By using SoundSwapp, you agree to these Terms of Service and our <a href="/privacy.html">Privacy Policy</a>. You are also agreeing to be bound by the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube Terms of Service</a> and the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>.
+    </div>
+    <h2>Acceptable Use</h2>
+    <ul>
+      <li>You may not use SoundSwapp for any unlawful purpose or to violate any laws in your jurisdiction.</li>
+      <li>You may not attempt to reverse engineer, decompile, or otherwise misuse the app or its APIs.</li>
+      <li>You are responsible for maintaining the security of your account and credentials.</li>
+    </ul>
+    <h2>Data and Privacy</h2>
+    <div class="section">
+      Please review our <a href="/privacy.html">Privacy Policy</a> for details on how we collect, use, and protect your data.
+    </div>
+    <h2>Disclaimer</h2>
+    <div class="section">
+      SoundSwapp is provided "as is" without warranty of any kind. We are not responsible for any damages or losses resulting from your use of the app.
+    </div>
+    <h2>Contact</h2>
+    <div class="section">
+      For questions or legal requests, contact: <a href="mailto:eliudsamwels7@gmail.com">eliudsamwels7@gmail.com</a>
+    </div>
+    <div class="section" style="margin-top:2rem; color:#aaa; font-size:0.95em;">
+      &copy; 2024 SoundSwapp. All rights reserved.
+    </div>
+  </div>
+  <script>
+    // Optionally keep Spotify theme switching, but YouTube logo is always light
+  </script>
 </body>
 </html> 

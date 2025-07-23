@@ -158,8 +158,8 @@ export const CustomCursor: React.FC<CustomCursorProps> = ({
     
     // Add event listeners
     document.addEventListener('mousemove', onMouseMove, { passive: true });
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mousedown', onMouseDown, { passive: true });
+    document.addEventListener('mouseup', onMouseUp, { passive: true });
     
     // Add data-cursored attribute to all links and buttons for style adjustments
     const links = document.querySelectorAll('a, button, input, select, textarea');

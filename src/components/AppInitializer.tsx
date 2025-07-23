@@ -4,7 +4,7 @@ import Preloader from './ui/Preloader';
 import usePageLifecycle from '../hooks/usePageLifecycle';
 
 // Add import for mobile utilities
-import { isMobileDevice, optimizeForMobile } from '../lib/utils';
+import { isMobileDevice } from '../lib/utils';
 
 // Declare global window interface
 declare global {
@@ -35,31 +35,26 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOptimized, setMobileOptimized] = useState(false);
   
-  // Initialize mobile optimization
+  // Initialize mobile detection (debug only, no optimization)
   useEffect(() => {
     const mobile = isMobileDevice() || window.innerWidth < 768;
     setIsMobile(mobile);
-    
-    if (mobile && !mobileOptimized) {
-      const { cleanupFunction } = optimizeForMobile();
-      setMobileOptimized(true);
-      return cleanupFunction;
-    }
-  }, [mobileOptimized]);
+    console.log('[AppInitializer] Mobile detected:', mobile);
+    // Disabled optimizeForMobile for debugging
+  }, []);
   
   // Fallback: Dispatch app-initialized event after a reasonable timeout
   // This ensures the HTML preloader doesn't timeout even if React takes too long
   useEffect(() => {
     const fallbackTimeout = setTimeout(() => {
       if (!window.APP_INITIALIZED) {
-        console.log('Fallback timeout - dispatching app-initialized event');
+        console.log('[AppInitializer] Fallback timeout - dispatching app-initialized event');
         window.dispatchEvent(new CustomEvent('app-initialized', {
           detail: { progress: 100 }
         }));
         window.APP_INITIALIZED = true;
       }
     }, 5000); // 5 second fallback timeout
-    
     return () => clearTimeout(fallbackTimeout);
   }, []);
   
@@ -131,19 +126,17 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
     if (isMobile) {
       const safetyTimeout = setTimeout(() => {
         if (!initialLoadComplete) {
-          console.warn('Mobile safety timeout triggered - forcing app to load');
+          console.warn('[AppInitializer] Mobile safety timeout triggered - forcing app to load');
           setProgress(100);
           setInitialLoadComplete(true);
-          
           // Dispatch app-initialized event even on safety timeout
           window.dispatchEvent(new CustomEvent('app-initialized', {
             detail: { progress: 100 }
           }));
-          console.log('Mobile safety timeout - dispatched app-initialized event');
+          console.log('[AppInitializer] Mobile safety timeout - dispatched app-initialized event');
           window.APP_INITIALIZED = true;
         }
       }, 10000); // 10 second safety timeout for mobile devices
-      
       return () => clearTimeout(safetyTimeout);
     }
   }, [isMobile, initialLoadComplete]);
@@ -153,9 +146,13 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
   
   // Show preloader if app is still initializing, refreshing, or auth is loading
   if (!initialLoadComplete || isLoading || authLoading) {
+    console.log('[AppInitializer] Showing Preloader', { initialLoadComplete, isLoading, authLoading, progress });
     return (
       <Preloader 
-        onComplete={() => setInitialLoadComplete(true)}
+        onComplete={() => {
+          setInitialLoadComplete(true);
+          console.log('[AppInitializer] Preloader onComplete called');
+        }}
         theme={authLoading ? "spotify" : "default"}
         showProgressText={true}
         size="lg"
@@ -164,6 +161,7 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
     );
   }
   
+  console.log('[AppInitializer] Rendering children');
   return <>{children}</>;
 };
 

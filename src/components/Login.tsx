@@ -368,6 +368,12 @@ const SimpleLogin: React.FC = () => {
                     {isSignUp ? 'Sign in' : 'Sign up'}
                   </span>
                 </button>
+                <div className="mt-6 text-xs text-gray-400">
+                  By using this app, you agree to our
+                  <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="underline ml-1">Terms of Use</a>
+                  and
+                  <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="underline ml-1">Privacy Policy</a>.
+                </div>
               </div>
             </div>
           </div>

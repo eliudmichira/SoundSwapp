@@ -6,7 +6,7 @@ import { PlaylistInsights } from './visualization/PlaylistInsights';
 import { GlassmorphicContainer } from './ui/GlassmorphicContainer';
 import { motion } from 'framer-motion';
 import { doc, getDoc, type Firestore } from 'firebase/firestore';
-import { db, waitForFirestore, initializeFirebase, handleFirestoreError } from '../lib/firebase';
+import { db, waitForFirestore, initializeFirebase, handleFirestoreError, saveUserInsights, getUserInsights } from '../lib/firebase';
 import { ChevronLeft } from 'lucide-react';
 import { generatePlaylistInsights } from './EnhancedPlaylistConverter';
 import type { PlaylistTypes } from '../types/playlist';
@@ -70,6 +70,7 @@ export const ConversionInsights: React.FC = () => {
   const [conversionData, setConversionData] = useState<ConversionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [playlistStats, setPlaylistStats] = useState<PlaylistTypes.PlaylistStats | null>(null);
 
   useEffect(() => {
     const loadConversion = async () => {
@@ -125,6 +126,37 @@ export const ConversionInsights: React.FC = () => {
     loadConversion();
   }, [id, dispatch]);
 
+  useEffect(() => {
+    const loadOrSaveInsights = async () => {
+      if (!user || !conversionData) return;
+      try {
+        // Try to load existing insights
+        const existing = await getUserInsights(user.uid);
+        if (existing && existing[conversionData.spotifyPlaylistId]) {
+          setPlaylistStats(existing[conversionData.spotifyPlaylistId]);
+        } else {
+          // Generate and save new insights
+          const stats = generatePlaylistInsights(conversionData.tracks);
+          setPlaylistStats(stats);
+          // Save under a key for this playlist
+          await saveUserInsights(user.uid, {
+            ...(existing || {}),
+            [conversionData.spotifyPlaylistId]: stats
+          });
+          // Fetch again to ensure latest from server
+          const refreshed = await getUserInsights(user.uid);
+          if (refreshed && refreshed[conversionData.spotifyPlaylistId]) {
+            setPlaylistStats(refreshed[conversionData.spotifyPlaylistId]);
+          }
+        }
+      } catch (err) {
+        // fallback: generate locally if error
+        setPlaylistStats(generatePlaylistInsights(conversionData.tracks));
+      }
+    };
+    if (conversionData) loadOrSaveInsights();
+  }, [user, conversionData]);
+
   // Add debug logging for conversion data and stats
   useEffect(() => {
     if (conversionData) {
@@ -168,10 +200,11 @@ export const ConversionInsights: React.FC = () => {
     sampleTrack: conversionData.tracks[0]
   });
 
-  const playlistStats = generatePlaylistInsights(conversionData.tracks);
+  // Use playlistStats if available, else fallback
+  const statsToShow = playlistStats || generatePlaylistInsights(conversionData.tracks);
   
   // Add debug logging
-  console.log('Generated playlist stats:', playlistStats);
+  console.log('Generated playlist stats:', statsToShow);
 
   return (
     <div className="min-h-screen bg-background-primary py-12 px-4">
@@ -206,7 +239,8 @@ export const ConversionInsights: React.FC = () => {
             hoverEffect={true}
           >
             <PlaylistInsights
-              stats={playlistStats}
+              stats={statsToShow}
+              tracks={conversionData.tracks}
             />
           </GlassmorphicContainer>
         </motion.div>
