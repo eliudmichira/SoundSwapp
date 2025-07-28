@@ -2,21 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Service Worker Cleanup: Unregister all service workers on load -->
+    
+    <!-- CRITICAL: Trusted Types Polyfill - MUST BE FIRST -->
     <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for(let registration of registrations) {
-            registration.unregister();
+      // Aggressive Trusted Types Polyfill to bypass TrustedScriptURL errors
+      if (window.trustedTypes && window.trustedTypes.createPolicy) {
+        window.trustedTypes.createPolicy('default', {
+          createHTML: (string) => string,
+          createScript: (string) => string,
+          createScriptURL: (string) => string,
+        });
+      }
+      
+      // Override TrustedScriptURL if it exists
+      if (typeof TrustedScriptURL !== 'undefined') {
+        window.TrustedScriptURL = class {
+          constructor(url) {
+            return url;
           }
+          toString() {
+            return this;
+          }
+        };
+      }
+      
+      // Patch HTMLScriptElement.src setter
+      const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+      if (originalSrcDescriptor) {
+        Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+          set: function(value) {
+            // Convert any TrustedScriptURL to string
+            const stringValue = value && value.toString ? value.toString() : value;
+            originalSrcDescriptor.set.call(this, stringValue);
+          },
+          get: originalSrcDescriptor.get,
+          enumerable: true,
+          configurable: true
         });
       }
     </script>
-    <!-- Cache control headers -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    <!-- Browser API Polyfill - Moved to top -->
+    
+    <!-- Browser API Polyfill -->
     <script>
       // Browser API Polyfill
       if (typeof browser === 'undefined') {
@@ -49,9 +75,9 @@
             getMessage: () => ''
           }
         };
-        console.log('Browser API polyfilled for compatibility');
       }
     </script>
+    
     <!-- Force HTTPS redirect for better security on mobile -->
     <script>
       // Force HTTPS to ensure secure authentication flows
@@ -61,10 +87,14 @@
         window.location.href = window.location.href.replace('http:', 'https');
       }
     </script>
-    
-    <!-- ADVANCED TRUSTED TYPES DISABLER REMOVED -->
 
+    <!-- Favicons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#8B5CF6" />
     <!-- Enhanced viewport settings for better mobile experiences -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="screen-orientation" content="portrait" />
@@ -76,62 +106,27 @@
     <meta name="format-detection" content="telephone=no" />
     <meta name="msapplication-tap-highlight" content="no" />
     <meta name="HandheldFriendly" content="true" />
-    <!-- Add advanced mobile connectivity handling -->
-    <script>
-      // Network and connectivity detection
-      (function() {
-        window.appNetworkStatus = 'unknown';
-        
-        function updateNetworkStatus() {
-          const isOnline = navigator.onLine;
-          window.appNetworkStatus = isOnline ? 'online' : 'offline';
-          
-          // Dispatch custom event
-          window.dispatchEvent(new CustomEvent('appNetworkStatusChanged', {
-            detail: { status: window.appNetworkStatus }
-          }));
-          
-          // Update UI class on body
-          if (isOnline) {
-            document.body.classList.remove('app-offline');
-            document.body.classList.add('app-online');
-          } else {
-            document.body.classList.remove('app-online');
-            document.body.classList.add('app-offline');
-          }
-        }
-        
-        // Initialize network status
-        window.addEventListener('online', updateNetworkStatus);
-        window.addEventListener('offline', updateNetworkStatus);
-        
-        // Set initial status
-        window.addEventListener('DOMContentLoaded', updateNetworkStatus);
-      })();
-    </script>
     
-    <!-- Primary Content Security Policy - Made more permissive for development -->
-    <!-- REMOVED CSP META TAG TO ALLOW FIREBASE HOSTING HEADER TO TAKE EFFECT -->
-    <!-- Cross-Origin-Opener-Policy -->
-    <meta http-equiv="Cross-Origin-Opener-Policy" content="unsafe-none" />
     <title>SoundSwapp - Sync Your Music Across All Platforms</title>
     <meta name="description" content="SoundSwapp: Seamlessly sync your music across Spotify, YouTube Music, and more with one click. Fast, secure, and free!" />
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://soundswapp.firebaseapp.com/" />
+    <meta property="og:url" content="https://soundswapp.web.app/" />
     <meta property="og:title" content="SoundSwapp - Sync Your Music Across All Platforms" />
     <meta property="og:description" content="Seamlessly sync your music playlists across Spotify, YouTube Music, and more with one click." />
     <meta property="og:image" content="/images/og-image.png" />
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://soundswapp.firebaseapp.com/" />
+    <meta property="twitter:url" content="https://soundswapp.web.app/" />
     <meta property="twitter:title" content="SoundSwapp - Sync Your Music Across All Platforms" />
     <meta property="twitter:description" content="Seamlessly sync your music playlists across Spotify, YouTube Music, and more with one click." />
     <meta property="twitter:image" content="/images/og-image.png" />
-    <!-- Removed PWA manifest and related meta tags to disable PWA features -->
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+    
     <!-- Mobile optimization script -->
     <script>
       // Mobile performance optimizations
@@ -143,18 +138,18 @@
           // Add mobile class to enable CSS optimizations
           document.documentElement.classList.add('is-mobile-device');
           
-          // Set lower animation frame rate on mobile to prevent violations
-          const originalRequestAnimationFrame = window.requestAnimationFrame;
-          window.requestAnimationFrame = function(callback) {
-            // Throttle to ~30fps on mobile to prevent performance violations
-            return originalRequestAnimationFrame(function(timestamp) {
-              // Only execute callback if enough time has passed (throttle to ~30fps)
-              if (!window._lastFrameTime || timestamp - window._lastFrameTime >= 32) {
-                window._lastFrameTime = timestamp;
-                callback(timestamp);
+          // Set lower animation frame rate on mobile
+          window.requestAnimationFrame = (function() {
+            const original = window.requestAnimationFrame;
+            // Throttle to ~30fps on mobile
+            return function(callback) {
+              // Only use this optimization for complex animations
+              if (document.documentElement.classList.contains('complex-animation-running')) {
+                return setTimeout(callback, 32); // ~30fps
               }
-            });
-          };
+              return original(callback);
+            };
+          })();
           
           // Reduce animation complexity
           document.addEventListener('DOMContentLoaded', () => {
@@ -211,19 +206,6 @@
                   padding: 12px !important;
                   margin: 8px 0 !important;
                 }
-                
-                /* Reduce complex animations */
-                * {
-                  animation-duration: 0.2s !important;
-                  transition-duration: 0.2s !important;
-                }
-                
-                /* Disable heavy backdrop filters */
-                .backdrop-blur-lg,
-                .backdrop-blur-xl {
-                  backdrop-filter: none !important;
-                  -webkit-backdrop-filter: none !important;
-                }
               }
             `;
             document.head.appendChild(style);
@@ -231,29 +213,40 @@
         }
       })();
     </script>
-    <!-- Trusted Types patch script to enable Firebase auth -->
+    
+    <!-- Network and connectivity detection -->
     <script>
-      // TrustedTypes workaround
-      if (window.trustedTypes && window.trustedTypes.createPolicy) {
-        try {
-          window.trustedTypes.createPolicy('default', {
-            createHTML: (string) => string,
-            createScriptURL: (string) => string,
-            createScript: (string) => string
-          });
-        } catch (e) {
-          console.log('Default policy already exists');
+      (function() {
+        window.appNetworkStatus = 'unknown';
+        
+        function updateNetworkStatus() {
+          const isOnline = navigator.onLine;
+          window.appNetworkStatus = isOnline ? 'online' : 'offline';
+          
+          // Dispatch custom event
+          window.dispatchEvent(new CustomEvent('appNetworkStatusChanged', {
+            detail: { status: window.appNetworkStatus }
+          }));
+          
+          // Update UI class on body
+          if (isOnline) {
+            document.body.classList.remove('app-offline');
+            document.body.classList.add('app-online');
+          } else {
+            document.body.classList.remove('app-online');
+            document.body.classList.add('app-offline');
+        }
         }
         
-        try {
-          window.trustedTypes.createPolicy('firebase-js-sdk-policy', {
-            createScriptURL: (string) => string
-          });
-        } catch (e) {
-          console.log('Firebase policy already exists');
-        }
-      }
+        // Initialize network status
+        window.addEventListener('online', updateNetworkStatus);
+        window.addEventListener('offline', updateNetworkStatus);
+        
+        // Set initial status
+        window.addEventListener('DOMContentLoaded', updateNetworkStatus);
+      })();
     </script>
+    
     <!-- Add mobile touch optimizations -->
     <style>
       /* Prevent double-tap zoom on buttons and interactive elements */
@@ -319,34 +312,16 @@
           font-size: 16px !important; /* Prevent zoom on input focus on iOS */
           padding: 12px !important; /* Larger touch areas */
         }
-        
-        /* Fix for forms on mobile */
-        .form-error {
-          font-size: 0.85rem !important;
-          margin-top: 0.25rem !important;
-        }
-        
-        /* Stack items in flex containers */
-        .mobile-stack {
-          flex-direction: column !important;
-        }
-        
-        /* Fix modal positioning */
-        .modal-content {
-          width: 90% !important;
-          max-height: 80vh !important;
-          overflow-y: auto !important;
-        }
-        
-        /* More spacing for form elements */
-        form > * {
-          margin-bottom: 12px !important;
-        }
-        
-        /* Optimize form layouts */
-        form {
-          width: 100% !important;
-        }
+      }
+      
+      /* CSS Variables for brand colors */
+      :root {
+        --brand-primary: #1ED760;
+        --brand-secondary: #00C4CC;
+        --brand-accent-pink: #FF007A;
+        --brand-primary-rgb: 29, 215, 96;
+        --brand-secondary-rgb: 0, 196, 204;
+        --brand-accent-pink-rgb: 255, 0, 122;
       }
       
       /* Initial preloader styles */
@@ -402,10 +377,10 @@
         width: 100%;
         height: 100%;
         border-radius: 50%;
-        border: 3px solid transparent; /* Thinner border */
-        border-top-color: var(--brand-primary); /* Use CSS var */
+        border: 3px solid transparent;
+        border-top-color: var(--brand-primary);
         border-right-color: var(--brand-primary);
-        animation: rotate 2s linear infinite, pulseColor 4s ease-in-out infinite alternate; /* Combined animation */
+        animation: rotate 2s linear infinite, pulseColor 4s ease-in-out infinite alternate;
       }
       
       .preloader-middle-circle {
@@ -415,10 +390,10 @@
         right: 10px;
         bottom: 10px;
         border-radius: 50%;
-        border: 3px solid transparent; /* Thinner border */
-        border-bottom-color: var(--brand-accent-pink); /* Use CSS var */
+        border: 3px solid transparent;
+        border-bottom-color: var(--brand-accent-pink);
         border-left-color: var(--brand-accent-pink);
-        animation: rotate 2.5s linear infinite reverse, pulseColor 4s ease-in-out infinite alternate-reverse; /* Combined animation */
+        animation: rotate 2.5s linear infinite reverse, pulseColor 4s ease-in-out infinite alternate-reverse;
       }
       
       .preloader-inner-circle {
@@ -458,14 +433,14 @@
         color: white;
         text-align: center;
         max-width: 80%;
-        background: rgba(255, 255, 255, 0.03); /* More subtle background */
-        backdrop-filter: blur(6px); /* Slightly increased blur */
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(6px);
         -webkit-backdrop-filter: blur(6px);
         padding: 12px 24px;
         border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08); /* More subtle border */
+        border: 1px solid rgba(255, 255, 255, 0.08);
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-        animation: fadeInText 1s ease-out forwards; /* Text fade-in */
+        animation: fadeInText 1s ease-out forwards;
       }
       
       .loading-text {
@@ -490,10 +465,10 @@
         left: 0;
         height: 100%;
         width: 0%;
-        background: linear-gradient(to right, var(--brand-primary), var(--brand-accent-pink), var(--brand-secondary)); /* Use CSS vars */
+        background: linear-gradient(to right, var(--brand-primary), var(--brand-accent-pink), var(--brand-secondary));
         border-radius: 4px;
         transition: width 0.4s ease-out;
-        box-shadow: 0 0 8px rgba(255, 122, 89, 0.5), 0 0 12px rgba(255, 0, 122, 0.3); /* Enhanced glow */
+        box-shadow: 0 0 8px rgba(255, 122, 89, 0.5), 0 0 12px rgba(255, 0, 122, 0.3);
       }
       
       .preloader-progress-glow {
@@ -555,7 +530,6 @@
         }
       }
       
-      /* New animation for color pulsing */
       @keyframes pulseColor {
         0% {
           border-top-color: var(--brand-primary);
@@ -580,7 +554,6 @@
         }
       }
       
-      /* New animation for text fade-in */
       @keyframes fadeInText {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
@@ -595,24 +568,6 @@
           transform: scale(1.5);
           opacity: 1;
         }
-      }
-      
-      @keyframes progressAnimation {
-        0% { width: 0%; }
-        20% { width: 40%; }
-        50% { width: 60%; }
-        70% { width: 75%; }
-        90% { width: 90%; }
-        100% { width: 100%; }
-      }
-      
-      @keyframes progressGlow {
-        0% { transform: translateX(-100%); }
-        20% { transform: translateX(-60%); }
-        50% { transform: translateX(-40%); }
-        70% { transform: translateX(-25%); }
-        90% { transform: translateX(-10%); }
-        100% { transform: translateX(0%); }
       }
       
       /* Logo animation within preloader */
@@ -636,19 +591,19 @@
 
       /* Double S Animation - Main Paths */
       .ss-letter-main {
-        animation: pulseSSMain 2.8s ease-in-out infinite; /* Renamed and adjusted */
+        animation: pulseSSMain 2.8s ease-in-out infinite;
         transform-origin: center;
       }
-      .ss-letter-main:nth-of-type(odd) { /* Targeting the first of each pair */
+      .ss-letter-main:nth-of-type(odd) {
         /* animation-delay: 0s; (default) */
       }
-      .ss-letter-main:nth-of-type(even) { /* Targeting the second of each pair */
-        animation-delay: 0.2s; /* Adjusted delay */
+      .ss-letter-main:nth-of-type(even) {
+        animation-delay: 0.2s;
       }
 
       /* Double S Animation - Highlight Paths */
       .ss-letter-highlight {
-        animation: pulseSSHighlight 2.8s ease-in-out infinite; /* Renamed and adjusted */
+        animation: pulseSSHighlight 2.8s ease-in-out infinite;
         transform-origin: center;
         opacity: 0.7;
       }
@@ -656,21 +611,20 @@
          /* animation-delay: 0s; (default) */
       }
       .ss-letter-highlight:nth-of-type(even) {
-        animation-delay: 0.2s; /* Adjusted delay */
+        animation-delay: 0.2s;
       }
       
-      @keyframes logoSpin { /* Refined spin */
+      @keyframes logoSpin {
         0% { transform: rotate(0deg) scale(0.95); }
         50% { transform: rotate(180deg) scale(1.05); }
         100% { transform: rotate(360deg) scale(0.95); }
       }
 
-      @keyframes logoPulse { /* New logo pulse */
+      @keyframes logoPulse {
         0%, 100% { filter: drop-shadow(0 0 6px rgba(var(--brand-accent-pink-rgb), 0.3)) drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
         50% { filter: drop-shadow(0 0 12px rgba(var(--brand-secondary-rgb), 0.5)) drop-shadow(0 4px 4px rgba(0,0,0,0.15)); }
       }
 
-      /* Renamed and refined from pulseSS */
       @keyframes pulseSSMain {
         0%, 100% { 
           opacity: 0.9;
@@ -692,7 +646,6 @@
         }
       }
 
-      /* New animation for highlights */
       @keyframes pulseSSHighlight {
         0%, 100% { 
           opacity: 0.5;
@@ -734,24 +687,23 @@
         width: 0;
         height: 0;
         border-radius: 50%;
-        /* Softer gradient */
         background: radial-gradient(circle, 
                                     rgba(255, 122, 89, 0.15) 0%, 
                                     rgba(255, 0, 122, 0.1) 40%, 
                                     rgba(0, 196, 204, 0.05) 70%, 
                                     transparent 100%);
         z-index: 0;
-        animation: rippleEffect 3.5s infinite ease-out; /* Slightly longer duration */
+        animation: rippleEffect 3.5s infinite ease-out;
       }
 
       @keyframes rippleEffect {
         0% {
           width: 0;
           height: 0;
-          opacity: 0.8; /* Start a bit more visible */
+          opacity: 0.8;
         }
         100% {
-          width: 250px; /* Larger spread */
+          width: 250px;
           height: 250px;
           opacity: 0;
         }
@@ -776,26 +728,22 @@
                     <stop offset="100%" stop-color="var(--brand-secondary)" />
                   </linearGradient>
                   <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="1.8" result="blur" /> {/* Slightly softer blur */}
+                    <feGaussianBlur stdDeviation="1.8" result="blur" />
                     <feOffset dy="1" result="offsetBlur" />
                     <feMerge>
                       <feMergeNode in="offsetBlur" />
                       <feMergeNode in="SourceGraphic" />
                     </feMerge>
                   </filter>
-                  {/* Subtle background pattern */}
                   <pattern id="bg-pattern" patternUnits="userSpaceOnUse" width="10" height="10">
                     <path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="rgba(255,255,255,0.03)" stroke-width="0.5"/>
                   </pattern>
                 </defs>
                 
-                {/* Circle Background with pattern */}
                 <circle cx="18" cy="18" r="18" fill="url(#soundswapp-grad)" opacity="0.9" />
                 <circle cx="18" cy="18" r="18" fill="url(#bg-pattern)" opacity="0.5"/>
 
-                {/* Double S Design - More Detailed */}
-                <g filter="url(#glow)" transform="translate(0.5, 0.5)"> {/* Slight offset for depth */}
-                  {/* First S - Stylized Path & Inner Highlight */}
+                <g filter="url(#glow)" transform="translate(0.5, 0.5)">
                   <path class="ss-letter-main" 
                         d="M12.5 23.5 C10 23.5 8.5 21.5 9 19 C9.5 16.5 12.5 15.5 15 15.5 C17.5 15.5 19.5 14 19 11.5 C18.5 9 16.5 7.5 14 7.5" 
                         stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -803,7 +751,6 @@
                         d="M12.8 23 C10.5 23 9.3 21.3 9.7 19.2 C10.1 17.1 12.8 16.1 15 16.1 C17.2 16.1 18.8 14.7 18.4 12.5 C18.0 10.3 16.2 8.5 14 8.5"
                         stroke="rgba(255,255,255,0.5)" fill="none" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
 
-                  {/* Second S - Stylized Path & Inner Highlight (Slightly offset and varied) */}
                   <path class="ss-letter-main" 
                         d="M23.5 23.5 C26 23.5 27.5 21.5 27 19 C26.5 16.5 23.5 15.5 21 15.5 C18.5 15.5 16.5 14 17 11.5 C17.5 9 19.5 7.5 22 7.5"
                         stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="animation-delay: 0.15s;"/>
@@ -815,7 +762,6 @@
             </div>
           </div>
           
-          <!-- Add ripple effects -->
           <div class="preloader-ripple"></div>
           <div class="preloader-ripple" style="animation-delay: 1s;"></div>
           <div class="preloader-ripple" style="animation-delay: 2s;"></div>
@@ -846,7 +792,7 @@
               <stop offset="100%" stop-color="var(--brand-secondary)" />
             </linearGradient>
             <filter id="glow-footer" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="1.2" result="blur" /> {/* Adjusted blur */}
+              <feGaussianBlur stdDeviation="1.2" result="blur" />
               <feOffset dy="0.5" result="offsetBlur" />
               <feMerge>
                 <feMergeNode in="offsetBlur" />
@@ -857,19 +803,15 @@
                 <path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="rgba(255,255,255,0.02)" stroke-width="0.3"/>
             </pattern>
           </defs>
-          {/* Circle Background with pattern */}
           <circle cx="18" cy="18" r="18" fill="url(#soundswapp-footer-grad)" opacity="0.9" />
           <circle cx="18" cy="18" r="18" fill="url(#bg-pattern-footer)" opacity="0.4"/>
 
-          {/* Double S Design - More Detailed */}
           <g filter="url(#glow-footer)" transform="translate(0.25, 0.25)">
-            {/* First S - Stylized Path & Inner Highlight */}
             <path d="M12.5 23.5 C10 23.5 8.5 21.5 9 19 C9.5 16.5 12.5 15.5 15 15.5 C17.5 15.5 19.5 14 19 11.5 C18.5 9 16.5 7.5 14 7.5" 
                   stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M12.8 23 C10.5 23 9.3 21.3 9.7 19.2 C10.1 17.1 12.8 16.1 15 16.1 C17.2 16.1 18.8 14.7 18.4 12.5 C18.0 10.3 16.2 8.5 14 8.5"
                   stroke="rgba(255,255,255,0.4)" fill="none" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round"/>
 
-            {/* Second S - Stylized Path & Inner Highlight (Slightly offset and varied) */}
             <path d="M23.5 23.5 C26 23.5 27.5 21.5 27 19 C26.5 16.5 23.5 15.5 21 15.5 C18.5 15.5 16.5 14 17 11.5 C17.5 9 19.5 7.5 22 7.5"
                   stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M23.2 23 C25.5 23 26.7 21.3 26.3 19.2 C25.9 17.1 23.2 16.1 21 16.1 C18.8 16.1 17.2 14.7 17.6 12.5 C18.0 10.3 19.8 8.5 22 8.5"
@@ -942,15 +884,15 @@
         const progressInterval = setInterval(() => {
           // Only simulate up to 60% - React will take over after that
           if (loadProgress < 60) {
-            loadProgress += Math.random() * 2; // Increased increment to reduce handler time
+            loadProgress += Math.random() * 1.5;
             
             // Update the progress bar width
             if (progressElement) {
               progressElement.style.width = `${Math.min(loadProgress, 60)}%`;
             }
             
-            // Update loading text less frequently to reduce handler time
-            if (loadingTextElement && loadProgress % 15 < 2) {
+            // Update loading text
+            if (loadingTextElement) {
               if (loadProgress < 15) {
                 loadingTextElement.textContent = preloaderTexts[0];
               } else if (loadProgress < 30) {
@@ -962,7 +904,7 @@
               }
             }
           }
-        }, 200); // Increased interval from 150ms to 200ms to reduce handler frequency
+        }, 150);
         
         // Hide preloader when React app is mounted
         const hidePreloader = function(e) {
@@ -985,8 +927,8 @@
           if (progressElement) {
             progressElement.style.width = `${finalProgress}%`;
             
-            // Use requestAnimationFrame instead of setTimeout for better performance
-            requestAnimationFrame(() => {
+            // Small delay to allow animation to complete
+            setTimeout(() => {
               // Fade out the HTML preloader
               const preloader = document.getElementById('app-preloader');
               if (preloader) {
@@ -999,7 +941,7 @@
                   }
                 }, 600);
               }
-            });
+            }, 300);
           } else {
             // If progress element not found, just remove preloader
             const preloader = document.getElementById('app-preloader');

@@ -648,6 +648,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [authRecoveryAttempted]);
 
+  // Clear expired tokens on app initialization
+  useEffect(() => {
+    const clearExpiredTokens = () => {
+      console.log('[DEBUG] Clearing expired tokens on app initialization');
+      
+      // Check Spotify tokens
+      const spotifyExpires = localStorage.getItem('soundswapp_spotify_expires_at');
+      if (spotifyExpires && parseInt(spotifyExpires) < Date.now()) {
+        console.log('[DEBUG] Clearing expired Spotify tokens');
+        localStorage.removeItem('soundswapp_spotify_access_token');
+        localStorage.removeItem('soundswapp_spotify_expires_at');
+        localStorage.removeItem('soundswapp_spotify_refresh_token');
+        setHasSpotifyAuth(false);
+      }
+      
+      // Check YouTube tokens
+      const youtubeExpires = localStorage.getItem('soundswapp_youtube_expires_at');
+      if (youtubeExpires && parseInt(youtubeExpires) < Date.now()) {
+        console.log('[DEBUG] Clearing expired YouTube tokens');
+        localStorage.removeItem('soundswapp_youtube_access_token');
+        localStorage.removeItem('soundswapp_youtube_expires_at');
+        localStorage.removeItem('soundswapp_youtube_refresh_token');
+        setHasYouTubeAuth(false);
+      }
+    };
+    
+    clearExpiredTokens();
+  }, []);
+
   return (
     <AuthContext.Provider value={{
       user,
