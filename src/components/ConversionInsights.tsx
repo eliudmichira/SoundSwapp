@@ -11,6 +11,7 @@ import { ChevronLeft } from 'lucide-react';
 import { generatePlaylistInsights } from './EnhancedPlaylistConverter';
 import type { PlaylistTypes } from '../types/playlist';
 import { SpotifyService } from '../lib/spotifyApi';
+import { Preloader } from './ui/Preloader';
 
 // Type assertion for Firestore db
 const firestore = db as Firestore;
@@ -80,43 +81,95 @@ export const ConversionInsights: React.FC = () => {
       setError(null);
       
       try {
-        // Initialize Firebase with retry logic
-        const db = await initializeFirebase();
-        if (!db) throw new Error('Failed to initialize Firebase');
-        
-        // Get conversion data
-        const conversionRef = doc(db, 'conversions', id);
-        const conversionDoc = await getDoc(conversionRef);
-        
-        if (!conversionDoc.exists()) {
-          throw new Error('Conversion not found');
+        // Try to initialize Firebase, but don't fail if it doesn't work
+        let db = null;
+        try {
+          db = await initializeFirebase();
+        } catch (firebaseError) {
+          console.warn('Firebase initialization failed, continuing with local data:', firebaseError);
         }
         
-        const data = conversionDoc.data();
-        // Update conversion state using dispatch
-        dispatch({ type: 'SET_TRACKS', payload: data.tracks || [] });
+        // First try to get conversion from local storage as fallback
+        const localHistory = localStorage.getItem(`conversion_history_${user?.uid}`);
+        let localConversion = null;
         
-        // Load playlist data if available
-        if (data.playlistId) {
+        if (localHistory) {
           try {
-            const playlistData = await SpotifyService.getPlaylistById(data.playlistId);
-            setConversionData({
-              id: data.id,
-              spotifyPlaylistId: data.spotifyPlaylistId,
-              spotifyPlaylistName: data.spotifyPlaylistName,
-              tracks: data.tracks.map(convertTrackData),
-              convertedAt: new Date(data.convertedAt)
-            });
-          } catch (err: any) {
-            if (err.status === 404) {
-              setError('Playlist not found. It may have been deleted or made private.');
-            } else {
-              setError('Failed to load playlist data: ' + err.message);
-            }
+            const history = JSON.parse(localHistory);
+            localConversion = history.find((conv: any) => conv.id === id);
+          } catch (parseError) {
+            console.warn('Failed to parse local history:', parseError);
           }
         }
+        
+        // Try to get conversion data from Firestore (only if Firebase is available)
+        let conversionData = null;
+        let firestoreError = null;
+        
+        if (user && db) {
+          try {
+            // Use correct path: users/{userId}/conversions/{conversionId}
+            const conversionRef = doc(db, 'users', user.uid, 'conversions', id);
+            const conversionDoc = await getDoc(conversionRef);
+            
+            if (conversionDoc.exists()) {
+              conversionData = conversionDoc.data();
+            }
+          } catch (err) {
+            console.warn('Firestore fetch failed, using local data:', err);
+            firestoreError = err;
+          }
+        }
+        
+        // If Firestore failed, use local conversion data
+        if (!conversionData && localConversion) {
+          console.log('Using local conversion data as fallback');
+          conversionData = localConversion;
+        }
+        
+        // If still no data, try to get from conversion state
+        if (!conversionData) {
+          const stateConversion = conversionState.conversionHistory.find(conv => conv.id === id);
+          if (stateConversion) {
+            console.log('Using conversion state data');
+            conversionData = stateConversion;
+          }
+        }
+        
+        if (!conversionData) {
+          throw new Error('Conversion not found. It may have been deleted or you may not have permission to access it.');
+        }
+        
+        // Process the conversion data
+        const processedData = {
+          id: conversionData.id,
+          spotifyPlaylistId: conversionData.spotifyPlaylistId || conversionData.youtubePlaylistId,
+          spotifyPlaylistName: conversionData.spotifyPlaylistName || conversionData.youtubePlaylistName || 'Unknown Playlist',
+          tracks: (conversionData.tracks || []).map(convertTrackData),
+          convertedAt: new Date(conversionData.convertedAt || Date.now())
+        };
+        
+        setConversionData(processedData);
+        
+        // Update conversion state
+        dispatch({ type: 'SET_TRACKS', payload: processedData.tracks });
+        
       } catch (err: any) {
-        const errorMessage = handleFirestoreError(err);
+        console.error('Error loading conversion:', err);
+        let errorMessage = 'Unable to load conversion data. Please try again.';
+        
+        if (err.message.includes('not found')) {
+          errorMessage = 'Conversion not found. It may have been deleted or you may not have permission to access it.';
+        } else if (err.message.includes('permission')) {
+          errorMessage = 'You do not have permission to access this conversion.';
+        } else if (err.message.includes('network') || err.message.includes('connection')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (err.message.includes('Firebase')) {
+          errorMessage = 'Database connection issue. The app will work with local data only.';
+        } else if (err.message) {
+          errorMessage = err.message;
+        }
+        
         setError(errorMessage);
       } finally {
         setLoading(false);
@@ -124,32 +177,39 @@ export const ConversionInsights: React.FC = () => {
     };
 
     loadConversion();
-  }, [id, dispatch]);
+  }, [id, dispatch, user]);
 
   useEffect(() => {
     const loadOrSaveInsights = async () => {
       if (!user || !conversionData) return;
       try {
-        // Try to load existing insights
-        const existing = await getUserInsights(user.uid);
+        // Try to load existing insights from Firebase
+        let existing = null;
+        try {
+          existing = await getUserInsights(user.uid);
+        } catch (firebaseError) {
+          console.warn('Failed to load insights from Firebase, generating locally:', firebaseError);
+        }
+        
         if (existing && existing[conversionData.spotifyPlaylistId]) {
           setPlaylistStats(existing[conversionData.spotifyPlaylistId]);
         } else {
           // Generate and save new insights
           const stats = generatePlaylistInsights(conversionData.tracks);
           setPlaylistStats(stats);
-          // Save under a key for this playlist
-          await saveUserInsights(user.uid, {
-            ...(existing || {}),
-            [conversionData.spotifyPlaylistId]: stats
-          });
-          // Fetch again to ensure latest from server
-          const refreshed = await getUserInsights(user.uid);
-          if (refreshed && refreshed[conversionData.spotifyPlaylistId]) {
-            setPlaylistStats(refreshed[conversionData.spotifyPlaylistId]);
+          
+          // Try to save insights, but don't fail if it doesn't work
+          try {
+            await saveUserInsights(user.uid, {
+              ...(existing || {}),
+              [conversionData.spotifyPlaylistId]: stats
+            });
+          } catch (saveError) {
+            console.warn('Failed to save insights to Firebase, but continuing with local data:', saveError);
           }
         }
       } catch (err) {
+        console.warn('Failed to load insights, generating locally:', err);
         // fallback: generate locally if error
         setPlaylistStats(generatePlaylistInsights(conversionData.tracks));
       }
@@ -170,9 +230,15 @@ export const ConversionInsights: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-primary"></div>
-      </div>
+      <Preloader
+        showProgressText={true}
+        theme="default"
+        size="lg"
+        initialDelay={0}
+        onComplete={() => {
+          // This will be called when preloader finishes, but we'll handle the actual loading in the useEffect
+        }}
+      />
     );
   }
 

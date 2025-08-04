@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { EnhancedHeroSection } from './EnhancedHeroSection';
 import { useTheme } from '../lib/ThemeContext';
 import { useAuth } from '../lib/AuthContext';
-import { useConversion, ConversionStatus } from '../lib/ConversionContext';
+import { useConversion, ConversionStatus, type FailedTrack } from '../lib/ConversionContext';
 import { getYouTubeAuthUrl } from '../lib/youtubeAuth';
 import { initSpotifyAuth } from '../lib/spotifyAuth';
 import { cn } from '../lib/utils';
@@ -50,7 +50,8 @@ import {
   Settings,
   Headphones,
   Youtube,
-  Loader2
+  Loader2,
+  X
 } from 'lucide-react';
 // Import real Spotify icon
 import { FaSpotify } from 'react-icons/fa';
@@ -587,6 +588,7 @@ const ModernPlaylistConverter: React.FC = () => {
   const [showYoutubePlaylistSuggestions, setShowYoutubePlaylistSuggestions] = useState(false);
   const [playlistNameForExport, setPlaylistNameForExport] = useState('');
   const [playlistDescriptionForExport, setPlaylistDescriptionForExport] = useState('');
+  const [selectedFailedTracks, setSelectedFailedTracks] = useState<FailedTrack[] | null>(null);
   
   // Platform selection with proper typing
   type PlatformInfo = {
@@ -2564,6 +2566,20 @@ const ModernPlaylistConverter: React.FC = () => {
                                 )}>
                                   {conv.tracksMatched} / {conv.totalTracks}
                                 </span>
+                                {conv.failedTracks && conv.failedTracks.length > 0 && (
+                                  <button
+                                    onClick={() => setSelectedFailedTracks(conv.failedTracks || [])}
+                                    className={cn(
+                                      "ml-2 inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors",
+                                      "bg-error-bg text-error-text hover:bg-error-bg-hover",
+                                      "focus:outline-none focus:ring-2 focus:ring-error-border"
+                                    )}
+                                    aria-label="View failed tracks details"
+                                  >
+                                    <AlertTriangle size={12} />
+                                    {conv.failedTracks.length} failed
+                                  </button>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -2997,6 +3013,99 @@ const ModernPlaylistConverter: React.FC = () => {
         onComplete={() => setShowCelebration(false)} 
       />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Failed Tracks Modal */}
+      {selectedFailedTracks && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-card rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-border-default">
+              <h3 className="text-xl font-bold text-content-primary flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-error-text" />
+                Failed Tracks Details
+              </h3>
+              <button
+                onClick={() => setSelectedFailedTracks(null)}
+                className="text-content-secondary hover:text-content-primary transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <div className="mb-4 text-sm text-content-secondary">
+                {selectedFailedTracks.length} tracks failed to convert. Here are the details:
+              </div>
+              
+              <div className="space-y-4">
+                {selectedFailedTracks.map((track, index) => (
+                  <div key={index} className="border border-border-default rounded-lg p-4 bg-surface-alt">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-content-primary mb-1">
+                          {track.name}
+                        </h4>
+                        <p className="text-sm text-content-secondary">
+                          by {track.artists.join(', ')}
+                        </p>
+                      </div>
+                      {track.bestMatchScore !== undefined && track.bestMatchScore > 0 && (
+                        <div className="text-right">
+                          <span className="text-xs bg-warning-bg text-warning-text px-2 py-1 rounded">
+                            Best match: {Math.round(track.bestMatchScore * 100)}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-sm font-medium text-content-primary">Reason:</span>
+                        <p className="text-sm text-error-text mt-1">{track.reason}</p>
+                      </div>
+                      
+                      {track.bestMatchTitle && track.bestMatchTitle !== 'None' && track.bestMatchTitle !== 'Error occurred' && (
+                        <div>
+                          <span className="text-sm font-medium text-content-primary">Best match found:</span>
+                          <p className="text-sm text-content-secondary mt-1">
+                            "{track.bestMatchTitle}" by {track.bestMatchArtist}
+                          </p>
+                        </div>
+                      )}
+                      
+                      <div>
+                        <span className="text-sm font-medium text-content-primary">Search queries tried:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {track.searchQueries.map((query, queryIndex) => (
+                            <span
+                              key={queryIndex}
+                              className="text-xs bg-input text-content-secondary px-2 py-1 rounded"
+                            >
+                              "{query}"
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between p-6 border-t border-border-default bg-surface-alt">
+              <div className="text-sm text-content-secondary">
+                {selectedFailedTracks.length} failed tracks
+              </div>
+              <button
+                onClick={() => setSelectedFailedTracks(null)}
+                className="px-4 py-2 bg-brand-primary text-white rounded-md hover:bg-brand-primaryHover transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

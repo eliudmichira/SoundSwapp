@@ -57,7 +57,8 @@ export const getYouTubePlaylists = async () => {
     const accessToken = getYouTubeToken();
     
     if (!accessToken) {
-      throw new Error('No valid YouTube access token available. Please reconnect your YouTube account.');
+      console.log('No valid YouTube access token available - user needs to authenticate');
+      return { items: [] };
     }
     
     const params = new URLSearchParams({
@@ -80,6 +81,56 @@ export const getYouTubePlaylists = async () => {
     return await response.json();
   } catch (error: unknown) {
     console.error('Error getting YouTube playlists:', error);
+    // Return empty result instead of throwing to prevent UI errors
+    return { items: [] };
+  }
+};
+
+/**
+ * Fetch all tracks from a YouTube playlist
+ */
+export const fetchAllYouTubePlaylistItems = async (playlistId: string, accessToken: string) => {
+  try {
+    console.log('Fetching YouTube playlist items for playlist:', playlistId);
+    
+    const allItems: any[] = [];
+    let nextPageToken: string | undefined;
+    
+    do {
+      const params = new URLSearchParams({
+        part: 'snippet,contentDetails',
+        playlistId: playlistId,
+        maxResults: '50'
+      });
+      
+      if (nextPageToken) {
+        params.append('pageToken', nextPageToken);
+      }
+      
+      const response = await fetch(`${YOUTUBE_API_BASE_URL}/playlistItems?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        const errorMessage = await extractYouTubeErrorDetails(response);
+        throw new Error(errorMessage);
+      }
+      
+      const data = await response.json();
+      
+      if (data.items && data.items.length > 0) {
+        allItems.push(...data.items);
+      }
+      
+      nextPageToken = data.nextPageToken;
+    } while (nextPageToken);
+    
+    console.log('Fetched YouTube playlist items:', allItems.length);
+    return allItems;
+  } catch (error: unknown) {
+    console.error('Error fetching YouTube playlist items:', error);
     throw error instanceof Error ? error : new Error(String(error));
   }
 };
@@ -91,7 +142,18 @@ export const findOrCreatePlaylist = async (_userId: string, title: string, descr
   try {
     // Try to create playlist directly if we don't have valid credentials
     if (!getYouTubeToken()) {
-      throw new Error('No valid YouTube access token available. Please reconnect your YouTube account.');
+      console.log('No valid YouTube access token available - user needs to authenticate');
+      return {
+        id: 'mock-playlist-due-to-no-auth',
+        snippet: {
+          title: title,
+          description: description
+        },
+        status: {
+          privacyStatus: privacyStatus
+        },
+        _error: 'No valid YouTube access token available. Please reconnect your YouTube account.'
+      };
     }
     
     // Check if we have a playlist with the same title already

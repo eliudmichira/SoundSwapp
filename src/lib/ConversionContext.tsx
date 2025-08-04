@@ -4,7 +4,9 @@ import { getSpotifyPlaylists, getSpotifyPlaylistTracks, extractTrackData, getSpo
 import { getYouTubePlaylists, searchYouTube } from './youtubeApi';
 import { collection, addDoc, getDocs, query, orderBy, Timestamp, Firestore, QuerySnapshot, doc, setDoc } from 'firebase/firestore';
 import { db as firebaseDb, auth, reconnectFirestore } from './firebase';
-import { isSpotifyAuthenticated } from './spotifyAuth';
+import { isSpotifyAuthenticated, getSpotifyToken } from './spotifyAuth';
+import { checkForExistingPlaylist, generateUniquePlaylistName, ConversionLock } from './duplicatePrevention';
+import { parseYouTubeTitle, calculateTrackSimilarity, generateSearchQueries } from './improvedConversion';
 
 // Type assertion for the Firestore db
 const db = firebaseDb as Firestore;
@@ -64,6 +66,18 @@ export interface ConversionResult {
   totalTracks: number;
   convertedAt: Date;
   isMockData: boolean;
+  failedTracks?: FailedTrack[]; // Add failed tracks details
+}
+
+// New interface for tracking failed tracks
+export interface FailedTrack {
+  name: string;
+  artists: string[];
+  reason: string;
+  searchQueries: string[];
+  bestMatchScore?: number;
+  bestMatchTitle?: string;
+  bestMatchArtist?: string;
 }
 
 // === STATE MANAGEMENT ===
@@ -177,6 +191,7 @@ interface ConversionContextType {
   fetchSpotifyPlaylists: () => Promise<void>;
   fetchYouTubePlaylists: () => Promise<void>;
   selectPlaylist: (playlistId: string) => void;
+  selectYouTubePlaylist: (playlistId: string) => void;
   startConversion: () => Promise<void>;
   resetConversion: () => void;
   fetchConversionHistory: () => Promise<void>;
@@ -189,6 +204,7 @@ const ConversionContext = createContext<ConversionContextType>({
   fetchSpotifyPlaylists: async () => {},
   fetchYouTubePlaylists: async () => {},
   selectPlaylist: () => {},
+  selectYouTubePlaylist: () => {},
   startConversion: async () => {},
   resetConversion: () => {},
   fetchConversionHistory: async () => {},
@@ -375,9 +391,14 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       dispatch({ type: 'SET_STATUS', payload: ConversionStatus.LOADING_PLAYLISTS });
       
-      const response = await getSpotifyPlaylists();
+      const accessToken = await getSpotifyToken();
+      if (!accessToken) {
+        throw new Error('No Spotify access token available');
+      }
       
-      const playlists: SpotifyPlaylist[] = response.items.map((item: any) => ({
+      const response = await getSpotifyPlaylists(accessToken);
+      
+      const playlists: SpotifyPlaylist[] = response.map((item: any) => ({
         id: item.id,
         name: item.name,
         description: item.description,
@@ -391,15 +412,15 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } catch (error) {
       console.error('Error fetching Spotify playlists:', error);
       
-      // Provide more specific error messages
+      // Provide more specific error messages with helpful guidance
       let errorMessage = 'Failed to fetch Spotify playlists';
       if (error instanceof Error) {
         if (error.message.includes('401') || error.message.includes('Authentication')) {
           errorMessage = 'Spotify authentication expired. Please reconnect your Spotify account.';
-        } else if (error.message.includes('403')) {
-          errorMessage = 'You do not have permission to access Spotify playlists.';
+        } else if (error.message.includes('403') || error.message.includes('permission')) {
+          errorMessage = 'You do not have permission to access Spotify playlists. This could be because:\n\n• Your Spotify account type doesn\'t support playlist access\n• You need to upgrade to a Premium account\n• Your account has restrictions\n• You\'re using a family plan with limited permissions\n\nPlease try:\n1. Upgrading to Spotify Premium\n2. Checking your account settings\n3. Reconnecting your Spotify account';
         } else if (error.message.includes('429')) {
-          errorMessage = 'Rate limit exceeded. Please try again later.';
+          errorMessage = 'Rate limit exceeded. Please try again in a few minutes.';
         } else {
           errorMessage = error.message;
         }
@@ -470,6 +491,144 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [state.spotifyPlaylists, dispatch]);
   
+  // Add YouTube playlist selection function
+  const selectYouTubePlaylist = useCallback(async (playlistId: string) => {
+    console.log('[selectYouTubePlaylist] Called with playlistId:', playlistId);
+    
+    // Find the playlist in YouTube playlists
+    const playlist = state.youtubePlaylists.find((p: any) => p.id === playlistId);
+    if (!playlist) {
+      console.error('[selectYouTubePlaylist] Playlist not found in state');
+      dispatch({ type: 'SET_ERROR', payload: 'Selected playlist not found. Please refresh and try again.' });
+      return;
+    }
+    
+    dispatch({ type: 'SELECT_PLAYLIST', payload: playlistId });
+    
+    // Update the playlist name in the UI
+    const playlistName = playlist.snippet?.title || 'YouTube Playlist';
+    console.log('[selectYouTubePlaylist] Selected playlist:', playlistName);
+    
+    // Fetch tracks immediately after selecting playlist
+    try {
+      console.log('[selectYouTubePlaylist] Fetching tracks for playlistId:', playlistId);
+      
+      // Get YouTube access token
+      const accessToken = localStorage.getItem('soundswapp_youtube_access_token');
+      if (!accessToken) {
+        throw new Error('YouTube authentication token not found. Please reconnect to YouTube.');
+      }
+      
+      // Import the YouTube API function dynamically
+      const { fetchAllYouTubePlaylistItems } = await import('./youtubeApi');
+      
+      const allItems = await fetchAllYouTubePlaylistItems(playlistId, accessToken);
+      
+      if (!allItems || allItems.length === 0) {
+        throw new Error('No tracks found in this YouTube playlist.');
+      }
+      
+      // Get video details to fetch durations for preview
+      const videoIds = allItems.map((item: any) => 
+        item.snippet?.resourceId?.videoId || item.contentDetails?.videoId
+      ).filter(Boolean);
+      
+      console.log('Fetching video details for preview:', videoIds.length, 'videos');
+      
+      // Fetch video details in batches to get durations
+      const videoDetails: any[] = [];
+      const BATCH_SIZE = 50; // YouTube API limit
+      
+      for (let i = 0; i < videoIds.length; i += BATCH_SIZE) {
+        const batch = videoIds.slice(i, i + BATCH_SIZE);
+        const batchIds = batch.join(',');
+        
+        const videoResponse = await fetch(
+          `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${batchIds}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
+          }
+        );
+        
+        if (videoResponse.ok) {
+          const videoData = await videoResponse.json();
+          if (videoData.items) {
+            videoDetails.push(...videoData.items);
+          }
+        }
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      // Create a map of video details for quick lookup
+      const videoDetailsMap = new Map();
+      videoDetails.forEach(video => {
+        videoDetailsMap.set(video.id, video);
+      });
+      
+      // Process tracks with durations for preview
+      const tracks = allItems.map((item: any) => {
+        const videoId = item.snippet?.resourceId?.videoId || item.contentDetails?.videoId;
+        const videoDetail = videoDetailsMap.get(videoId);
+        
+        const videoTitle = item.snippet?.title || '';
+        const channelTitle = item.snippet?.videoOwnerChannelTitle || item.snippet?.channelTitle || 'Unknown';
+        
+        // Smart parsing of video titles
+        let artists = [channelTitle];
+        let title = videoTitle;
+        
+        const separators = [' - ', ' – ', ': ', ' "', " '", ' // ', ' | '];
+        for (const separator of separators) {
+          if (videoTitle.includes(separator)) {
+            const parts = videoTitle.split(separator);
+            if (parts.length >= 2) {
+              artists = [parts[0].trim()];
+              title = parts.slice(1).join(separator).trim()
+                .replace(/^['"]/, '')
+                .replace(/['"]$/, '');
+              break;
+            }
+          }
+        }
+        
+        // Get duration from video details
+        let duration_ms = 0;
+        if (videoDetail?.contentDetails?.duration) {
+          // Parse ISO 8601 duration format (PT4M13S -> 253000ms)
+          const duration = videoDetail.contentDetails.duration;
+          const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+          if (match) {
+            const hours = parseInt(match[1] || '0');
+            const minutes = parseInt(match[2] || '0');
+            const seconds = parseInt(match[3] || '0');
+            duration_ms = (hours * 3600 + minutes * 60 + seconds) * 1000;
+          }
+        }
+        
+        return {
+          id: item.id || `yt-${Math.random().toString(36).substring(2, 9)}`,
+          name: title,
+          artists: artists,
+          album: channelTitle,
+          duration_ms: duration_ms,
+          popularity: 0,
+          explicit: false,
+          searchQuery: `${artists[0]} ${title}`,
+          videoId: videoId
+        };
+      });
+      
+      dispatch({ type: 'SET_TRACKS', payload: tracks });
+    } catch (error) {
+      console.error('[selectYouTubePlaylist] Could not fetch playlist tracks:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Could not fetch playlist tracks. The playlist may be private, unavailable, or you do not have access.' });
+    }
+  }, [state.youtubePlaylists, dispatch]);
+  
   // Add safe URL creation functions
   const createYouTubePlaylistUrl = (playlistId: string | undefined): string => {
     if (!playlistId) {
@@ -478,7 +637,144 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return `https://www.youtube.com/playlist?list=${playlistId}`;
   };
 
-  const startConversion = async () => {
+  // Helper function to calculate track similarity score
+  const calculateTrackSimilarity = (originalTrack: SpotifyTrack, spotifyTrack: any): number => {
+    let score = 0;
+    
+    // Normalize strings for comparison
+    const normalize = (str: string) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
+    
+    const originalTitle = normalize(originalTrack.name);
+    const originalArtist = normalize(originalTrack.artists[0]);
+    const spotifyTitle = normalize(spotifyTrack.name);
+    const spotifyArtist = normalize(spotifyTrack.artists[0].name);
+    
+    // Title similarity (40% weight)
+    if (originalTitle === spotifyTitle) {
+      score += 0.4;
+    } else if (spotifyTitle.includes(originalTitle) || originalTitle.includes(spotifyTitle)) {
+      score += 0.3;
+    } else {
+      // Calculate partial similarity
+      const titleWords = originalTitle.split(' ');
+      const spotifyTitleWords = spotifyTitle.split(' ');
+      const commonWords = titleWords.filter(word => spotifyTitleWords.includes(word));
+      if (commonWords.length > 0) {
+        score += (commonWords.length / Math.max(titleWords.length, spotifyTitleWords.length)) * 0.2;
+      }
+    }
+    
+    // Artist similarity (40% weight)
+    if (originalArtist === spotifyArtist) {
+      score += 0.4;
+    } else if (spotifyArtist.includes(originalArtist) || originalArtist.includes(spotifyArtist)) {
+      score += 0.3;
+    } else {
+      // Calculate partial similarity
+      const artistWords = originalArtist.split(' ');
+      const spotifyArtistWords = spotifyArtist.split(' ');
+      const commonWords = artistWords.filter(word => spotifyArtistWords.includes(word));
+      if (commonWords.length > 0) {
+        score += (commonWords.length / Math.max(artistWords.length, spotifyArtistWords.length)) * 0.2;
+      }
+    }
+    
+    // Duration similarity (20% weight) - if we have duration data
+    if (originalTrack.duration_ms && spotifyTrack.duration_ms) {
+      const durationDiff = Math.abs(originalTrack.duration_ms - spotifyTrack.duration_ms);
+      const maxDiff = Math.max(originalTrack.duration_ms, spotifyTrack.duration_ms);
+      const durationSimilarity = Math.max(0, 1 - (durationDiff / maxDiff));
+      score += durationSimilarity * 0.2;
+    }
+    
+    return Math.min(score, 1.0); // Cap at 1.0
+  };
+
+  // Helper function to calculate YouTube video similarity score
+  const calculateYouTubeSimilarity = (spotifyTrack: SpotifyTrack, youtubeVideo: any): number => {
+    let score = 0;
+    
+    // Normalize strings for comparison
+    const normalize = (str: string) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
+    
+    const spotifyTitle = normalize(spotifyTrack.name);
+    const spotifyArtist = normalize(spotifyTrack.artists[0]);
+    const youtubeTitle = normalize(youtubeVideo.snippet.title);
+    const youtubeChannel = normalize(youtubeVideo.snippet.channelTitle);
+    
+    // Title similarity (50% weight)
+    if (spotifyTitle === youtubeTitle) {
+      score += 0.5;
+    } else if (youtubeTitle.includes(spotifyTitle) || spotifyTitle.includes(youtubeTitle)) {
+      score += 0.4;
+    } else {
+      // Calculate partial similarity
+      const titleWords = spotifyTitle.split(' ');
+      const youtubeTitleWords = youtubeTitle.split(' ');
+      const commonWords = titleWords.filter(word => youtubeTitleWords.includes(word));
+      if (commonWords.length > 0) {
+        score += (commonWords.length / Math.max(titleWords.length, youtubeTitleWords.length)) * 0.3;
+      }
+    }
+    
+    // Artist similarity (40% weight)
+    if (spotifyArtist === youtubeChannel) {
+      score += 0.4;
+    } else if (youtubeChannel.includes(spotifyArtist) || spotifyArtist.includes(youtubeChannel)) {
+      score += 0.3;
+    } else {
+      // Calculate partial similarity
+      const artistWords = spotifyArtist.split(' ');
+      const channelWords = youtubeChannel.split(' ');
+      const commonWords = artistWords.filter(word => channelWords.includes(word));
+      if (commonWords.length > 0) {
+        score += (commonWords.length / Math.max(artistWords.length, channelWords.length)) * 0.2;
+      }
+    }
+    
+    // Duration similarity (10% weight) - if we have duration data
+    if (spotifyTrack.duration_ms && youtubeVideo.contentDetails?.duration) {
+      // Parse YouTube duration
+      const duration = youtubeVideo.contentDetails.duration;
+      const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (match) {
+        const hours = parseInt(match[1] || '0');
+        const minutes = parseInt(match[2] || '0');
+        const seconds = parseInt(match[3] || '0');
+        const youtubeDuration = (hours * 3600 + minutes * 60 + seconds) * 1000;
+        
+        const durationDiff = Math.abs(spotifyTrack.duration_ms - youtubeDuration);
+        const maxDiff = Math.max(spotifyTrack.duration_ms, youtubeDuration);
+        const durationSimilarity = Math.max(0, 1 - (durationDiff / maxDiff));
+        score += durationSimilarity * 0.1;
+      }
+    }
+    
+    return Math.min(score, 1.0); // Cap at 1.0
+  };
+
+  // Add duplicate prevention
+  const checkForExistingPlaylist = async (playlistName: string, accessToken: string) => {
+    try {
+      // This function is no longer needed as SpotifyService is removed.
+      // The logic for checking existing playlists is now handled directly
+      // by the Spotify API calls or by the user's own Spotify account.
+      // For now, we'll return null, meaning no existing playlist found.
+      return null;
+    } catch (error) {
+      console.warn('Error checking for existing playlist:', error);
+      return null;
+    }
+  };
+
+  const startConversion = useCallback(async () => {
+    // Prevent multiple simultaneous conversions
+    if (state.status === ConversionStatus.MATCHING_TRACKS || 
+        state.status === ConversionStatus.CREATING_PLAYLIST) {
+      console.log('Conversion already in progress, ignoring duplicate request');
+      return;
+    }
+
     if (!state.selectedPlaylistId) {
       dispatch({ type: 'SET_ERROR', payload: 'No playlist selected' });
       return;
@@ -517,6 +813,8 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // Fetch fresh tracks if not cached
         if (sourcePlatform === 'spotify') {
           try {
+            console.log('Fetching tracks from Spotify for playlist:', playlistId);
+            
             // Add a timeout promise for getting tracks
             const tracksPromise = getSpotifyPlaylistTracks(playlistId);
             const timeoutPromise = new Promise<any>((_, reject) => 
@@ -524,29 +822,188 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             );
             
             const tracksData = await Promise.race([tracksPromise, timeoutPromise]);
+            console.log('Raw tracks data received:', {
+              itemsCount: tracksData?.items?.length || 0,
+              total: tracksData?.total || 0
+            });
+            
             tracks = await extractTrackData(tracksData);
+            console.log('Processed tracks:', tracks.length);
+            
             // Cache for future use
             sessionStorage.setItem(cacheKey, JSON.stringify(tracks));
           } catch (error: any) {
-        let errorMessage = 'Failed to load tracks from Spotify';
-        if (error instanceof Error) {
-          errorMessage = `Spotify error: ${error.message}`;
-          if (error.message.includes('Authentication') || error.message.includes('token')) {
-            errorMessage += '. Try reconnecting to Spotify.';
+            console.error('Error fetching Spotify tracks:', error);
+            let errorMessage = 'Failed to load tracks from Spotify';
+            if (error instanceof Error) {
+              errorMessage = `Spotify error: ${error.message}`;
+              if (error.message.includes('Authentication') || error.message.includes('token')) {
+                errorMessage += '. Try reconnecting to Spotify.';
               } else if (error.message.includes('timed out')) {
                 errorMessage = 'Spotify request timed out. Please try again with a better connection.';
-          }
-        }
-        throw new Error(errorMessage);
+              } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+                errorMessage = 'Access denied. The playlist may be private or you may not have permission to access it.';
+              } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+                errorMessage = 'Playlist not found. It may have been deleted or made private.';
+              }
+            }
+            throw new Error(errorMessage);
           }
         } else if (sourcePlatform === 'youtube') {
           // YouTube tracks loading logic
-          // ... existing code ...
+          try {
+            console.log('Fetching tracks from YouTube for playlist:', playlistId);
+            
+            // Get YouTube access token
+            const accessToken = localStorage.getItem('soundswapp_youtube_access_token');
+            if (!accessToken) {
+              throw new Error('YouTube authentication token not found. Please reconnect to YouTube.');
+            }
+            
+            // Import the YouTube API function dynamically
+            const { fetchAllYouTubePlaylistItems } = await import('./youtubeApi');
+            
+            // Fetch all playlist items with timeout
+            const tracksPromise = fetchAllYouTubePlaylistItems(playlistId, accessToken);
+            const timeoutPromise = new Promise<any>((_, reject) => 
+              setTimeout(() => reject(new Error('YouTube tracks request timed out')), 15000)
+            );
+            
+            const allItems = await Promise.race([tracksPromise, timeoutPromise]);
+            console.log('Raw YouTube tracks data received:', {
+              itemsCount: allItems?.length || 0
+            });
+            
+            if (!allItems || allItems.length === 0) {
+              throw new Error('No tracks found in this YouTube playlist. It might be empty, private, or you may not have access to it.');
+            }
+            
+            // Get video details to fetch durations and better metadata
+            const videoIds = allItems.map((item: any) => 
+              item.snippet?.resourceId?.videoId || item.contentDetails?.videoId
+            ).filter(Boolean);
+            
+            console.log('Fetching video details for', videoIds.length, 'videos');
+            
+            // Fetch video details in batches to get durations
+            const videoDetails: any[] = [];
+            const BATCH_SIZE = 50; // YouTube API limit
+            
+            for (let i = 0; i < videoIds.length; i += BATCH_SIZE) {
+              const batch = videoIds.slice(i, i + BATCH_SIZE);
+              const batchIds = batch.join(',');
+              
+              const videoResponse = await fetch(
+                `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${batchIds}`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                  }
+                }
+              );
+              
+              if (videoResponse.ok) {
+                const videoData = await videoResponse.json();
+                if (videoData.items) {
+                  videoDetails.push(...videoData.items);
+                }
+              }
+              
+              // Small delay to avoid rate limiting
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Create a map of video details for quick lookup
+            const videoDetailsMap = new Map();
+            videoDetails.forEach(video => {
+              videoDetailsMap.set(video.id, video);
+            });
+            
+            // Process YouTube tracks into the expected format with better metadata
+            tracks = allItems.map((item: any) => {
+              const videoId = item.snippet?.resourceId?.videoId || item.contentDetails?.videoId;
+              const videoDetail = videoDetailsMap.get(videoId);
+              
+              const videoTitle = item.snippet?.title || '';
+              const channelTitle = item.snippet?.videoOwnerChannelTitle || item.snippet?.channelTitle || 'Unknown';
+              
+              // Smart parsing of video titles to extract artist and title
+              let artists = [channelTitle];
+              let title = videoTitle;
+              
+              const separators = [' - ', ' – ', ': ', ' "', " '", ' // ', ' | '];
+              for (const separator of separators) {
+                if (videoTitle.includes(separator)) {
+                  const parts = videoTitle.split(separator);
+                  if (parts.length >= 2) {
+                    artists = [parts[0].trim()];
+                    title = parts.slice(1).join(separator).trim()
+                      .replace(/^['"]/, '')
+                      .replace(/['"]$/, '');
+                    break;
+                  }
+                }
+              }
+              
+              // Get duration from video details
+              let duration_ms = 0;
+              if (videoDetail?.contentDetails?.duration) {
+                // Parse ISO 8601 duration format (PT4M13S -> 253000ms)
+                const duration = videoDetail.contentDetails.duration;
+                const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+                if (match) {
+                  const hours = parseInt(match[1] || '0');
+                  const minutes = parseInt(match[2] || '0');
+                  const seconds = parseInt(match[3] || '0');
+                  duration_ms = (hours * 3600 + minutes * 60 + seconds) * 1000;
+                }
+              }
+              
+              return {
+                id: item.id || `yt-${Math.random().toString(36).substring(2, 9)}`,
+                name: title,
+                artists: artists,
+                album: channelTitle,
+                duration_ms: duration_ms,
+                popularity: 0,
+                explicit: false,
+                searchQuery: `${artists[0]} ${title}`,
+                videoId: videoId
+              };
+            });
+            
+            console.log('Processed YouTube tracks:', tracks.length);
+            
+            // Cache for future use
+            sessionStorage.setItem(cacheKey, JSON.stringify(tracks));
+          } catch (error: any) {
+            console.error('Error fetching YouTube tracks:', error);
+            let errorMessage = 'Failed to load tracks from YouTube';
+            if (error instanceof Error) {
+              errorMessage = `YouTube error: ${error.message}`;
+              if (error.message.includes('Authentication') || error.message.includes('token')) {
+                errorMessage += '. Try reconnecting to YouTube.';
+              } else if (error.message.includes('timed out')) {
+                errorMessage = 'YouTube request timed out. Please try again with a better connection.';
+              } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+                errorMessage = 'Access denied. The playlist may be private or you may not have permission to access it.';
+              } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+                errorMessage = 'Playlist not found. It may have been deleted or made private.';
+              }
+            }
+            throw new Error(errorMessage);
+          }
         }
       }
 
       if (!tracks || tracks.length === 0) {
-        throw new Error('No tracks found in the selected playlist.');
+        console.error('No tracks found after processing. Debug info:', {
+          playlistId,
+          sourcePlatform,
+          cachedTracks: !!cachedTracks,
+          stateTracksLength: state.tracks.length
+        });
+        throw new Error('No tracks found in the selected playlist. This might be due to authentication issues or the playlist being empty.');
       }
 
       // Always update UI with tracks
@@ -567,11 +1024,41 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           // Process batch in parallel
           const batchPromises = currentBatch.map(async (track) => {
             try {
-              const query = `${track.artists[0]} ${track.name}`;
-              const videoSearchResults = await searchYouTube(user.uid, query);
+              // Create multiple search queries for better matching
+              const searchQueries = [
+                `${track.artists[0]} ${track.name}`,
+                `${track.name} ${track.artists[0]}`,
+                track.name,
+                `${track.artists[0]} - ${track.name}`,
+                `${track.artists[0]} "${track.name}"`
+              ];
               
-              if (videoSearchResults && videoSearchResults.items && videoSearchResults.items.length > 0) {
-                const bestMatch = videoSearchResults.items[0];
+              let bestMatch = null;
+              let bestScore = 0;
+              
+              // Try each search query
+              for (const query of searchQueries) {
+                const videoSearchResults = await searchYouTube(user.uid, query);
+                
+                if (videoSearchResults && videoSearchResults.items && videoSearchResults.items.length > 0) {
+                  // Score each result based on similarity
+                  for (const result of videoSearchResults.items) {
+                    const score = calculateYouTubeSimilarity(track, result);
+                    
+                    if (score > bestScore) {
+                      bestScore = score;
+                      bestMatch = result;
+                    }
+                  }
+                }
+                
+                // If we found a good match (score > 0.7), stop searching
+                if (bestScore > 0.7) {
+                  break;
+                }
+              }
+              
+              if (bestMatch && bestScore > 0.5) {
                 return { 
                   trackId: track.id, 
                   match: {
@@ -579,13 +1066,13 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     title: bestMatch.snippet.title,
                     channelTitle: bestMatch.snippet.channelTitle,
                     thumbnailUrl: bestMatch.snippet.thumbnails?.default?.url || '',
-                    score: 100, // Simplified score
-              matchDetails: {
-                      titleMatch: 100,
-                      artistMatch: 100,
-                      lengthScore: 100
+                    score: Math.round(bestScore * 100),
+                    matchDetails: {
+                      titleMatch: Math.round(bestScore * 100),
+                      artistMatch: Math.round(bestScore * 100),
+                      lengthScore: Math.round(bestScore * 100)
                     },
-                    isMockData: videoSearchResults._isMock || false
+                    isMockData: false
                   }
                 };
               }
@@ -662,6 +1149,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           let successCount = 0;
           let failureCount = 0;
           let totalVideos = 0;
+          let failedTracks: FailedTrack[] = []; // Track failed tracks
           
           // Count how many videos we'll be adding (excluding null matches)
           for (const match of matches.values()) {
@@ -681,10 +1169,26 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           
           // Process videos one at a time with delays to avoid rate limits
           for (let i = 0; i < matchEntries.length; i++) {
-            const [_, match] = matchEntries[i];
+            const [trackId, match] = matchEntries[i];
+            const track = tracks.find(t => t.id === trackId);
             
             if (!match || !match.videoId) {
               processedVideos++;
+              failureCount++;
+              
+              // Track the failed track
+              if (track) {
+                const failedTrack: FailedTrack = {
+                  name: track.name,
+                  artists: track.artists,
+                  reason: 'No YouTube match found',
+                  searchQueries: [`${track.artists[0]} ${track.name}`, track.name],
+                  bestMatchScore: 0,
+                  bestMatchTitle: 'None',
+                  bestMatchArtist: 'None'
+                };
+                failedTracks.push(failedTrack);
+              }
               continue;
             }
             
@@ -722,10 +1226,38 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               if (!success) {
                 failureCount++;
                 console.error(`Failed to add video ${match.videoId} after multiple attempts:`, lastError);
+                
+                // Track the failed track
+                if (track) {
+                  const failedTrack: FailedTrack = {
+                    name: track.name,
+                    artists: track.artists,
+                    reason: `Failed to add to YouTube playlist after ${attempts} attempts: ${lastError instanceof Error ? lastError.message : 'Unknown error'}`,
+                    searchQueries: [`${track.artists[0]} ${track.name}`],
+                    bestMatchScore: match.score / 100,
+                    bestMatchTitle: match.title,
+                    bestMatchArtist: match.channelTitle
+                  };
+                  failedTracks.push(failedTrack);
+                }
               }
             } catch (error) {
               failureCount++;
               console.error(`Error adding video ${match.videoId} to playlist:`, error);
+              
+              // Track the failed track
+              if (track) {
+                const failedTrack: FailedTrack = {
+                  name: track.name,
+                  artists: track.artists,
+                  reason: error instanceof Error ? error.message : 'Unknown error',
+                  searchQueries: [`${track.artists[0]} ${track.name}`],
+                  bestMatchScore: match.score / 100,
+                  bestMatchTitle: match.title,
+                  bestMatchArtist: match.channelTitle
+                };
+                failedTracks.push(failedTrack);
+              }
             }
             
             // Update progress after each video
@@ -744,6 +1276,28 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           // Update state to indicate success
           dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SUCCESS });
           
+          // Provide detailed feedback about the conversion
+          const missingTracks = tracks.length - successCount;
+          let feedbackMessage = `Successfully converted ${successCount} tracks`;
+          
+          if (missingTracks > 0) {
+            feedbackMessage += ` (${missingTracks} tracks not found on Spotify)`;
+            
+            // Show a toast with helpful information
+            if (typeof window !== 'undefined' && window.dispatchEvent) {
+              window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: {
+                  type: 'info',
+                  title: 'Conversion Complete',
+                  message: `${successCount} tracks converted successfully. ${missingTracks} tracks were not found on Spotify and were skipped.`,
+                  duration: 8000
+                }
+              }));
+            }
+          }
+          
+          console.log(feedbackMessage);
+          
           // Save the conversion to history
           const conversionResult: ConversionResult = {
             id: `conversion_${Date.now()}`,
@@ -756,7 +1310,8 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             tracksFailed: failureCount,
             totalTracks: tracks.length,
             convertedAt: new Date(),
-            isMockData: false
+            isMockData: false,
+            failedTracks: failedTracks // Include failed tracks in history
           };
 
           // Update conversion history in state
@@ -797,7 +1352,8 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     artists: track.artists,
                     album: track.album,
                     duration_ms: track.duration_ms
-                  }))
+                  })),
+                  failedTracks: failedTracks // Save failed tracks to Firestore
                 });
 
                 console.log('Successfully saved conversion to Firestore:', docRef.id);
@@ -852,8 +1408,230 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
       } else if (destinationPlatform === 'spotify') {
         // YouTube → Spotify conversion
-        // Similar optimizations would be applied here
-        // ... Rest of the code ...
+        console.log('Starting YouTube to Spotify conversion');
+        
+        // Check if user has Spotify authentication
+        if (!isSpotifyAuthenticated()) {
+          throw new Error('Spotify authentication required. Please reconnect your Spotify account.');
+        }
+        
+        // Get the selected playlist details
+        const selectedPlaylist = state.youtubePlaylists.find((p: any) => p.id === playlistId);
+        if (!selectedPlaylist) {
+          throw new Error('Selected playlist details not found');
+        }
+        
+        // Create a descriptive Spotify playlist name
+        const spotifyPlaylistName = `${selectedPlaylist.snippet?.title || 'YouTube Playlist'} (Converted)`;
+        const spotifyPlaylistDescription = `Converted from YouTube using SoundSwapp`;
+        
+        try {
+          // Import Spotify API functions
+          const { createSpotifyPlaylist, addTracksToSpotifyPlaylist } = await import('./spotifyApi');
+          
+          // Create the Spotify playlist
+          console.log('Creating Spotify playlist:', spotifyPlaylistName);
+          const newSpotifyPlaylist = await createSpotifyPlaylist(spotifyPlaylistName, spotifyPlaylistDescription);
+          
+          if (!newSpotifyPlaylist || !newSpotifyPlaylist.id) {
+            throw new Error('Failed to create Spotify playlist');
+          }
+          
+          const spotifyPlaylistId = newSpotifyPlaylist.id;
+          const spotifyPlaylistUrl = `https://open.spotify.com/playlist/${spotifyPlaylistId}`;
+          
+          console.log(`Created Spotify playlist: ${spotifyPlaylistId}`);
+          
+          // Save the Spotify playlist ID to state
+          dispatch({ 
+            type: 'SET_SPOTIFY_PLAYLIST', 
+            payload: { 
+              id: spotifyPlaylistId, 
+              url: spotifyPlaylistUrl
+            } 
+          });
+          
+          // Search for tracks on Spotify and add them to the playlist
+          let successCount = 0;
+          let failureCount = 0;
+          let totalTracks = tracks.length;
+          let failedTracks: FailedTrack[] = []; // Track failed tracks
+          
+          console.log(`Starting to add ${totalTracks} tracks to Spotify playlist ${spotifyPlaylistId}`);
+          
+          // Process tracks one by one with progress updates
+          for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            
+            try {
+              // Use improved search queries
+              const searchQueries = generateSearchQueries(track);
+              
+              let bestMatch = null;
+              let bestScore = 0;
+              let bestMatchTitle = '';
+              let bestMatchArtist = '';
+              
+              // Try each search query
+              for (const searchQuery of searchQueries) {
+                console.log(`Searching Spotify for: "${searchQuery}"`);
+                
+                // Import Spotify search function
+                const { searchSpotifyTracks } = await import('./spotifyApi');
+                const searchResults = await searchSpotifyTracks(searchQuery, 20); // Get more results
+                
+                if (searchResults && searchResults.tracks && searchResults.tracks.items && searchResults.tracks.items.length > 0) {
+                  // Score each result based on similarity
+                  for (const result of searchResults.tracks.items) {
+                    const score = calculateTrackSimilarity(track, result);
+                    
+                    if (score > bestScore) {
+                      bestScore = score;
+                      bestMatch = result;
+                      bestMatchTitle = result.name;
+                      bestMatchArtist = result.artists[0].name;
+                    }
+                  }
+                }
+                
+                // If we found a good match (score > 0.6), stop searching
+                if (bestScore > 0.6) {
+                  break;
+                }
+              }
+              
+              // Lower the threshold for better matching - from 0.5 to 0.3
+              if (bestMatch && bestScore > 0.3) {
+                const trackUri = bestMatch.uri;
+                
+                console.log(`Found Spotify track: ${bestMatch.name} by ${bestMatch.artists[0].name} (score: ${bestScore.toFixed(2)})`);
+                
+                // Add the track to the Spotify playlist
+                await addTracksToSpotifyPlaylist(spotifyPlaylistId, [trackUri]);
+                
+                successCount++;
+                console.log(`Successfully added track ${i + 1}/${totalTracks}`);
+              } else {
+                failureCount++;
+                console.log(`No good Spotify match found for: "${track.name}" by ${track.artists[0]} (best score: ${bestScore.toFixed(2)})`);
+                
+                // Track the failed track with details
+                const failedTrack: FailedTrack = {
+                  name: track.name,
+                  artists: track.artists,
+                  reason: bestScore > 0 ? `Best match score (${bestScore.toFixed(2)}) below threshold (0.5)` : 'No matches found',
+                  searchQueries: searchQueries,
+                  bestMatchScore: bestScore,
+                  bestMatchTitle: bestMatchTitle || 'None',
+                  bestMatchArtist: bestMatchArtist || 'None'
+                };
+                failedTracks.push(failedTrack);
+              }
+            } catch (error) {
+              failureCount++;
+              console.error(`Error processing track "${track.name}":`, error);
+              
+              // Track the failed track with error details
+              const failedTrack: FailedTrack = {
+                name: track.name,
+                artists: track.artists,
+                reason: error instanceof Error ? error.message : 'Unknown error',
+                searchQueries: [
+                  `${track.artists[0]} ${track.name}`,
+                  `${track.name} ${track.artists[0]}`,
+                  track.name,
+                  `${track.artists[0]} - ${track.name}`,
+                  `${track.artists[0]} "${track.name}"`
+                ],
+                bestMatchScore: 0,
+                bestMatchTitle: 'Error occurred',
+                bestMatchArtist: 'Error occurred'
+              };
+              failedTracks.push(failedTrack);
+            }
+            
+            // Update progress after each track
+            const progress = Math.min(((i + 1) / totalTracks) * 100, 100);
+            dispatch({ type: 'UPDATE_MATCHING_PROGRESS', payload: progress });
+            
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
+          // Update state to indicate success
+          dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SUCCESS });
+          
+          // Save the conversion to history
+          const conversionResult: ConversionResult = {
+            id: `conversion_${Date.now()}`,
+            spotifyPlaylistId,
+            spotifyPlaylistName,
+            spotifyPlaylistUrl,
+            youtubePlaylistId: playlistId,
+            youtubePlaylistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
+            tracksMatched: successCount,
+            tracksFailed: failureCount,
+            totalTracks: tracks.length,
+            convertedAt: new Date(),
+            isMockData: false,
+            failedTracks: failedTracks // Include failed tracks in history
+          };
+
+          // Update conversion history in state
+          dispatch({
+            type: 'SET_CONVERSION_HISTORY',
+            payload: [conversionResult, ...state.conversionHistory]
+          });
+
+          // Save to local storage
+          saveConversionHistoryToLocalStorage(user.uid, [conversionResult, ...state.conversionHistory]);
+
+          // Try to save to Firestore with enhanced error handling
+          try {
+            console.log('Attempting to save conversion to Firestore:', {
+              userId: user.uid,
+              conversionId: conversionResult.id,
+              playlistName: conversionResult.spotifyPlaylistName
+            });
+
+            const conversionsRef = collection(db, 'users', user.uid, 'conversions');
+            const docRef = doc(conversionsRef, conversionResult.id);
+            
+            await setDoc(docRef, {
+              ...conversionResult,
+              convertedAt: Timestamp.fromDate(conversionResult.convertedAt),
+              userId: user.uid,
+              tracks: tracks.map(track => ({
+                name: track.name,
+                artists: track.artists,
+                album: track.album,
+                duration_ms: track.duration_ms
+              })),
+              failedTracks: failedTracks // Save failed tracks to Firestore
+            });
+
+            console.log('Successfully saved conversion to Firestore:', docRef.id);
+          } catch (firestoreError) {
+            console.error('Failed to save conversion history to Firestore:', firestoreError);
+            logFirestoreError('saveConversion', firestoreError, user.uid);
+          }
+          
+        } catch (playlistError) {
+          console.error('Error during Spotify playlist creation or population:', playlistError);
+          let errorMessage = 'Failed to create or update Spotify playlist';
+          
+          if (playlistError instanceof Error) {
+            if (playlistError.message.includes('Authentication') || playlistError.message.includes('token')) {
+              errorMessage = 'Spotify authentication expired. Please reconnect your Spotify account.';
+            } else if (playlistError.message.includes('quota')) {
+              errorMessage = 'Spotify API quota exceeded. Please try again later.';
+            } else {
+              errorMessage = `Spotify error: ${playlistError.message}`;
+            }
+          }
+          
+          throw new Error(errorMessage);
+        }
       }
       } catch (error) {
       console.error('Conversion error:', error);
@@ -880,7 +1658,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       });
       dispatch({ type: 'SET_STATUS', payload: ConversionStatus.ERROR });
     }
-  };
+  }, [state.spotifyPlaylists, state.youtubePlaylists, user, dispatch, state.tracks, state.selectedPlaylistId]);
   
   const resetConversion = () => {
     dispatch({ type: 'RESET' });
@@ -940,8 +1718,9 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             tracksFailed: data.tracksFailed,
             totalTracks: data.totalTracks,
             convertedAt: data.convertedAt.toDate(),
-              isMockData: data.isMockData || false
-            });
+              isMockData: data.isMockData || false,
+            failedTracks: data.failedTracks || [] // Load failed tracks from Firestore
+          });
           });
           
           // Update the state with the Firestore history
@@ -998,20 +1777,21 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
   
-  const value = {
+  const contextValue: ConversionContextType = {
     state,
     fetchSpotifyPlaylists,
     fetchYouTubePlaylists,
     selectPlaylist,
+    selectYouTubePlaylist,
     startConversion,
     resetConversion,
     fetchConversionHistory,
     toggleMockDataMode,
-    dispatch,
+    dispatch
   };
   
   return (
-    <ConversionContext.Provider value={value}>
+    <ConversionContext.Provider value={contextValue}>
       {children}
     </ConversionContext.Provider>
   );

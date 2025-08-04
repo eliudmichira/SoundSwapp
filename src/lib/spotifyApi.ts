@@ -656,55 +656,72 @@ export class SpotifyService {
       const batch = spotifyTracks.slice(i, i + BATCH_SIZE);
       const batchPromises = batch.map(async (item) => {
         try {
-    const track = item.track;
+          const track = item.track;
           if (!track || !track.id) {
             console.warn('Invalid track data:', item);
             return null;
           }
           
-          const artistIds = track.artists.map((artist: any) => artist.id);
-          const artistPromises = artistIds.map((id: string) => 
-            SpotifyApiClient.getArtistDetails(id)
-          );
+          // Create basic track data first
+          const basicTrack: SpotifyTrack = {
+            id: track.id,
+            name: track.name,
+            artists: track.artists.map((artist: any) => artist.name),
+            artistIds: track.artists.map((artist: any) => artist.id),
+            artistImages: [],
+            genres: [],
+            album: track.album.name,
+            duration_ms: track.duration_ms,
+            popularity: track.popularity,
+            explicit: track.explicit,
+            releaseYear: track.album && track.album.release_date ? track.album.release_date.slice(0, 4) : '',
+            searchQuery: `${track.name} ${track.artists.map((a: any) => a.name).join(' ')}`
+          };
           
-          // Process artists in parallel
-          const artistsData = await Promise.all(artistPromises);
-          
-          // Collect genres and images from artist data
-          const genres: string[] = [];
-          const artistImages: string[] = [];
-          
-          artistsData.forEach(artist => {
-            if (artist) {
-              if (artist.genres && artist.genres.length) {
-                genres.push(...artist.genres);
+          // Try to enrich with artist details, but don't fail if it doesn't work
+          try {
+            const artistIds = track.artists.map((artist: any) => artist.id);
+            const artistPromises = artistIds.map((id: string) => 
+              SpotifyApiClient.getArtistDetails(id).catch(err => {
+                console.warn(`Failed to get artist details for ${id}:`, err);
+                return null;
+              })
+            );
+            
+            // Process artists in parallel with timeout
+            const timeoutPromise = new Promise<any[]>((_, reject) => 
+              setTimeout(() => reject(new Error('Artist details request timed out')), 10000)
+            );
+            
+            const artistsData = await Promise.race([
+              Promise.all(artistPromises),
+              timeoutPromise
+            ]);
+            
+            // Collect genres and images from artist data
+            const genres: string[] = [];
+            const artistImages: string[] = [];
+            
+            artistsData.forEach(artist => {
+              if (artist) {
+                if (artist.genres && artist.genres.length) {
+                  genres.push(...artist.genres);
+                }
+                if (artist.images && artist.images.length) {
+                  artistImages.push(artist.images[0].url);
+                }
               }
-              if (artist.images && artist.images.length) {
-                artistImages.push(artist.images[0].url);
-              }
-            }
-          });
-          
-          // Get release year from album
-          let releaseYear = '';
-          if (track.album && track.album.release_date) {
-            releaseYear = track.album.release_date.slice(0, 4);
+            });
+            
+            // Update the track with enriched data
+            basicTrack.artistImages = artistImages;
+            basicTrack.genres = Array.from(new Set(genres)); // Remove duplicates
+          } catch (artistError) {
+            console.warn('Failed to enrich track with artist details:', artistError);
+            // Continue with basic track data
           }
           
-    return {
-      id: track.id,
-      name: track.name,
-      artists: track.artists.map((artist: any) => artist.name),
-            artistIds,
-            artistImages,
-            genres: Array.from(new Set(genres)), // Remove duplicates
-      album: track.album.name,
-      duration_ms: track.duration_ms,
-      popularity: track.popularity,
-      explicit: track.explicit,
-            releaseYear,
-      searchQuery: `${track.name} ${track.artists.map((a: any) => a.name).join(' ')}`
-          };
+          return basicTrack;
         } catch (error) {
           console.error('Error processing track:', error);
           return null;
@@ -746,14 +763,10 @@ export class SpotifyService {
     isPublic: boolean = false
   ): Promise<SpotifyPlaylist> {
     // Get the user's Spotify ID
-    const profile = await this.getProfile();
+    const profile = await SpotifyService.getProfile();
     const userId = profile.id;
     
-    if (!userId) {
-      throw new Error('Could not retrieve user ID');
-    }
-    
-    const data = await SpotifyApiClient.request<any>(
+    const response = await SpotifyApiClient.request<SpotifyPlaylist>(
       `${ENDPOINTS.BASE}/users/${userId}/playlists`,
       {
         method: 'POST',
@@ -768,15 +781,25 @@ export class SpotifyService {
       }
     );
     
-    return {
-      id: data.id,
-      name: data.name,
-      description: data.description || '',
-      imageUrl: data.images && data.images[0] ? data.images[0].url : '',
-      trackCount: data.tracks ? data.tracks.total : 0,
-      owner: data.owner ? data.owner.display_name : '',
-      url: data.external_urls?.spotify
-    };
+    return response;
+  }
+
+  /**
+   * Search for tracks on Spotify
+   */
+  static async searchTracks(query: string, limit: number = 5): Promise<any> {
+    const params = new URLSearchParams({
+      q: query,
+      type: 'track',
+      limit: limit.toString(),
+      market: 'US' // You might want to make this configurable
+    });
+    
+    const response = await SpotifyApiClient.request<any>(
+      `${ENDPOINTS.BASE}/search?${params.toString()}`
+    );
+    
+    return response;
   }
 
   /**
@@ -859,12 +882,38 @@ export const saveSpotifyTokens = SpotifyAuth.saveTokens;
 export const getSpotifyTokens = SpotifyAuth.getTokens;
 export const refreshSpotifyToken = SpotifyAuth.refreshToken;
 export const getSpotifyProfile = SpotifyService.getProfile;
-export const getSpotifyPlaylists = SpotifyService.getPlaylists;
+export const getSpotifyPlaylists = async (accessToken: string): Promise<SpotifyPlaylist[]> => {
+  try {
+    const response = await fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error('You do not have permission to access Spotify playlists. Please check your account settings and try reconnecting.');
+      } else if (response.status === 401) {
+        throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
+      } else {
+        throw new Error(`Failed to fetch playlists: ${response.status} ${response.statusText}`);
+      }
+    }
+
+    const data = await response.json();
+    return data.items || [];
+  } catch (error) {
+    console.error('Error fetching Spotify playlists:', error);
+    throw error;
+  }
+};
 export const getSpotifyPlaylistTracks = SpotifyService.getPlaylistTracks;
 export const extractTrackData = SpotifyService.extractTrackData;
 export const createSpotifyPlaylist = SpotifyService.createPlaylist;
 export const addTracksToSpotifyPlaylist = SpotifyService.addTracksToPlaylist;
 export const getSpotifyPlaylistById = SpotifyService.getPlaylistById;
+export const searchSpotifyTracks = SpotifyService.searchTracks;
 export const generateCodeVerifier = CryptoHelper.generateCodeVerifier.bind(CryptoHelper);
 export const generateCodeChallenge = CryptoHelper.generateCodeChallenge.bind(CryptoHelper);
 export const saveCodeVerifier = (codeVerifier: string): void => {

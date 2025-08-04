@@ -1,4 +1,4 @@
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { 
   getAuth,
   signInWithEmailAndPassword,
@@ -10,7 +10,8 @@ import {
   getRedirectResult,
   browserSessionPersistence,
   setPersistence,
-  type User
+  type User,
+  type Auth
 } from 'firebase/auth';
 
 import {
@@ -31,21 +32,32 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 
-import { getStorage } from 'firebase/storage';
-import { getAnalytics } from 'firebase/analytics';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
+import { getAnalytics, type Analytics } from 'firebase/analytics';
 import { firebaseConfig } from './firebase-config';
 
-// Initialize Firebase services
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const storage = getStorage(app);
-const db = getFirestore(app);
-let analytics = null;
+// Initialize Firebase services with proper type annotations
+let app: FirebaseApp;
+let auth: Auth;
+let storage: FirebaseStorage;
+let db: Firestore;
+let analytics: Analytics | null = null;
 
 try {
-  analytics = getAnalytics(app);
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  storage = getStorage(app);
+  db = getFirestore(app);
+
+  try {
+    analytics = getAnalytics(app);
+  } catch (error) {
+    console.warn('Analytics initialization failed:', error);
+  }
 } catch (error) {
-  console.warn('Analytics initialization failed:', error);
+  console.error('Firebase initialization failed:', error);
+  console.error('Please check your Firebase configuration in .env file');
+  throw new Error(`Firebase initialization failed: ${error instanceof Error ? error.message : String(error)}`);
 }
 
 // Device detection utilities
@@ -59,10 +71,10 @@ const isAndroidDevice = () => {
 
 // Firestore initialization state
 let firestoreInitialized = false;
-let firestoreInitPromise: Promise<typeof db> | null = null;
+let firestoreInitPromise: Promise<Firestore> | null = null;
 
 // Initialize Firestore with persistence
-const initializeFirestore = async () => {
+const initializeFirestore = async (): Promise<Firestore> => {
   if (firestoreInitialized) return db;
 
   try {
@@ -83,7 +95,7 @@ const initializeFirestore = async () => {
 };
 
 // Wait for Firestore to be ready
-export const waitForFirestore = async () => {
+export const waitForFirestore = async (): Promise<Firestore> => {
   if (!firestoreInitPromise) {
     firestoreInitPromise = initializeFirestore();
   }
@@ -184,7 +196,7 @@ export const debugGoogleAuth = async () => {
 };
 
 // Enhanced Firebase initialization with retry logic
-export const initializeFirebase = async (retryCount = 3, delay = 1000) => {
+export const initializeFirebase = async (retryCount = 3, delay = 1000): Promise<Firestore> => {
   for (let i = 0; i < retryCount; i++) {
     try {
       // Initialize Firebase if not already initialized
@@ -193,30 +205,59 @@ export const initializeFirebase = async (retryCount = 3, delay = 1000) => {
       }
 
       // Initialize Firestore with offline persistence
-      const db = getFirestore();
-      await enableIndexedDbPersistence(db).catch((err) => {
+      const firestoreDb = getFirestore();
+      await enableIndexedDbPersistence(firestoreDb).catch((err) => {
         if (err.code === 'failed-precondition') {
-          // Multiple tabs open, persistence can only be enabled in one tab at a time
           console.warn('Persistence disabled: multiple tabs open');
         } else if (err.code === 'unimplemented') {
-          // The current browser doesn't support persistence
           console.warn('Persistence not supported by browser');
         }
       });
 
-      // Test connection using modular syntax
-      const testRef = doc(collection(db, 'test'), 'connection');
-      await getDoc(testRef);
-      return db;
+      // Test connection with timeout and better error handling
+      try {
+        const testRef = doc(collection(firestoreDb, 'test'), 'connection');
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Connection timeout')), 5000)
+        );
+        
+        await Promise.race([
+          getDoc(testRef),
+          timeoutPromise
+        ]);
+        
+        console.log('Firebase initialized successfully');
+        return firestoreDb;
+      } catch (connectionError) {
+        console.warn('Firestore connection test failed, but continuing with offline mode:', connectionError);
+        // Even if connection test fails, return the Firestore instance for offline mode
+        return firestoreDb;
+      }
     } catch (error) {
       console.error(`Firebase initialization attempt ${i + 1} failed:`, error);
+      
+      // If this is the last attempt, try to return a basic Firestore instance for offline mode
       if (i === retryCount - 1) {
-        throw new Error('Failed to initialize Firebase after multiple attempts');
+        console.warn('All Firebase initialization attempts failed, attempting offline mode');
+        try {
+          // Try to get a basic Firestore instance without connection testing
+          if (!getApps().length) {
+            initializeApp(firebaseConfig);
+          }
+          const firestoreDb = getFirestore();
+          console.log('Firebase initialized in offline mode');
+          return firestoreDb;
+        } catch (offlineError) {
+          console.error('Even offline mode failed:', offlineError);
+          throw new Error('Failed to initialize Firebase. Please check your internet connection and try again.');
+        }
       }
+      
       // Wait before retrying
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
+  throw new Error('Failed to initialize Firebase after multiple attempts');
 };
 
 // Enhanced error handling for Firestore operations

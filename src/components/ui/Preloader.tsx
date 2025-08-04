@@ -12,10 +12,10 @@ const simulateLoading = (
   initialProgress: number = 0
 ) => {
   const stages = [
-    { name: "Connecting APIs", duration: 600 },
-    { name: "Fetching playlists", duration: 800 },
-    { name: "Loading tracks", duration: 1000 },
-    { name: "Preparing converter", duration: 600 }
+    { name: "Loading your music universe...", duration: 800 },
+    { name: "Connecting to platforms", duration: 600 },
+    { name: "Preparing converter", duration: 700 },
+    { name: "Almost ready", duration: 500 }
   ];
 
   let currentStage = 0;

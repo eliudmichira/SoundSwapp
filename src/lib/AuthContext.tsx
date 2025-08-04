@@ -201,7 +201,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Get Spotify tokens
       const tokens = TokenManager.getTokens('spotify');
       if (!tokens) {
-        throw new Error('No Spotify tokens available');
+        console.log('No Spotify tokens available - user needs to authenticate');
+        setSpotifyUserProfile({ 
+          displayName: 'Connect Spotify', 
+          id: 'spotify_user_id' 
+        });
+        return;
       }
       
       // Fetch actual Spotify profile
@@ -254,7 +259,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Get YouTube tokens
       const tokens = TokenManager.getTokens('youtube');
       if (!tokens) {
-        throw new Error('No YouTube tokens available');
+        console.log('No YouTube tokens available - user needs to authenticate');
+        setYoutubeUserProfile({ 
+          displayName: 'Connect YouTube', 
+          id: 'youtube_user_id' 
+        });
+        return;
       }
       
       // Fetch actual YouTube profile
