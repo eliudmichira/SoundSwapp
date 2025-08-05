@@ -14,6 +14,7 @@ import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsOfService from './components/TermsOfService';
 import PreloaderDemo from './components/PreloaderDemo';
 import AppInitializer from './components/AppInitializer';
+import TokenManagerInitializer from './components/TokenManagerInitializer';
 import { useState, useEffect, createContext, useContext } from 'react';
 // Import our new useMobileDetection hook
 import useMobileDetection from './hooks/useMobileDetection';
@@ -144,43 +145,45 @@ function App() {
 
   return (
     <ThemeProvider>
-      <ParticleField
-        colorScheme="colorful"
-        density="medium"
-        interactive={true}
-        className="fixed top-0 left-0 w-full h-full z-[-1]"
-      />
-      <Router>
-        <MobileContext.Provider value={mobileContextValue}>
-          <style>{angularCss}</style>
-          <AuthProvider>
-            <UserProvider>
-              <ConversionProvider>
-                <AppInitializer>
-                  <Routes>
-                    <Route path="/" element={<PrivateRoute element={<ModernPlaylistConverter />} />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/callback" element={<SpotifyCallback />} />
-                    <Route path="/youtube-callback" element={<YouTubeCallback />} />
-                    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-                    <Route path="/terms-of-service" element={<TermsOfService />} />
-                    <Route path="/preloader-demo" element={<PreloaderDemo />} />
-                    <Route path="/insights/:id" element={<PrivateRoute element={<ConversionInsights />} />} />
-                    <Route path="*" element={<Navigate to="/" />} />
-                  </Routes>
-                  <ShareModal
-                    isOpen={isOpen}
-                    onClose={closeShareModal}
-                    title={shareData.title}
-                    url={shareData.url}
-                    description={shareData.description}
-                  />
-                </AppInitializer>
-              </ConversionProvider>
-            </UserProvider>
-          </AuthProvider>
-        </MobileContext.Provider>
-      </Router>
+      <AuthProvider>
+        <UserProvider>
+          <ConversionProvider>
+            <TokenManagerInitializer>
+              <MobileContext.Provider value={mobileContextValue}>
+                <ParticleField
+                  colorScheme="colorful"
+                  density="medium"
+                  interactive={true}
+                  className="fixed top-0 left-0 w-full h-full z-[-1]"
+                />
+                <Router>
+                  <style>{angularCss}</style>
+                  <AppInitializer>
+                    <Routes>
+                      <Route path="/" element={<PrivateRoute element={<ModernPlaylistConverter />} />} />
+                      <Route path="/login" element={<Login />} />
+                      <Route path="/callback" element={<SpotifyCallback />} />
+                      <Route path="/youtube-callback" element={<YouTubeCallback />} />
+                      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                      <Route path="/terms-of-service" element={<TermsOfService />} />
+                      <Route path="/preloader-demo" element={<PreloaderDemo />} />
+                      <Route path="/insights/:id" element={<PrivateRoute element={<ConversionInsights />} />} />
+                      <Route path="*" element={<Navigate to="/" />} />
+                    </Routes>
+                    <ShareModal
+                      isOpen={isOpen}
+                      onClose={closeShareModal}
+                      title={shareData.title}
+                      url={shareData.url}
+                      description={shareData.description}
+                    />
+                  </AppInitializer>
+                </Router>
+              </MobileContext.Provider>
+            </TokenManagerInitializer>
+          </ConversionProvider>
+        </UserProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

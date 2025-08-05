@@ -6,7 +6,7 @@ import { PlaylistInsights } from './visualization/PlaylistInsights';
 import { GlassmorphicContainer } from './ui/GlassmorphicContainer';
 import { motion } from 'framer-motion';
 import { doc, getDoc, type Firestore } from 'firebase/firestore';
-import { db, waitForFirestore, initializeFirebase, handleFirestoreError, saveUserInsights, getUserInsights } from '../lib/firebase';
+import { db, waitForFirestore, handleFirestoreError, saveUserInsights, getUserInsights } from '../lib/firebase';
 import { ChevronLeft } from 'lucide-react';
 import { generatePlaylistInsights } from './EnhancedPlaylistConverter';
 import type { PlaylistTypes } from '../types/playlist';
@@ -84,7 +84,7 @@ export const ConversionInsights: React.FC = () => {
         // Try to initialize Firebase, but don't fail if it doesn't work
         let db = null;
         try {
-          db = await initializeFirebase();
+          db = await waitForFirestore();
         } catch (firebaseError) {
           console.warn('Firebase initialization failed, continuing with local data:', firebaseError);
         }
@@ -146,7 +146,33 @@ export const ConversionInsights: React.FC = () => {
           spotifyPlaylistId: conversionData.spotifyPlaylistId || conversionData.youtubePlaylistId,
           spotifyPlaylistName: conversionData.spotifyPlaylistName || conversionData.youtubePlaylistName || 'Unknown Playlist',
           tracks: (conversionData.tracks || []).map(convertTrackData),
-          convertedAt: new Date(conversionData.convertedAt || Date.now())
+          convertedAt: (() => {
+            // Handle different date formats from Firestore and local storage
+            const dateValue = conversionData.convertedAt;
+            
+            if (!dateValue) {
+              return new Date(); // Fallback to current date
+            }
+            
+            // If it's a Firestore Timestamp object
+            if (dateValue && typeof dateValue === 'object' && dateValue.toDate) {
+              return dateValue.toDate();
+            }
+            
+            // If it's already a Date object
+            if (dateValue instanceof Date) {
+              return dateValue;
+            }
+            
+            // If it's a timestamp number or string
+            const parsedDate = new Date(dateValue);
+            if (isNaN(parsedDate.getTime())) {
+              console.warn('Invalid date value:', dateValue, 'using current date as fallback');
+              return new Date();
+            }
+            
+            return parsedDate;
+          })()
         };
         
         setConversionData(processedData);
@@ -273,7 +299,7 @@ export const ConversionInsights: React.FC = () => {
   console.log('Generated playlist stats:', statsToShow);
 
   return (
-    <div className="min-h-screen bg-background-primary py-12 px-4">
+    <div className="min-h-screen bg-white dark:bg-gray-900 py-12 px-4">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8 flex items-center justify-between">
           <div>
@@ -281,7 +307,13 @@ export const ConversionInsights: React.FC = () => {
               {conversionData.spotifyPlaylistName}
             </h1>
             <p className="text-sm text-content-secondary">
-              Converted on {conversionData.convertedAt.toLocaleDateString()}
+              Converted on {(() => {
+                const date = conversionData.convertedAt;
+                if (!date || isNaN(date.getTime())) {
+                  return 'Recently';
+                }
+                return date.toLocaleDateString();
+              })()}
             </p>
           </div>
           <button

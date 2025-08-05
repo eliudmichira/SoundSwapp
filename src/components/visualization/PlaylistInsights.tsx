@@ -524,7 +524,7 @@ function formatPercent(percent: number | null | undefined) {
 
 // Main component
 export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProps) {
-  const [activeView, setActiveView] = useState<'overview' | 'genres' | 'artists' | 'musicTaste'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'genres' | 'artists' | 'trends' | 'musicTaste'>('overview');
   const [isInfoVisible, setIsInfoVisible] = useState<boolean>(false);
   const [selectedMetric, setSelectedMetric] = useState<'popularity' | 'duration' | 'release'>('popularity');
   const [showTooltip, setShowTooltip] = useState<{ x: number; y: number; content: string } | null>(null);
@@ -580,6 +580,7 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
             { key: 'overview', label: 'Overview', icon: BarChart3 },
             { key: 'genres', label: 'Genres', icon: PieChart },
             { key: 'artists', label: 'Artists', icon: Users },
+            { key: 'trends', label: 'Trends', icon: TrendingUp },
             { key: 'musicTaste', label: 'Music Taste', icon: Heart }
           ].map(({ key, label, icon: Icon }) => (
             <motion.button
@@ -766,6 +767,35 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
                         />
                       </motion.div>
                     )}
+                    {selectedMetric === 'release' && (
+                      <motion.div
+                        key="release"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.3 }}
+                        className="h-full"
+                      >
+                        <Line 
+                          options={{
+                            ...chartOptions,
+                            plugins: {
+                              ...chartOptions.plugins,
+                              title: {
+                                display: true,
+                                text: 'Tracks by Release Year',
+                                color: 'rgb(107, 114, 128)',
+                                font: {
+                                  size: 16,
+                                  weight: 'bold'
+                                }
+                              }
+                            }
+                          }}
+                          data={prepareYearData(stats)} 
+                        />
+                      </motion.div>
+                    )}
                   </AnimatePresence>
                 </div>
               )}
@@ -918,6 +948,191 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
           </motion.div>
         )}
 
+        {activeView === 'trends' && (
+          <motion.div
+            key="trends"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-6"
+          >
+            <GlassmorphicContainer className="bg-gradient-to-br from-white/80 to-white/40 dark:from-gray-800/80 dark:to-gray-900/40 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-gray-700/50 shadow-lg p-6">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                <TrendingUp className="text-green-500" size={20} />
+                Listening Trends & Patterns
+              </h3>
+              
+              <div className="space-y-8">
+                {/* Popularity Trends */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Flame className="text-red-500" size={18} />
+                    Popularity Distribution
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-red-500">
+                          {stats.popularityRanges?.low || 0}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Underground</div>
+                        <div className="text-xs text-gray-500">(0-33)</div>
+                      </div>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-orange-500">
+                          {stats.popularityRanges?.medium || 0}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Balanced</div>
+                        <div className="text-xs text-gray-500">(34-66)</div>
+                      </div>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-green-500">
+                          {stats.popularityRanges?.high || 0}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Mainstream</div>
+                        <div className="text-xs text-gray-500">(67-100)</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Duration Trends */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Clock className="text-blue-500" size={18} />
+                    Track Length Preferences
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-purple-500">
+                          {stats.durationCategories?.short || 0}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Short Tracks</div>
+                        <div className="text-xs text-gray-500">&lt; 3 minutes</div>
+                      </div>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-blue-500">
+                          {stats.durationCategories?.medium || 0}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Standard</div>
+                        <div className="text-xs text-gray-500">3-5 minutes</div>
+                      </div>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-pink-500">
+                          {stats.durationCategories?.long || 0}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Extended</div>
+                        <div className="text-xs text-gray-500">&gt; 5 minutes</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Genre Evolution */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <PieChart className="text-purple-500" size={18} />
+                    Genre Distribution
+                  </h4>
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4">
+                    <div className="space-y-3">
+                      {stats.genres.slice(0, 5).map((genre, index) => (
+                        <div key={index} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div 
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: genre.color }}
+                            />
+                            <span className="font-medium text-gray-900 dark:text-white">{genre.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">{genre.count} tracks</span>
+                            <span className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                              {Math.round((genre.count / stats.totalTracks) * 100)}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Artist Concentration */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Users className="text-indigo-500" size={18} />
+                    Artist Concentration
+                  </h4>
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg p-4">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-700 dark:text-gray-300">Total Artists:</span>
+                        <span className="font-semibold text-indigo-600 dark:text-indigo-400">{stats.uniqueArtists}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-700 dark:text-gray-300">Avg. Tracks per Artist:</span>
+                        <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                          {stats.uniqueArtists ? Math.round(stats.totalTracks / stats.uniqueArtists) : 0}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-700 dark:text-gray-300">Diversity Score:</span>
+                        <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                          {advancedMetrics.diversityScore}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Listening Insights */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Eye className="text-teal-500" size={18} />
+                    Key Insights
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Headphones className="text-teal-500" size={16} />
+                        <span className="font-medium text-gray-900 dark:text-white">Listening Time</span>
+                      </div>
+                      <div className="text-2xl font-bold text-teal-600 dark:text-teal-400">
+                        {Math.round(stats.totalDuration / 3600000)}h {Math.round((stats.totalDuration % 3600000) / 60000)}m
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        Total playlist duration
+                      </div>
+                    </div>
+                    
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Star className="text-yellow-500" size={16} />
+                        <span className="font-medium text-gray-900 dark:text-white">Average Rating</span>
+                      </div>
+                      <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                        {Math.round(stats.avgPopularity)}/100
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        Track popularity score
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </GlassmorphicContainer>
+          </motion.div>
+        )}
+
         {activeView === 'musicTaste' && (
           <motion.div
             key="musicTaste"
@@ -929,14 +1144,214 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
             <GlassmorphicContainer className="bg-gradient-to-br from-white/80 to-white/40 dark:from-gray-800/80 dark:to-gray-900/40 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-gray-700/50 shadow-lg p-6">
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
                 <Heart className="text-red-500" size={20} />
-                Music Taste
+                Music Taste Analysis
               </h3>
-              <div className="space-y-6">
-                <p className="text-gray-600 dark:text-gray-300 text-lg">
-                  {stats.genres && stats.genres.length > 0
-                    ? `Your playlist shows a strong preference for ${stats.genres[0].name} music with ${stats.avgPopularity > 70 ? 'highly popular' : stats.avgPopularity > 40 ? 'moderately popular' : 'underground'} tracks.`
-                    : 'No clear genre preference detected.'}
-                </p>
+              
+              {/* Enhanced Music Taste Content */}
+              <div className="space-y-8">
+                {/* Primary Genre Analysis */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Sparkles className="text-purple-500" size={18} />
+                    Your Musical Identity
+                  </h4>
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4">
+                    <p className="text-gray-700 dark:text-gray-300">
+                      {stats.genres && stats.genres.length > 0 ? (
+                        <>
+                          Your playlist reveals a strong affinity for <span className="font-semibold text-purple-600 dark:text-purple-400">{stats.genres[0].name}</span> music, 
+                          with {stats.genres.length > 1 && <span className="font-semibold">{stats.genres[1].name}</span>} as your secondary preference. 
+                          You tend to enjoy {stats.avgPopularity > 70 ? 'highly popular, mainstream' : stats.avgPopularity > 40 ? 'moderately popular, balanced' : 'underground, niche'} tracks.
+                        </>
+                      ) : (
+                        'Your musical taste shows diverse preferences across multiple genres.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Listening Patterns */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Activity className="text-blue-500" size={18} />
+                    Listening Patterns
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Clock className="text-blue-500" size={16} />
+                        <span className="font-medium text-gray-900 dark:text-white">Track Length Preference</span>
+                      </div>
+                      <div className="space-y-2">
+                        {(() => {
+                          const short = stats.durationCategories?.short || 0;
+                          const medium = stats.durationCategories?.medium || 0;
+                          const long = stats.durationCategories?.long || 0;
+                          const total = short + medium + long;
+                          
+                          if (total === 0) return <span className="text-gray-500">Data not available</span>;
+                          
+                          const preference = short > medium && short > long ? 'Short tracks (under 3 min)' :
+                                           long > medium && long > short ? 'Extended tracks (over 5 min)' :
+                                           'Standard length (3-5 min)';
+                          
+                          return (
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              You prefer <span className="font-semibold">{preference}</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center gap-3 mb-3">
+                        <TrendingUp className="text-green-500" size={16} />
+                        <span className="font-medium text-gray-900 dark:text-white">Popularity Range</span>
+                      </div>
+                      <div className="space-y-2">
+                        {(() => {
+                          const low = stats.popularityRanges?.low || 0;
+                          const medium = stats.popularityRanges?.medium || 0;
+                          const high = stats.popularityRanges?.high || 0;
+                          const total = low + medium + high;
+                          
+                          if (total === 0) return <span className="text-gray-500">Data not available</span>;
+                          
+                          const preference = high > medium && high > low ? 'Mainstream hits' :
+                                           low > medium && low > high ? 'Underground gems' :
+                                           'Balanced mix';
+                          
+                          return (
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              You enjoy <span className="font-semibold">{preference}</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Era Analysis */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Calendar className="text-orange-500" size={18} />
+                    Musical Era Preferences
+                  </h4>
+                  <div className="bg-gradient-to-r from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 rounded-lg p-4">
+                    {(() => {
+                      if (!stats.releaseYears || Object.keys(stats.releaseYears).length === 0) {
+                        return <span className="text-gray-500">Release year data not available</span>;
+                      }
+                      
+                      const years = Object.keys(stats.releaseYears).map(Number).sort();
+                      const recent = years.filter(y => y >= 2020).length;
+                      const modern = years.filter(y => y >= 2010 && y < 2020).length;
+                      const classic = years.filter(y => y >= 2000 && y < 2010).length;
+                      const vintage = years.filter(y => y < 2000).length;
+                      
+                      const total = recent + modern + classic + vintage;
+                      const era = recent > modern && recent > classic && recent > vintage ? 'contemporary (2020s)' :
+                                modern > recent && modern > classic && modern > vintage ? 'modern (2010s)' :
+                                classic > recent && classic > modern && classic > vintage ? 'classic (2000s)' :
+                                'vintage (pre-2000)';
+                      
+                      return (
+                        <p className="text-gray-700 dark:text-gray-300">
+                          You gravitate toward <span className="font-semibold text-orange-600 dark:text-orange-400">{era}</span> music, 
+                          showing appreciation for {vintage > 0 ? 'both timeless classics and contemporary hits' : 'current trends and recent releases'}.
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Artist Diversity */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Users className="text-indigo-500" size={18} />
+                    Artist Diversity
+                  </h4>
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg p-4">
+                    {(() => {
+                      const diversityScore = advancedMetrics.diversityScore;
+                      const avgTracksPerArtist = advancedMetrics.avgTracksPerArtist;
+                      
+                      let diversityLevel = 'Low';
+                      let description = 'You tend to stick with familiar artists';
+                      
+                      if (diversityScore > 60) {
+                        diversityLevel = 'High';
+                        description = 'You explore a wide variety of artists';
+                      } else if (diversityScore > 30) {
+                        diversityLevel = 'Moderate';
+                        description = 'You balance favorites with new discoveries';
+                      }
+                      
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-700 dark:text-gray-300">Diversity Level:</span>
+                            <span className="font-semibold text-indigo-600 dark:text-indigo-400">{diversityLevel}</span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">{description}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-500">Avg. tracks per artist:</span>
+                            <span className="font-medium">{avgTracksPerArtist || 'N/A'}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Personalized Recommendations */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Zap className="text-yellow-500" size={18} />
+                    Discover More
+                  </h4>
+                  <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-lg p-4">
+                    <p className="text-gray-700 dark:text-gray-300 mb-3">
+                      Based on your taste, you might enjoy:
+                    </p>
+                    <div className="space-y-2">
+                      {(() => {
+                        const recommendations = [];
+                        
+                        if (stats.genres && stats.genres.length > 0) {
+                          recommendations.push(`More ${stats.genres[0].name} artists`);
+                        }
+                        
+                        if (stats.avgPopularity < 50) {
+                          recommendations.push('Underground and indie discoveries');
+                        } else if (stats.avgPopularity > 70) {
+                          recommendations.push('Chart-topping hits and trending tracks');
+                        }
+                        
+                        if (stats.durationCategories?.long && stats.durationCategories?.short && stats.durationCategories.long > stats.durationCategories.short) {
+                          recommendations.push('Extended mixes and live performances');
+                        }
+                        
+                        if (recommendations.length === 0) {
+                          recommendations.push('Exploring new genres and artists');
+                        }
+                        
+                        return (
+                          <ul className="space-y-1">
+                            {recommendations.map((rec, index) => (
+                              <li key={index} className="flex items-center gap-2 text-sm">
+                                <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                                <span className="text-gray-600 dark:text-gray-400">{rec}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
               </div>
             </GlassmorphicContainer>
           </motion.div>

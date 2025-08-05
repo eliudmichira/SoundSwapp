@@ -6,6 +6,7 @@ import { initSpotifyAuth } from '../lib/spotifyAuth';
 import { signInWithGoogle } from '../lib/firebase';
 import { Loader2 } from 'lucide-react';
 import { ServiceConnectionCard } from './ServiceConnectionCard';
+import EnhancedConnectionCard from './EnhancedConnectionCard';
 
 interface ServiceItem {
   icon: string;
@@ -32,7 +33,9 @@ const EnhancedConnectionSection = () => {
     hasYouTubeAuth,
     spotifyUserProfile,
     youtubeUserProfile,
-    signOut
+    signOut,
+    disconnectFromSpotify,
+    disconnectFromYouTube
   } = useAuth();
 
   const {
@@ -502,27 +505,39 @@ const EnhancedConnectionSection = () => {
           {/* Connection cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 relative z-10">
             {/* Spotify Card */}
-            <ServiceConnectionCard
-              service="spotify"
-              isConnected={hasSpotifyAuth}
-              isConnecting={isConnecting.spotify}
-              userProfile={spotifyUserProfile ? {
-                displayName: spotifyUserProfile.displayName,
-                imageUrl: spotifyUserProfile.imageUrl
-              } : undefined}
+            <EnhancedConnectionCard
+              platform="spotify"
               onConnect={handleSpotifyConnect}
+              onDisconnect={() => {
+                disconnectFromSpotify();
+                refreshConnections();
+              }}
+              isConnecting={isConnecting.spotify}
+              connected={hasSpotifyAuth}
+              userEmail={spotifyUserProfile?.email}
+              userMeta={hasSpotifyAuth ? {
+                displayName: spotifyUserProfile?.displayName,
+                imageUrl: spotifyUserProfile?.imageUrl,
+                email: spotifyUserProfile?.email
+              } : undefined}
             />
             
             {/* YouTube Card */}
-            <ServiceConnectionCard
-              service="youtube"
-              isConnected={hasYouTubeAuth}
-              isConnecting={isConnecting.youtube}
-              userProfile={youtubeUserProfile ? {
-                displayName: youtubeUserProfile.displayName,
-                imageUrl: youtubeUserProfile.imageUrl
-              } : undefined}
+            <EnhancedConnectionCard
+              platform="youtube"
               onConnect={handleYouTubeConnect}
+              onDisconnect={() => {
+                disconnectFromYouTube();
+                refreshConnections();
+              }}
+              isConnecting={isConnecting.youtube}
+              connected={hasYouTubeAuth}
+              userEmail={youtubeUserProfile?.email}
+              userMeta={hasYouTubeAuth ? {
+                displayName: youtubeUserProfile?.displayName,
+                imageUrl: youtubeUserProfile?.imageUrl,
+                email: youtubeUserProfile?.email
+              } : undefined}
             />
           </div>
         </motion.div>

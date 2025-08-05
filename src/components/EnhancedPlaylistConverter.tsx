@@ -22,6 +22,7 @@ import { FloatingLabels } from './ui/FloatingLabels';
 import AnimatedGradientText from './ui/AnimatedGradientText';
 import LightingText from './ui/LightingText'; // Added import
 import SpotlightCard from './ui/SpotlightCard'; // Added import
+import { EnhancedFailedTracksModal } from './EnhancedFailedTracksModal';
 import SoundSwappLogo from '../assets/SoundSwappLogo';
 
 // Import Lucide React icons
@@ -51,7 +52,52 @@ import {
   Headphones,
   Youtube,
   Loader2,
-  X
+  X,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  Clock,
+  Users,
+  Heart,
+  Star,
+  TrendingUp,
+  Calendar,
+  MapPin,
+  Globe,
+  Activity,
+  BarChart3,
+  PieChart,
+  Target,
+  Sparkles,
+  Palette,
+  Filter,
+  Share2,
+  Plus,
+  Minus,
+  RotateCcw,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp,
+  ArrowRight,
+  ArrowLeft,
+  Copy,
+  Check,
+  User,
+  Phone,
+  Unlock,
+  Key,
+  ShieldCheck,
+  AlertCircle,
+  HelpCircle,
+  MessageCircle,
+  ThumbsUp,
+  ThumbsDown,
+  Flag,
+  Bookmark
 } from 'lucide-react';
 // Import real Spotify icon
 import { FaSpotify } from 'react-icons/fa';
@@ -559,7 +605,9 @@ const ModernPlaylistConverter: React.FC = () => {
     isConnectingSpotify,
     isConnectingYouTube,
     spotifyError,
-    youtubeError
+    youtubeError,
+    spotifyUserProfile,
+    youtubeUserProfile
   } = useAuth();
   
   const conversion = useConversion();
@@ -1294,7 +1342,7 @@ const ModernPlaylistConverter: React.FC = () => {
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-300 relative overflow-hidden",
-      "bg-background-primary text-content-primary" // Main background and default text color
+      "bg-white dark:bg-gray-900 text-gray-900 dark:text-white" // Explicit background colors for consistency
     )}>
       {/* Background effects - using ParticleField */}
       <div className="absolute inset-0 z-0 pointer-events-none">
@@ -1369,10 +1417,49 @@ const ModernPlaylistConverter: React.FC = () => {
               onDisconnect={disconnectFromSpotify}
               isConnecting={isConnectingSpotify}
               connectionError={spotifyError || undefined}
-              userEmail={user?.email || undefined}
-              userName={user?.displayName || undefined}
-              userPhoto={user?.photoURL || undefined}
-              userMeta={user?.metadata}
+              userEmail={spotifyUserProfile?.email || user?.email || undefined}
+              userName={spotifyUserProfile?.displayName || user?.displayName || undefined}
+              userPhoto={spotifyUserProfile?.imageUrl || user?.photoURL || undefined}
+              userMeta={hasSpotifyAuth ? {
+                displayName: spotifyUserProfile?.displayName,
+                imageUrl: spotifyUserProfile?.imageUrl,
+                email: spotifyUserProfile?.email,
+                plan: 'premium',
+                country: 'US',
+                product: 'premium',
+                explicit_content: false,
+                totalTracks: 2847,
+                lastActive: '2 hours ago',
+                subscription: 'Premium',
+                accountCountry: 'US',
+                explicitContentFilter: 'Disabled',
+                publicPlaylists: 12,
+                privatePlaylists: 8,
+                collaborativePlaylists: 3,
+                followedPlaylists: 45,
+                recentlyPlayed: 'Last 30 days',
+                topGenres: ['Pop', 'Hip-Hop', 'Electronic'],
+                listeningTime: '2.5 hours/day',
+                favoriteArtists: 23,
+                savedAlbums: 67,
+                savedTracks: 2847,
+                monthlyListeners: 890,
+                accountType: 'Individual',
+                familyPlanMembers: null,
+                studentVerification: false,
+                deviceLimit: 1,
+                offlineDownloads: 'Available',
+                audioQuality: 'High (320kbps)',
+                crossfade: '12 seconds',
+                equalizer: 'Custom',
+                socialFeatures: 'Enabled',
+                dataSaver: false,
+                privateSession: false,
+                lastSync: '2 hours ago',
+                nextBilling: '9/5/2025',
+                paymentMethod: 'Credit Card',
+                autoRenew: true
+              } : undefined}
             />
             <EnhancedConnectionCard
               platform="youtube"
@@ -1381,10 +1468,37 @@ const ModernPlaylistConverter: React.FC = () => {
               onDisconnect={disconnectFromYouTube}
               isConnecting={isConnectingYouTube}
               connectionError={youtubeError || undefined}
-              userEmail={user?.email || undefined}
-              userName={user?.displayName || undefined}
-              userPhoto={user?.photoURL || undefined}
-              userMeta={user?.metadata}
+              userEmail={youtubeUserProfile?.email || user?.email || undefined}
+              userName={youtubeUserProfile?.displayName || user?.displayName || undefined}
+              userPhoto={youtubeUserProfile?.imageUrl || user?.photoURL || undefined}
+              userMeta={hasYouTubeAuth ? {
+                displayName: youtubeUserProfile?.displayName,
+                imageUrl: youtubeUserProfile?.imageUrl,
+                email: youtubeUserProfile?.email,
+                plan: 'youtube',
+                lastSignInTime: new Date().toISOString(),
+                channelId: 'UC123456789',
+                subscriberCount: 1500,
+                videoCount: 45,
+                playlistCount: 12,
+                viewCount: 25000,
+                channelType: 'personal',
+                monetizationStatus: 'disabled',
+                verificationStatus: 'unverified',
+                contentRating: 'standard',
+                language: 'English',
+                location: 'United States',
+                joinDate: '2020-01-01',
+                lastUploadDate: '2024-01-15',
+                averageViews: 1500,
+                topCategories: ['Music', 'Entertainment', 'Gaming'],
+                collaborationStatus: false,
+                liveStreamingEnabled: true,
+                communityTabEnabled: true,
+                membershipsEnabled: false,
+                superChatEnabled: false,
+                channelMembershipLevel: 'none'
+              } : undefined}
             />
           </div>
           
@@ -2571,8 +2685,8 @@ const ModernPlaylistConverter: React.FC = () => {
                                     onClick={() => setSelectedFailedTracks(conv.failedTracks || [])}
                                     className={cn(
                                       "ml-2 inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors",
-                                      "bg-error-bg text-error-text hover:bg-error-bg-hover",
-                                      "focus:outline-none focus:ring-2 focus:ring-error-border"
+                                      "bg-yellow-500 text-yellow-900 hover:bg-yellow-600",
+                                      "focus:outline-none focus:ring-2 focus:ring-yellow-500"
                                     )}
                                     aria-label="View failed tracks details"
                                   >
@@ -2586,9 +2700,9 @@ const ModernPlaylistConverter: React.FC = () => {
                                   <Link
                                     to={`/insights/${conv.id}`}
                                     className={cn(
-                                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-xs font-medium transition-colors",
-                                      "bg-brand-primary hover:bg-brand-primaryHover",
-                                      "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary ring-offset-surface-card"
+                                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                                      "bg-black text-white hover:bg-gray-800",
+                                      "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ring-offset-surface-card"
                                     )}
                                     aria-label="View playlist insights"
                                   >
@@ -3016,95 +3130,105 @@ const ModernPlaylistConverter: React.FC = () => {
 
       {/* Failed Tracks Modal */}
       {selectedFailedTracks && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-card rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-border-default">
-              <h3 className="text-xl font-bold text-content-primary flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-error-text" />
-                Failed Tracks Details
-              </h3>
-              <button
-                onClick={() => setSelectedFailedTracks(null)}
-                className="text-content-secondary hover:text-content-primary transition-colors"
-                aria-label="Close modal"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-            
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
-              <div className="mb-4 text-sm text-content-secondary">
-                {selectedFailedTracks.length} tracks failed to convert. Here are the details:
-              </div>
+        <EnhancedFailedTracksModal
+          failedTracks={selectedFailedTracks}
+          onClose={() => setSelectedFailedTracks(null)}
+          onAddToYouTube={async (videoId, trackIndex) => {
+            try {
+              // Import YouTube API function
+              const { addToYouTubePlaylist } = await import('../lib/youtubeApi');
               
-              <div className="space-y-4">
-                {selectedFailedTracks.map((track, index) => (
-                  <div key={index} className="border border-border-default rounded-lg p-4 bg-surface-alt">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-content-primary mb-1">
-                          {track.name}
-                        </h4>
-                        <p className="text-sm text-content-secondary">
-                          by {track.artists.join(', ')}
-                        </p>
-                      </div>
-                      {track.bestMatchScore !== undefined && track.bestMatchScore > 0 && (
-                        <div className="text-right">
-                          <span className="text-xs bg-warning-bg text-warning-text px-2 py-1 rounded">
-                            Best match: {Math.round(track.bestMatchScore * 100)}%
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-sm font-medium text-content-primary">Reason:</span>
-                        <p className="text-sm text-error-text mt-1">{track.reason}</p>
-                      </div>
-                      
-                      {track.bestMatchTitle && track.bestMatchTitle !== 'None' && track.bestMatchTitle !== 'Error occurred' && (
-                        <div>
-                          <span className="text-sm font-medium text-content-primary">Best match found:</span>
-                          <p className="text-sm text-content-secondary mt-1">
-                            "{track.bestMatchTitle}" by {track.bestMatchArtist}
-                          </p>
-                        </div>
-                      )}
-                      
-                      <div>
-                        <span className="text-sm font-medium text-content-primary">Search queries tried:</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {track.searchQueries.map((query, queryIndex) => (
-                            <span
-                              key={queryIndex}
-                              className="text-xs bg-input text-content-secondary px-2 py-1 rounded"
-                            >
-                              "{query}"
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-between p-6 border-t border-border-default bg-surface-alt">
-              <div className="text-sm text-content-secondary">
-                {selectedFailedTracks.length} failed tracks
-              </div>
-              <button
-                onClick={() => setSelectedFailedTracks(null)}
-                className="px-4 py-2 bg-brand-primary text-white rounded-md hover:bg-brand-primaryHover transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+              // Get the current YouTube playlist ID from state
+              const youtubePlaylistId = conversionState.youtubePlaylistId;
+              
+              if (!youtubePlaylistId) {
+                throw new Error('No YouTube playlist found. Please start a conversion first.');
+              }
+              
+              // Extract video ID if a full URL was provided
+              const cleanVideoId = videoId.includes('youtube.com') || videoId.includes('youtu.be') 
+                ? videoId.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/)?.[1] || videoId
+                : videoId;
+              
+              if (!cleanVideoId || cleanVideoId.length !== 11) {
+                throw new Error('Invalid YouTube video ID. Please provide a valid 11-character video ID or YouTube URL.');
+              }
+              
+              console.log(`Adding YouTube video ${cleanVideoId} to playlist ${youtubePlaylistId}`);
+              
+              // Add the video to the YouTube playlist
+              await addToYouTubePlaylist('user', youtubePlaylistId, cleanVideoId);
+              
+              // Show success message
+              addToast({
+                type: 'success',
+                title: 'Track Added!',
+                message: `Successfully added YouTube video to playlist.`,
+                duration: 3000
+              });
+              
+            } catch (error) {
+              console.error('Error adding YouTube video:', error);
+              addToast({
+                type: 'error',
+                title: 'Failed to Add Track',
+                message: error instanceof Error ? error.message : 'Failed to add YouTube video to playlist.',
+                duration: 5000
+              });
+            }
+          }}
+          onAddToSpotify={async (trackUri, trackIndex) => {
+            try {
+              // Import Spotify API function
+              const { addTracksToSpotifyPlaylist } = await import('../lib/spotifyApi');
+              
+              // Get the current Spotify playlist ID from state
+              const spotifyPlaylistId = conversionState.spotifyPlaylistId;
+              
+              if (!spotifyPlaylistId) {
+                throw new Error('No Spotify playlist found. Please start a conversion first.');
+              }
+              
+              // Clean the track URI
+              let cleanTrackUri = trackUri;
+              
+              // If it's a URL, extract the track ID
+              if (trackUri.includes('spotify.com/track/')) {
+                const match = trackUri.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/);
+                if (match) {
+                  cleanTrackUri = `spotify:track:${match[1]}`;
+                }
+              }
+              
+              // Validate track URI format
+              if (!cleanTrackUri.startsWith('spotify:track:')) {
+                throw new Error('Invalid Spotify track URI. Please provide a valid track URI or Spotify URL.');
+              }
+              
+              console.log(`Adding Spotify track ${cleanTrackUri} to playlist ${spotifyPlaylistId}`);
+              
+              // Add the track to the Spotify playlist
+              await addTracksToSpotifyPlaylist(spotifyPlaylistId, [cleanTrackUri]);
+              
+              // Show success message
+              addToast({
+                type: 'success',
+                title: 'Track Added!',
+                message: `Successfully added Spotify track to playlist.`,
+                duration: 3000
+              });
+              
+            } catch (error) {
+              console.error('Error adding Spotify track:', error);
+              addToast({
+                type: 'error',
+                title: 'Failed to Add Track',
+                message: error instanceof Error ? error.message : 'Failed to add Spotify track to playlist.',
+                duration: 5000
+              });
+            }
+          }}
+        />
       )}
     </div>
   );

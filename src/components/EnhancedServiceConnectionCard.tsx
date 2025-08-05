@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion';
-import { Loader2, Settings, Shield, Info, Calendar, User, Mail, Power, RefreshCw, Download, Lock, Globe } from 'lucide-react';
+import { Loader2, Settings, Shield, Info, Calendar, User, Mail, Power, RefreshCw, Download, Upload, Bell, Lock, Globe, Database } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { useState, useEffect } from 'react';
 
-interface ServiceConnectionCardProps {
+interface EnhancedServiceConnectionCardProps {
   service: 'spotify' | 'youtube';
   isConnected: boolean;
   isConnecting: boolean;
@@ -17,7 +17,7 @@ interface ServiceConnectionCardProps {
   connectionDate?: string;
 }
 
-export const ServiceConnectionCard = ({
+export const EnhancedServiceConnectionCard = ({
   service,
   isConnected,
   isConnecting,
@@ -25,7 +25,7 @@ export const ServiceConnectionCard = ({
   onConnect,
   onDisconnect,
   connectionDate
-}: ServiceConnectionCardProps) => {
+}: EnhancedServiceConnectionCardProps) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'permissions' | 'settings'>('overview');
   const [settings, setSettings] = useState({
@@ -74,13 +74,7 @@ export const ServiceConnectionCard = ({
   }[service];
 
   const handleConnect = () => {
-    console.log(`[DEBUG] ServiceConnectionCard.handleConnect called for ${service}`);
-    console.log(`[DEBUG] User state:`, { 
-      user: !!user, 
-      userUid: user?.uid,
-      isConnecting,
-      service 
-    });
+    console.log(`[DEBUG] EnhancedServiceConnectionCard.handleConnect called for ${service}`);
     
     if (!user) {
       console.warn('User not authenticated, but allowing connection attempt for development');
@@ -283,64 +277,6 @@ export const ServiceConnectionCard = ({
                   </div>
                 </div>
 
-                {/* Enhanced Spotify Account Details */}
-                {service === 'spotify' && (
-                  <div className="p-4 bg-white/5 rounded-lg">
-                    <h5 className="text-white font-medium mb-3 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-white/60" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Account Details
-                    </h5>
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      {/* Subscription Status */}
-                      <div className="flex items-center text-white/80">
-                        <svg className="w-3.5 h-3.5 mr-1.5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        Premium Account
-                      </div>
-                      {/* Country */}
-                      <div className="flex items-center text-white/80">
-                        <svg className="w-3.5 h-3.5 mr-1.5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-.8-.4L2.2 8.4A1 1 0 012 7.6V6z" clipRule="evenodd" />
-                        </svg>
-                        Country: US
-                      </div>
-                      {/* Followers */}
-                      <div className="flex items-center text-white/80">
-                        <svg className="w-3.5 h-3.5 mr-1.5 text-purple-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z" />
-                        </svg>
-                        Followers: 1,234
-                      </div>
-                      {/* Explicit Content */}
-                      <div className="flex items-center text-white/80">
-                        <svg className="w-3.5 h-3.5 mr-1.5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                        </svg>
-                        Explicit: Allowed
-                      </div>
-                      {/* Playlists */}
-                      <div className="flex items-center text-white/80">
-                        <svg className="w-3.5 h-3.5 mr-1.5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                          <path fillRule="evenodd" d="M4 5a2 2 0 012-2v1a1 1 0 102 0V3a2 2 0 012 2v1a1 1 0 11-2 0V5a2 2 0 00-2-2H4zM4 13a2 2 0 012-2v1a1 1 0 102 0v-1a2 2 0 012 2v1a1 1 0 11-2 0v-1a2 2 0 00-2-2H4z" clipRule="evenodd" />
-                        </svg>
-                        Playlists: 45
-                      </div>
-                      {/* Tracks */}
-                      <div className="flex items-center text-white/80">
-                        <svg className="w-3.5 h-3.5 mr-1.5 text-indigo-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                          <path fillRule="evenodd" d="M4 5a2 2 0 012-2v1a1 1 0 102 0V3a2 2 0 012 2v1a1 1 0 11-2 0V5a2 2 0 00-2-2H4zM4 13a2 2 0 012-2v1a1 1 0 102 0v-1a2 2 0 012 2v1a1 1 0 11-2 0v-1a2 2 0 00-2-2H4z" clipRule="evenodd" />
-                        </svg>
-                        Tracks: 2,847
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Connection Status */}
                 <div className="flex items-center gap-2 text-green-400 text-sm">
                   <div className="w-2 h-2 bg-green-400 rounded-full"></div>
@@ -365,44 +301,6 @@ export const ServiceConnectionCard = ({
                     ))}
                   </div>
                 </div>
-
-                {/* Enhanced Spotify Permissions Summary */}
-                {service === 'spotify' && (
-                  <div className="p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <h5 className="text-blue-300 font-medium mb-2 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      Permissions & Capabilities
-                    </h5>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center text-blue-300">
-                        <svg className="w-3 h-3 mr-1.5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Read & create playlists
-                      </div>
-                      <div className="flex items-center text-blue-300">
-                        <svg className="w-3 h-3 mr-1.5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Access profile & preferences
-                      </div>
-                      <div className="flex items-center text-blue-300">
-                        <svg className="w-3 h-3 mr-1.5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Cross-platform sync enabled
-                      </div>
-                      <div className="flex items-center text-blue-300">
-                        <svg className="w-3 h-3 mr-1.5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Real-time playlist updates
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Disconnect Button */}
                 {onDisconnect && (
@@ -510,13 +408,14 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('autoSync')}
                       data-setting="autoSync"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
                     <span className="text-white text-sm">Background sync</span>
+                    <span className="text-xs text-white/40">({settings.backgroundSync ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -526,13 +425,14 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('backgroundSync')}
                       data-setting="backgroundSync"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
                     <span className="text-white text-sm">Sync favorites</span>
+                    <span className="text-xs text-white/40">({settings.syncFavorites ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -542,7 +442,7 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('syncFavorites')}
                       data-setting="syncFavorites"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
               </div>
@@ -562,6 +462,7 @@ export const ServiceConnectionCard = ({
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
                     <span className="text-white text-sm">Share listening data</span>
+                    <span className="text-xs text-white/40">({settings.shareListeningData ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -571,13 +472,14 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('shareListeningData')}
                       data-setting="shareListeningData"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
                     <span className="text-white text-sm">Analytics collection</span>
+                    <span className="text-xs text-white/40">({settings.analyticsCollection ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -587,13 +489,14 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('analyticsCollection')}
                       data-setting="analyticsCollection"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-red-400 rounded-full"></div>
                     <span className="text-white text-sm">Third-party sharing</span>
+                    <span className="text-xs text-white/40">({settings.thirdPartySharing ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -603,7 +506,7 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('thirdPartySharing')}
                       data-setting="thirdPartySharing"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
               </div>
@@ -623,6 +526,7 @@ export const ServiceConnectionCard = ({
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-indigo-400 rounded-full"></div>
                     <span className="text-white text-sm">Real-time sync</span>
+                    <span className="text-xs text-white/40">({settings.realTimeSync ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -632,13 +536,14 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('realTimeSync')}
                       data-setting="realTimeSync"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-teal-400 rounded-full"></div>
                     <span className="text-white text-sm">Offline sync</span>
+                    <span className="text-xs text-white/40">({settings.offlineSync ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -648,13 +553,14 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('offlineSync')}
                       data-setting="offlineSync"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-pink-400 rounded-full"></div>
                     <span className="text-white text-sm">Cross-platform sync</span>
+                    <span className="text-xs text-white/40">({settings.crossPlatformSync ? 'ON' : 'OFF'})</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -664,7 +570,7 @@ export const ServiceConnectionCard = ({
                       onChange={() => handleSettingChange('crossPlatformSync')}
                       data-setting="crossPlatformSync"
                     />
-                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+                    <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-green-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300/20 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-white/20"></div>
                   </label>
                 </div>
               </div>
@@ -696,6 +602,12 @@ export const ServiceConnectionCard = ({
               <p className="text-xs text-white/40">Auto-sync: {settings.autoSync ? 'ON' : 'OFF'}</p>
               <p className="text-xs text-white/40">Background sync: {settings.backgroundSync ? 'ON' : 'OFF'}</p>
               <p className="text-xs text-white/40">Sync favorites: {settings.syncFavorites ? 'ON' : 'OFF'}</p>
+              <p className="text-xs text-white/40">Share listening data: {settings.shareListeningData ? 'ON' : 'OFF'}</p>
+              <p className="text-xs text-white/40">Analytics collection: {settings.analyticsCollection ? 'ON' : 'OFF'}</p>
+              <p className="text-xs text-white/40">Third-party sharing: {settings.thirdPartySharing ? 'ON' : 'OFF'}</p>
+              <p className="text-xs text-white/40">Real-time sync: {settings.realTimeSync ? 'ON' : 'OFF'}</p>
+              <p className="text-xs text-white/40">Offline sync: {settings.offlineSync ? 'ON' : 'OFF'}</p>
+              <p className="text-xs text-white/40">Cross-platform sync: {settings.crossPlatformSync ? 'ON' : 'OFF'}</p>
             </div>
           </div>
         )}

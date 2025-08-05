@@ -78,19 +78,24 @@ const initializeFirestore = async (): Promise<Firestore> => {
   if (firestoreInitialized) return db;
 
   try {
+    // Try to enable persistence, but handle errors gracefully
     await enableIndexedDbPersistence(db).catch((error: FirestoreError) => {
       if (error.code === 'failed-precondition') {
         console.warn('Multiple tabs open, persistence enabled in another tab');
       } else if (error.code === 'unimplemented') {
         console.warn('Browser doesn\'t support persistence');
+      } else {
+        console.warn('Persistence initialization failed:', error.message);
       }
+      // Don't throw the error, just log it and continue
     });
 
     firestoreInitialized = true;
     return db;
   } catch (error) {
-    console.error('Error initializing Firestore:', error);
-    throw error;
+    console.warn('Error initializing Firestore persistence, continuing without persistence:', error);
+    firestoreInitialized = true; // Mark as initialized to prevent retries
+    return db;
   }
 };
 
@@ -204,15 +209,8 @@ export const initializeFirebase = async (retryCount = 3, delay = 1000): Promise<
         initializeApp(firebaseConfig);
       }
 
-      // Initialize Firestore with offline persistence
-      const firestoreDb = getFirestore();
-      await enableIndexedDbPersistence(firestoreDb).catch((err) => {
-        if (err.code === 'failed-precondition') {
-          console.warn('Persistence disabled: multiple tabs open');
-        } else if (err.code === 'unimplemented') {
-          console.warn('Persistence not supported by browser');
-        }
-      });
+      // Get Firestore instance and ensure it's initialized with persistence
+      const firestoreDb = await waitForFirestore();
 
       // Test connection with timeout and better error handling
       try {

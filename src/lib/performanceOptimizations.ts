@@ -1,6 +1,9 @@
-// Performance Optimization Strategies for SoundSwapp
+// Add gtag type declaration
+declare global {
+  function gtag(...args: any[]): void;
+}
 
-// 1. Code Splitting and Lazy Loading
+// 1. Lazy Loading Configuration
 export const lazyLoadComponents = {
   // Lazy load heavy components
   ConversionInsights: () => import('../components/ConversionInsights'),
@@ -12,7 +15,7 @@ export const lazyLoadComponents = {
   YouTubeAPI: () => import('./youtubeApi'),
   
   // Lazy load visualization libraries
-  ChartComponents: () => import('../components/visualization/ChartComponents'),
+  // ChartComponents: () => import('../components/visualization/ChartComponents'), // Removed - file doesn't exist
 };
 
 // 2. Bundle Size Optimization

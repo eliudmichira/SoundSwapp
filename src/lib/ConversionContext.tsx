@@ -38,6 +38,9 @@ export interface SpotifyTrack {
   popularity: number;
   explicit: boolean;
   searchQuery: string;
+  releaseYear?: string;
+  genres?: string[];
+  artistImages?: string[];
 }
 
 export interface YouTubeMatch {
@@ -351,8 +354,8 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
   
   // Helper function to refresh authentication state
-  const refreshAuthState = useCallback(() => {
-    const isSpotifyAuthed = isSpotifyAuthenticated();
+  const refreshAuthState = useCallback(async () => {
+    const isSpotifyAuthed = await isSpotifyAuthenticated();
     console.log('Refreshing auth state:', { 
       user: user?.uid, 
       isSpotifyAuthed,
@@ -375,7 +378,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     
     // Check Spotify authentication with detailed logging
-    const isAuthed = isSpotifyAuthenticated();
+    const isAuthed = await isSpotifyAuthenticated();
     console.log('Spotify auth check:', { 
       user: user.uid, 
       isAuthed, 
@@ -1351,7 +1354,12 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     name: track.name,
                     artists: track.artists,
                     album: track.album,
-                    duration_ms: track.duration_ms
+                    duration_ms: track.duration_ms,
+                    popularity: track.popularity || 0,
+                    explicit: track.explicit || false,
+                    releaseYear: track.releaseYear,
+                    genres: track.genres || [],
+                    artistImages: track.artistImages || []
                   })),
                   failedTracks: failedTracks // Save failed tracks to Firestore
                 });
@@ -1411,7 +1419,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         console.log('Starting YouTube to Spotify conversion');
         
         // Check if user has Spotify authentication
-        if (!isSpotifyAuthenticated()) {
+        if (!(await isSpotifyAuthenticated())) {
           throw new Error('Spotify authentication required. Please reconnect your Spotify account.');
         }
         
@@ -1605,7 +1613,12 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 name: track.name,
                 artists: track.artists,
                 album: track.album,
-                duration_ms: track.duration_ms
+                duration_ms: track.duration_ms,
+                popularity: track.popularity || 0,
+                explicit: track.explicit || false,
+                releaseYear: track.releaseYear,
+                genres: track.genres || [],
+                artistImages: track.artistImages || []
               })),
               failedTracks: failedTracks // Save failed tracks to Firestore
             });

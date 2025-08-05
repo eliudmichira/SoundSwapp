@@ -181,7 +181,7 @@ class SpotifyApiClient {
     console.log(`[DEBUG] SpotifyApiClient.request(${url}) called, retry: ${retryCount}`);
     
     // Try both ways to get a token
-    let accessToken: string | undefined = getSpotifyTokenSync() || undefined;
+    let accessToken: string | undefined = (await getSpotifyTokenSync()) || undefined;
     console.log(`[DEBUG] Token from getSpotifyTokenSync():`, accessToken ? 'Found' : 'Not found');
     
     if (!accessToken) {

@@ -4,7 +4,7 @@ import { spotifyConfig } from './env';
 import { db } from './firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { TokenManager } from './tokenManager';
+import TokenManager from './tokenManager';
 
 // Spotify API configuration
 const SPOTIFY_CONFIG = {
@@ -314,14 +314,9 @@ function clearAuthState(): void {
 /**
  * Check if the current Spotify access token is valid
  */
-export function isSpotifyAuthenticated(): boolean {
-  try {
-    // Use TokenManager for consistent token validation
-    return TokenManager.hasValidTokens('spotify');
-  } catch (error) {
-    console.error('Error checking Spotify authentication:', error);
-    return false;
-  }
+export async function isSpotifyAuthenticated(): Promise<boolean> {
+  console.log('[DEBUG] isSpotifyAuthenticated() called');
+  return await TokenManager.hasValidTokens('spotify');
 }
 
 /**
@@ -332,7 +327,7 @@ export async function getSpotifyToken(): Promise<string | null> {
     console.log('[DEBUG] getSpotifyToken() called');
     
     // Use TokenManager to get tokens
-    const tokens = TokenManager.getTokens('spotify');
+    const tokens = await TokenManager.getTokens('spotify');
     console.log('[DEBUG] Tokens from TokenManager:', tokens ? 'Found' : 'Not found');
     
     if (tokens) {
@@ -343,7 +338,7 @@ export async function getSpotifyToken(): Promise<string | null> {
     console.log('[DEBUG] No valid tokens found, attempting refresh...');
     
     // If no valid tokens, try to refresh using TokenManager
-    const storedTokens = TokenManager.getTokens('spotify');
+    const storedTokens = await TokenManager.getTokens('spotify');
     if (storedTokens?.refreshToken) {
       console.log('[DEBUG] Found refresh token in TokenManager, attempting refresh...');
       const newTokens = await refreshAccessToken(storedTokens.refreshToken);
@@ -420,7 +415,7 @@ export function logoutFromSpotify(): void {
  * Check the current authentication status
  */
 async function checkAuthStatus(): Promise<void> {
-  const isAuthed = isSpotifyAuthenticated();
+  const isAuthed = await isSpotifyAuthenticated();
   if (!isAuthed) {
     // Trigger auth state change in your app
     window.dispatchEvent(new CustomEvent('spotify-auth-changed', { 
@@ -514,9 +509,9 @@ export const getSpotifyUserProfile = async (): Promise<any | null> => {
 /**
  * Get the current access token synchronously (no refresh)
  */
-export function getSpotifyTokenSync(): string | null {
+export async function getSpotifyTokenSync(): Promise<string | null> {
   console.log('[DEBUG] getSpotifyTokenSync() called');
-  const tokens = TokenManager.getTokens('spotify');
+  const tokens = await TokenManager.getTokens('spotify');
   const token = tokens?.accessToken || null;
   console.log('[DEBUG] getSpotifyTokenSync result:', token ? 'Found' : 'Not found');
   return token;

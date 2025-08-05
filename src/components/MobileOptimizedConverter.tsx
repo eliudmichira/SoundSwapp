@@ -71,10 +71,10 @@ export const MobileOptimizedConverter: React.FC<MobileOptimizedConverterProps> =
             <div className="space-y-8">
               {/* Title Section */}
               <div className="text-center space-y-2">
-                <h2 className="text-3xl font-black text-gray-700 dark:text-gray-300">
+                <h2 className="text-3xl font-black text-gray-900 dark:text-gray-100">
                   Select Source
                 </h2>
-                <p className="text-lg font-medium text-gray-600 dark:text-gray-400">
+                <p className="text-lg font-medium text-gray-600 dark:text-gray-300">
                   Choose the platform you want to import your playlist from (Spotify or YouTube).
                 </p>
               </div>
@@ -82,8 +82,8 @@ export const MobileOptimizedConverter: React.FC<MobileOptimizedConverterProps> =
               {/* Source Platform Section */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 bg-gray-700 dark:bg-gray-300 rounded-full"></div>
-                  <h3 className="text-2xl font-black text-gray-700 dark:text-gray-300">
+                  <div className="w-3 h-3 bg-gray-900 dark:bg-gray-100 rounded-full"></div>
+                  <h3 className="text-2xl font-black text-gray-900 dark:text-gray-100">
                     Source Platform
                   </h3>
                 </div>
@@ -148,8 +148,8 @@ export const MobileOptimizedConverter: React.FC<MobileOptimizedConverterProps> =
               {/* Destination Platform Section */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 bg-gray-700 dark:bg-gray-300 rounded-full"></div>
-                  <h3 className="text-2xl font-black text-gray-700 dark:text-gray-300">
+                  <div className="w-3 h-3 bg-gray-900 dark:bg-gray-100 rounded-full"></div>
+                  <h3 className="text-2xl font-black text-gray-900 dark:text-gray-100">
                     Destination Platform
                   </h3>
                 </div>
@@ -231,7 +231,7 @@ export const MobileOptimizedConverter: React.FC<MobileOptimizedConverterProps> =
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Select Your Playlist</h2>
-                <p className="text-gray-700 dark:text-gray-300">Choose which playlist you want to convert</p>
+                <p className="text-gray-600 dark:text-gray-300">Choose which playlist you want to convert</p>
               </div>
               
               <div className="space-y-3">
@@ -263,7 +263,7 @@ export const MobileOptimizedConverter: React.FC<MobileOptimizedConverterProps> =
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Review Your Tracks</h2>
-                <p className="text-gray-700 dark:text-gray-300">Check your tracks before starting the conversion</p>
+                <p className="text-gray-600 dark:text-gray-300">Check your tracks before starting the conversion</p>
               </div>
               
               <div className="max-h-64 overflow-y-auto space-y-2">
@@ -289,7 +289,7 @@ export const MobileOptimizedConverter: React.FC<MobileOptimizedConverterProps> =
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Start Conversion</h2>
-                <p className="text-gray-700 dark:text-gray-300">Ready to convert your playlist</p>
+                <p className="text-gray-600 dark:text-gray-300">Ready to convert your playlist</p>
               </div>
               
               <div className="space-y-4">

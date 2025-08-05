@@ -1,5 +1,5 @@
 import { youtubeConfig } from './env';
-import { TokenManager } from './tokenManager';
+import TokenManager from './tokenManager';
 import { getAuth } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -231,7 +231,7 @@ export const handleYouTubeCallback = async (): Promise<void> => {
     // Save tokens using the TokenManager
     TokenManager.storeTokens('youtube', {
       accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token,
+      refreshToken: tokenData.refresh_token || '',
       expiresAt: Date.now() + (tokenData.expires_in * 1000)
     });
     console.log("Token should now be in localStorage:", localStorage.getItem('soundswapp_youtube_access_token'));
@@ -275,7 +275,7 @@ export const handleYouTubeCallback = async (): Promise<void> => {
  * Refresh the access token using a refresh token
  */
 export const refreshYouTubeToken = async (): Promise<boolean> => {
-  const tokens = TokenManager.getTokens('youtube');
+  const tokens = await TokenManager.getTokens('youtube');
   const refreshToken = tokens?.refreshToken;
   
   if (!refreshToken) {
@@ -328,9 +328,9 @@ export const isYouTubeAuthenticated = async (): Promise<boolean> => {
 /**
  * Get YouTube access token with auto-refresh if needed
  */
-export const getYouTubeToken = (): string | null => {
+export const getYouTubeToken = async (): Promise<string | null> => {
   try {
-    const tokens = TokenManager.getTokens('youtube');
+    const tokens = await TokenManager.getTokens('youtube');
     
     if (tokens?.accessToken) {
       return tokens.accessToken;

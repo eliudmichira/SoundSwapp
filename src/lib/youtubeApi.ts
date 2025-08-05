@@ -54,7 +54,7 @@ const extractYouTubeErrorDetails = async (response: Response): Promise<string> =
  */
 export const getYouTubePlaylists = async () => {
   try {
-    const accessToken = getYouTubeToken();
+    const accessToken = await getYouTubeToken();
     
     if (!accessToken) {
       console.log('No valid YouTube access token available - user needs to authenticate');
@@ -74,11 +74,38 @@ export const getYouTubePlaylists = async () => {
     });
     
     if (!response.ok) {
-      const errorMessage = await extractYouTubeErrorDetails(response);
-      throw new Error(errorMessage);
+      if (response.status === 401) {
+        console.log('YouTube token expired, attempting refresh...');
+        // Try to refresh the token and retry
+        const refreshedToken = await getYouTubeToken(); // This should trigger refresh in TokenManager
+        if (refreshedToken) {
+          // Retry with refreshed token
+          const retryResponse = await fetch(`${YOUTUBE_API_BASE_URL}/playlists?${params.toString()}`, {
+            headers: {
+              'Authorization': `Bearer ${refreshedToken}`
+            }
+          });
+          
+          if (!retryResponse.ok) {
+            const errorMessage = await extractYouTubeErrorDetails(retryResponse);
+            throw new Error(errorMessage);
+          }
+          
+          const data = await retryResponse.json();
+          console.log('YouTube playlists fetched (after refresh):', data);
+          return data;
+        } else {
+          throw new Error('Failed to refresh YouTube token');
+        }
+      } else {
+        const errorMessage = await extractYouTubeErrorDetails(response);
+        throw new Error(errorMessage);
+      }
     }
     
-    return await response.json();
+    const data = await response.json();
+    console.log('YouTube playlists fetched:', data);
+    return data;
   } catch (error: unknown) {
     console.error('Error getting YouTube playlists:', error);
     // Return empty result instead of throwing to prevent UI errors

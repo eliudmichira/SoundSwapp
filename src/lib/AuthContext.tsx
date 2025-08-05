@@ -13,7 +13,7 @@ import {
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { signInWithGoogle as firebaseSignInWithGoogle } from './firebase';
-import { TokenManager } from './tokenManager';
+import TokenManager from './tokenManager';
 import { SimpleAuth } from './simpleAuth';
 
 // Constants for storage
@@ -199,7 +199,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Fetching Spotify profile...');
       
       // Get Spotify tokens
-      const tokens = TokenManager.getTokens('spotify');
+      const tokens = await TokenManager.getTokens('spotify');
       if (!tokens) {
         console.log('No Spotify tokens available - user needs to authenticate');
         setSpotifyUserProfile({ 
@@ -257,7 +257,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Fetching YouTube profile...');
       
       // Get YouTube tokens
-      const tokens = TokenManager.getTokens('youtube');
+      const tokens = await TokenManager.getTokens('youtube');
       if (!tokens) {
         console.log('No YouTube tokens available - user needs to authenticate');
         setYoutubeUserProfile({ 
@@ -276,30 +276,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       
       if (!response.ok) {
-        throw new Error(`YouTube API error: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      console.log('YouTube profile fetched:', data);
-      
-      if (data.items && data.items.length > 0) {
-        const channel = data.items[0];
-        const snippet = channel.snippet;
-        const statistics = channel.statistics;
-        
-        // Set the actual profile data
-        setYoutubeUserProfile({
-          id: channel.id,
-          displayName: snippet.title,
-          imageUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
-          description: snippet.description,
-          subscriberCount: statistics?.subscriberCount,
-          videoCount: statistics?.videoCount,
-          viewCount: statistics?.viewCount,
-          customUrl: snippet.customUrl
-        });
+        if (response.status === 401) {
+          console.log('YouTube token expired, attempting refresh...');
+          // Try to refresh the token and retry
+          const refreshedTokens = await TokenManager.getTokens('youtube');
+          if (refreshedTokens) {
+            // Retry with refreshed token
+            const retryResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true`, {
+              headers: {
+                'Authorization': `Bearer ${refreshedTokens.accessToken}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (!retryResponse.ok) {
+              throw new Error(`YouTube API error: ${retryResponse.status} ${retryResponse.statusText}`);
+            }
+            
+            const data = await retryResponse.json();
+            console.log('YouTube profile fetched (after refresh):', data);
+            
+            if (data.items && data.items.length > 0) {
+              const channel = data.items[0];
+              const snippet = channel.snippet;
+              const statistics = channel.statistics;
+              
+              // Set the actual profile data
+              setYoutubeUserProfile({
+                id: channel.id,
+                displayName: snippet.title,
+                imageUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
+                description: snippet.description,
+                subscriberCount: statistics?.subscriberCount,
+                videoCount: statistics?.videoCount,
+                viewCount: statistics?.viewCount,
+                customUrl: snippet.customUrl
+              });
+            } else {
+              throw new Error('No YouTube channel found');
+            }
+          } else {
+            throw new Error('Failed to refresh YouTube token');
+          }
+        } else {
+          throw new Error(`YouTube API error: ${response.status} ${response.statusText}`);
+        }
       } else {
-        throw new Error('No YouTube channel found');
+        const data = await response.json();
+        console.log('YouTube profile fetched:', data);
+        
+        if (data.items && data.items.length > 0) {
+          const channel = data.items[0];
+          const snippet = channel.snippet;
+          const statistics = channel.statistics;
+          
+          // Set the actual profile data
+          setYoutubeUserProfile({
+            id: channel.id,
+            displayName: snippet.title,
+            imageUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
+            description: snippet.description,
+            subscriberCount: statistics?.subscriberCount,
+            videoCount: statistics?.videoCount,
+            viewCount: statistics?.viewCount,
+            customUrl: snippet.customUrl
+          });
+        } else {
+          throw new Error('No YouTube channel found');
+        }
       }
       
     } catch (err) {
@@ -322,6 +366,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Disconnecting from Spotify...');
       setHasSpotifyAuth(false);
       setSpotifyUserProfile(null);
+      // Clear connection date
+      localStorage.removeItem('spotify_connection_date');
     } catch (err) {
       console.error('Error disconnecting from Spotify:', err);
       setSpotifyError('Failed to disconnect from Spotify');
@@ -334,6 +380,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Disconnecting from YouTube...');
       setHasYouTubeAuth(false);
       setYoutubeUserProfile(null);
+      // Clear connection date
+      localStorage.removeItem('youtube_connection_date');
     } catch (err) {
       console.error('Error disconnecting from YouTube:', err);
       setYoutubeError('Failed to disconnect from YouTube');
@@ -456,13 +504,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             // Fallback: Check token validity directly using TokenManager
             if (!spotifyConnected) {
-              const hasSpotifyTokens = TokenManager.hasValidTokens('spotify');
+              const hasSpotifyTokens = await TokenManager.hasValidTokens('spotify');
+              const hasYouTubeTokens = await TokenManager.hasValidTokens('youtube');
               console.log('[DEBUG] TokenManager Spotify check:', hasSpotifyTokens);
               spotifyConnected = hasSpotifyTokens;
             }
             
             if (!youtubeConnected) {
-              const hasYouTubeTokens = TokenManager.hasValidTokens('youtube');
+              const hasSpotifyTokens = await TokenManager.hasValidTokens('spotify');
+              const hasYouTubeTokens = await TokenManager.hasValidTokens('youtube');
               console.log('[DEBUG] TokenManager YouTube check:', hasYouTubeTokens);
               youtubeConnected = hasYouTubeTokens;
             }
@@ -492,8 +542,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error('[DEBUG] Firestore error when checking service connections:', firestoreError);
             
             // Use token validation as complete fallback
-            const spotifyConnected = TokenManager.hasValidTokens('spotify');
-            const youtubeConnected = TokenManager.hasValidTokens('youtube');
+            const spotifyConnected = await TokenManager.hasValidTokens('spotify');
+            const youtubeConnected = await TokenManager.hasValidTokens('youtube');
             
             console.log('[DEBUG] TokenManager fallback check:', { spotifyConnected, youtubeConnected });
             
@@ -541,6 +591,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (isAuthenticated) {
         setSpotifyError(null);
+        // Save connection date
+        localStorage.setItem('spotify_connection_date', new Date().toISOString());
       }
     };
 
@@ -552,6 +604,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (isAuthenticated) {
         setYoutubeError(null);
+        // Save connection date
+        localStorage.setItem('youtube_connection_date', new Date().toISOString());
       }
     };
 
