@@ -17,7 +17,25 @@ export default defineConfig({
     hmr: {
       overlay: true
     },
-    open: true
+    open: true,
+    proxy: {
+      '/api/youtube': {
+        target: 'https://www.googleapis.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/youtube/, ''),
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Sending Request to the Target:', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
+          });
+        },
+      }
+    }
   },
   preview: {
     port: 3000,

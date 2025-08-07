@@ -56,6 +56,12 @@ const EnhancedConnectionCard: React.FC<EnhancedConnectionCardProps> = ({
   const cardRef = useRef<HTMLDivElement>(null);
   const disconnectButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Detect theme on mount
+  useEffect(() => {
+    const isDark = document.documentElement.classList.contains('dark');
+    // setIsDarkMode(isDark); // This line was removed as per the new_code
+  }, []);
+
   // Clear auth error when user logs in
   useEffect(() => {
     if (user) {
@@ -471,18 +477,30 @@ const EnhancedConnectionCard: React.FC<EnhancedConnectionCardProps> = ({
             <div className="mb-3 mt-6 flex items-center justify-center">
               {platform === 'youtube' && (
                 <img
-                  src="/images/YouTube connection card logo.png"
+                  src={isDark ? "/images/yt_logo_rgb_dark.png" : "/images/yt_logo_rgb_light.png"}
                   alt="YouTube"
-                  style={{ height: 72, width: 72, objectFit: 'cover', display: 'block' }}
-                  className="h-18 w-18 rounded-full"
+                  style={{ 
+                    height: 72, 
+                    width: 'auto', 
+                    objectFit: 'contain', 
+                    display: 'block',
+                    minWidth: '72px'
+                  }}
+                  className="h-18 w-auto"
                 />
               )}
               {platform === 'spotify' && (
                 <img
                   src="/images/Spotify_Primary_Logo_RGB_Green.png"
                   alt="Spotify"
-                  style={{ height: 72, width: 72, objectFit: 'cover', display: 'block' }}
-                  className="h-18 w-18 rounded-full"
+                  style={{ 
+                    height: 72, 
+                    width: 'auto', 
+                    objectFit: 'contain', 
+                    display: 'block',
+                    minWidth: '72px'
+                  }}
+                  className="h-18 w-auto"
                 />
               )}
             </div>

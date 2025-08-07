@@ -6,9 +6,11 @@ import { AuthProvider } from './lib/AuthContext'; // Removed useAuth, as Redirec
 import { ConversionProvider } from './lib/ConversionContext';
 import { UserProvider } from './context/UserContext';
 import ModernPlaylistConverter from './components/EnhancedPlaylistConverter';
+import { MobileConverter } from './components/MobileConverter';
 import SpotifyCallback from './components/SpotifyCallback';
 import YouTubeCallback from './components/YouTubeCallback';
 import Login from './components/Login';
+import MobileLogin from './components/MobileLogin';
 import { PrivateRoute } from './components/PrivateRoute';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsOfService from './components/TermsOfService';
@@ -22,6 +24,9 @@ import { ParticleField } from './components/ui/ParticleField';
 import { ShareModal } from './components/ui/ShareModal';
 import { useShareModal } from './hooks/useShareModal';
 import { ConversionInsights } from './components/ConversionInsights';
+import { MobileContext } from './context/MobileContext';
+import { MobileFailedTracksDetails } from './components/visualization/MobileFailedTracksDetails';
+import networkResilience from './services/networkResilience';
 // Removed Firebase auth and getAuthRedirectResult imports, as RedirectHandler is removed
 
 // Declare global window interface for mobile debugging
@@ -62,32 +67,39 @@ const angularCss = `
   }
 `;
 
-// Create orientation context for mobile devices
-interface MobileContext {
-  isPortrait: boolean;
-  isMobile: boolean;
-}
-
-export const MobileContext = createContext<MobileContext>({
-  isPortrait: true,
-  isMobile: false
-});
-
-export const useMobile = () => useContext(MobileContext);
-
 // Removed RedirectHandler component
 
 function App() {
   const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [mobileDetectionReady, setMobileDetectionReady] = useState(false);
   
   // Use our enhanced mobile detection hook
   const { isMobile, isPortrait, isIOS, isAndroid } = useMobileDetection();
+  
+  // Force mobile layout for testing (check URL parameter or localStorage)
+  const forceMobile = new URLSearchParams(window.location.search).get('mobile') === 'true' || 
+                     localStorage.getItem('forceMobile') === 'true';
   
   const { isOpen, shareData, closeShareModal } = useShareModal();
   
   // Add debugging for mobile issues
   useEffect(() => {
+    console.log('App.tsx: Mobile detection state:', { isMobile, isPortrait, isIOS, isAndroid });
+    
+    // Initialize network resilience service
+    networkResilience.initialize();
+    
+    // Mark mobile detection as ready after first detection
+    setMobileDetectionReady(true);
+    
+    // Add global function for testing mobile layout
+    (window as any).toggleMobileLayout = () => {
+      const current = localStorage.getItem('forceMobile') === 'true';
+      localStorage.setItem('forceMobile', (!current).toString());
+      window.location.reload();
+    };
+    
     if (isMobile) {
       console.log('Mobile device detected', { isPortrait, isIOS, isAndroid });
       
@@ -143,6 +155,80 @@ function App() {
     isMobile
   };
 
+  // Debug which layout is being rendered
+  const shouldRenderMobile = isMobile || forceMobile;
+  console.log('App.tsx: Rendering layout:', { 
+    isMobile, 
+    forceMobile, 
+    shouldRenderMobile,
+    isPortrait, 
+    layout: shouldRenderMobile ? 'MOBILE' : 'DESKTOP' 
+  });
+
+  // Show loading screen while mobile detection is initializing
+  if (!mobileDetectionReady) {
+    console.log('App.tsx: Mobile detection not ready yet, showing loading...');
+    return (
+      <div className="min-h-screen bg-background-primary flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Detecting device...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render mobile layout if mobile is detected
+  if (shouldRenderMobile) {
+    console.log('App.tsx: Rendering MOBILE layout');
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <UserProvider>
+            <ConversionProvider>
+              <TokenManagerInitializer>
+                <MobileContext.Provider value={mobileContextValue}>
+                  <ParticleField
+                    colorScheme="colorful"
+                    density="medium"
+                    interactive={true}
+                    className="fixed top-0 left-0 w-full h-full z-[-1]"
+                  />
+                  <Router>
+                    <style>{angularCss}</style>
+                    <AppInitializer>
+                      <Routes>
+                        <Route path="/" element={<PrivateRoute element={<MobileConverter />} />} />
+                        <Route path="/login" element={<MobileLogin />} />
+                        <Route path="/callback" element={<SpotifyCallback />} />
+                        <Route path="/youtube-callback" element={<YouTubeCallback />} />
+                        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                        <Route path="/terms-of-service" element={<TermsOfService />} />
+                        <Route path="/preloader-demo" element={<PreloaderDemo />} />
+                        <Route path="/insights/:id" element={<PrivateRoute element={<ConversionInsights />} />} />
+                        <Route path="/failed-tracks" element={<PrivateRoute element={<MobileFailedTracksDetails />} />} />
+                        <Route path="*" element={<Navigate to="/" />} />
+                      </Routes>
+                      <ShareModal
+                        isOpen={isOpen}
+                        onClose={closeShareModal}
+                        title={shareData.title}
+                        url={shareData.url}
+                        description={shareData.description}
+                      />
+                    </AppInitializer>
+                  </Router>
+                </MobileContext.Provider>
+              </TokenManagerInitializer>
+            </ConversionProvider>
+          </UserProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
+
+  // Render desktop layout for desktop screens
+  console.log('App.tsx: Rendering DESKTOP layout');
   return (
     <ThemeProvider>
       <AuthProvider>
@@ -168,6 +254,7 @@ function App() {
                       <Route path="/terms-of-service" element={<TermsOfService />} />
                       <Route path="/preloader-demo" element={<PreloaderDemo />} />
                       <Route path="/insights/:id" element={<PrivateRoute element={<ConversionInsights />} />} />
+                      <Route path="/failed-tracks/:id" element={<PrivateRoute element={<MobileFailedTracksDetails />} />} />
                       <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                     <ShareModal

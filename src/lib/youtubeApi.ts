@@ -1,4 +1,4 @@
-import { getYouTubeToken, clearYouTubeAuth } from './youtubeAuth';
+import { getYouTubeToken, refreshYouTubeToken, clearYouTubeAuth } from './youtubeAuth';
 import { config } from './config';
 
 // YouTube API base URL
@@ -17,99 +17,121 @@ interface YouTubeTokens {
 const extractYouTubeErrorDetails = async (response: Response): Promise<string> => {
   try {
     const errorData = await response.json();
-    if (errorData && errorData.error) {
-      // Check for common YouTube API error scenarios
-      if (errorData.error.status === 'PERMISSION_DENIED') {
-        return 'YouTube API permission denied. Your account may not have access to this API or the required scopes.';
-      } else if (errorData.error.status === 'UNAUTHENTICATED') {
-        // Clear invalid tokens to force reauthentication
-        clearYouTubeAuth();
-        return 'YouTube authentication expired. Please reconnect your YouTube account.';
-      } else if (errorData.error.status === 'QUOTA_EXCEEDED') {
-        return 'YouTube API quota exceeded. Please try again later.';
-      } else if (errorData.error.code === 403) {
-        // Handle 403 Forbidden errors specifically
-        if (errorData.error.message.includes('quota')) {
-          return 'YouTube API quota exceeded. Please try again later.';
-        } else if (errorData.error.message.includes('disabled')) {
-          return 'YouTube API is disabled for this project. Please check your Google Cloud Console.';
-        } else if (errorData.error.message.includes('permission')) {
-          clearYouTubeAuth();
-          return 'Insufficient permissions. Try reconnecting your YouTube account.';
+    console.error('YouTube API error details:', errorData);
+    
+    // Handle specific YouTube API error types
+    if (errorData.error?.errors) {
+      const errors = errorData.error.errors;
+      const errorMessages = errors.map((err: any) => {
+        switch (err.reason) {
+          case 'quotaExceeded':
+            return 'YouTube API quota exceeded. Please try again later.';
+          case 'dailyLimitExceeded':
+            return 'YouTube API daily limit exceeded. Please try again tomorrow.';
+          case 'userRateLimitExceeded':
+            return 'YouTube API rate limit exceeded. Please wait a moment and try again.';
+          case 'insufficientPermissions':
+            return 'Insufficient permissions. Please check your YouTube account settings.';
+          case 'invalidCredentials':
+            return 'Invalid YouTube credentials. Please reconnect your YouTube account.';
+          case 'tokenExpired':
+            return 'YouTube authentication expired. Please reconnect your YouTube account.';
+          default:
+            return err.message || 'YouTube API error occurred.';
         }
-        return `Access denied: ${errorData.error.message}`;
-      }
-      
-      // Return the error message if available
-      return errorData.error.message || JSON.stringify(errorData.error);
+      });
+      return errorMessages.join(' ');
     }
-  } catch (e) {
-    console.error('Failed to parse YouTube error response:', e);
+    
+    // Fallback error messages based on status code
+    switch (response.status) {
+      case 400:
+        return 'Invalid request to YouTube API. Please try again.';
+      case 401:
+        return 'YouTube authentication expired. Please reconnect your YouTube account.';
+      case 403:
+        return 'YouTube API quota exceeded or insufficient permissions. Please try again later.';
+      case 404:
+        return 'YouTube resource not found. Please check your playlist URL.';
+      case 429:
+        return 'YouTube API rate limit exceeded. Please wait a moment and try again.';
+      case 500:
+        return 'YouTube API server error. Please try again later.';
+      default:
+        return errorData.error?.message || `YouTube API error (${response.status})`;
+    }
+  } catch (parseError) {
+    console.error('Failed to parse YouTube error response:', parseError);
+    return `YouTube API error (${response.status}): ${response.statusText}`;
   }
-  return `HTTP error! Status: ${response.status}`;
 };
 
 /**
  * Get user's YouTube playlists
  */
-export const getYouTubePlaylists = async () => {
+export const getYouTubePlaylists = async (retryCount = 0): Promise<any> => {
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1 second
+  
   try {
     const accessToken = await getYouTubeToken();
     
     if (!accessToken) {
-      console.log('No valid YouTube access token available - user needs to authenticate');
-      return { items: [] };
+      console.error('Cannot fetch YouTube playlists: No valid access token');
+      throw new Error('No valid YouTube access token available. Please reconnect your YouTube account.');
     }
-    
+
     const params = new URLSearchParams({
       part: 'snippet,status,contentDetails',
       mine: 'true',
       maxResults: '50'
     });
-    
+
     const response = await fetch(`${YOUTUBE_API_BASE_URL}/playlists?${params.toString()}`, {
       headers: {
         'Authorization': `Bearer ${accessToken}`
       }
     });
-    
+
     if (!response.ok) {
-      if (response.status === 401) {
-        console.log('YouTube token expired, attempting refresh...');
-        // Try to refresh the token and retry
-        const refreshedToken = await getYouTubeToken(); // This should trigger refresh in TokenManager
-        if (refreshedToken) {
-          // Retry with refreshed token
-          const retryResponse = await fetch(`${YOUTUBE_API_BASE_URL}/playlists?${params.toString()}`, {
-            headers: {
-              'Authorization': `Bearer ${refreshedToken}`
-            }
-          });
-          
-          if (!retryResponse.ok) {
-            const errorMessage = await extractYouTubeErrorDetails(retryResponse);
-            throw new Error(errorMessage);
-          }
-          
-          const data = await retryResponse.json();
-          console.log('YouTube playlists fetched (after refresh):', data);
-          return data;
-        } else {
-          throw new Error('Failed to refresh YouTube token');
-        }
+      const errorMessage = await extractYouTubeErrorDetails(response);
+      console.error(`YouTube playlists error (${response.status}):`, errorMessage);
+      
+      // Handle specific error types
+      if (response.status === 403) {
+        throw new Error('YouTube API quota exceeded. Please try again later or check your YouTube account permissions.');
+      } else if (response.status === 401) {
+        throw new Error('YouTube authentication expired. Please reconnect your YouTube account.');
+      } else if (response.status === 429 && retryCount < maxRetries) {
+        // Rate limit exceeded, retry with exponential backoff
+        const delay = baseDelay * Math.pow(2, retryCount);
+        console.log(`YouTube API rate limited, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return getYouTubePlaylists(retryCount + 1);
       } else {
-        const errorMessage = await extractYouTubeErrorDetails(response);
         throw new Error(errorMessage);
       }
     }
-    
+
     const data = await response.json();
-    console.log('YouTube playlists fetched:', data);
+    console.log('YouTube playlists fetched successfully');
     return data;
-  } catch (error: unknown) {
-    console.error('Error getting YouTube playlists:', error);
-    // Return empty result instead of throwing to prevent UI errors
-    return { items: [] };
+  } catch (error) {
+    console.error('Error fetching YouTube playlists:', error);
+    
+    // Retry on network errors or 5xx errors
+    if (retryCount < maxRetries && (
+      error instanceof TypeError || // Network error
+      (error instanceof Error && error.message.includes('fetch')) ||
+      (error instanceof Error && error.message.includes('500'))
+    )) {
+      const delay = baseDelay * Math.pow(2, retryCount);
+      console.log(`Retrying YouTube playlists fetch in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return getYouTubePlaylists(retryCount + 1);
+    }
+    
+    throw error;
   }
 };
 
@@ -167,60 +189,21 @@ export const fetchAllYouTubePlaylistItems = async (playlistId: string, accessTok
  */
 export const findOrCreatePlaylist = async (_userId: string, title: string, description: string, privacyStatus: 'public' | 'private' | 'unlisted' = 'private') => {
   try {
-    // Try to create playlist directly if we don't have valid credentials
-    if (!getYouTubeToken()) {
-      console.log('No valid YouTube access token available - user needs to authenticate');
-      return {
-        id: 'mock-playlist-due-to-no-auth',
-        snippet: {
-          title: title,
-          description: description
-        },
-        status: {
-          privacyStatus: privacyStatus
-        },
-        _error: 'No valid YouTube access token available. Please reconnect your YouTube account.'
-      };
+    // First, try to find an existing playlist with the same title
+    const accessToken = await getYouTubeToken();
+    
+    if (!accessToken) {
+      console.error('Cannot create YouTube playlist: No valid access token');
+      throw new Error('No valid YouTube access token available. Please reconnect your YouTube account.');
     }
     
-    // Check if we have a playlist with the same title already
-    try {
-      const playlistsResponse = await getYouTubePlaylists();
-      
-      if (playlistsResponse && playlistsResponse.items && playlistsResponse.items.length > 0) {
-        // Look for an existing playlist with the same title
-        const existingPlaylist = playlistsResponse.items.find(
-          (playlist: any) => playlist.snippet.title === title
-        );
-        
-        if (existingPlaylist) {
-          console.log(`Using existing playlist: ${title}`);
-          return existingPlaylist;
-        }
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.log('Could not fetch existing playlists, will create a new one:', errorMessage);
-      // Continue to create a new playlist even if listing fails
-    }
-    
-    // No existing playlist found or couldn't check, create a new one
-    return await createYouTubePlaylist(_userId, title, description, privacyStatus);
-  } catch (error: unknown) {
+    // For now, we'll just create a new playlist
+    // In the future, we could search for existing playlists with the same title
+    const playlist = await createYouTubePlaylist(_userId, title, description, privacyStatus);
+    return playlist;
+  } catch (error) {
     console.error('Error finding or creating playlist:', error);
-    
-    // Provide a useful fallback for UI to continue
-    return {
-      id: 'mock-playlist-due-to-error',
-      snippet: {
-        title: title,
-        description: description
-      },
-      status: {
-        privacyStatus: privacyStatus
-      },
-      _error: error instanceof Error ? error.message : String(error)
-    };
+    throw error;
   }
 };
 
@@ -237,7 +220,7 @@ export const searchYouTube = async (_userId: string, query: string) => {
   }
   
   try {
-    const accessToken = getYouTubeToken();
+    const accessToken = await getYouTubeToken();
     
     if (!accessToken) {
       console.error('Cannot search YouTube: No valid access token');
@@ -410,7 +393,7 @@ const generateMockSearchResults = (query: string) => {
  */
 export const createYouTubePlaylist = async (_userId: string, title: string, description: string, privacyStatus: 'public' | 'private' | 'unlisted' = 'private') => {
   try {
-    const accessToken = getYouTubeToken();
+    const accessToken = await getYouTubeToken();
     
     if (!accessToken) {
       throw new Error('No valid YouTube access token available. Please reconnect your YouTube account.');
@@ -451,170 +434,92 @@ export const createYouTubePlaylist = async (_userId: string, title: string, desc
  */
 export const addToYouTubePlaylist = async (_userId: string, playlistId: string, videoId: string) => {
   try {
-    // If we're working with a mock playlist ID due to previous errors, just return mock success
-    if (playlistId.startsWith('mock-') || playlistId === 'mock-playlist-id-due-to-error' || playlistId === 'mock-playlist-due-to-error') {
-      console.log(`Mock adding video ${videoId} to playlist ${playlistId}`);
-      return {
-        id: `mock-playlist-item-id-${Date.now()}`,
-        snippet: {
-          playlistId,
-          resourceId: {
-            kind: 'youtube#video',
-            videoId
-          }
-        },
-        _isMock: true
-      };
+    const accessToken = await getYouTubeToken();
+    
+    if (!accessToken) {
+      console.error('Cannot add to YouTube playlist: No valid access token');
+      throw new Error('No valid YouTube access token available. Please reconnect your YouTube account.');
     }
     
-    const accessToken = getYouTubeToken();
+    const response = await fetch(`${YOUTUBE_API_BASE_URL}/playlistItems?part=snippet`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        snippet: {
+          playlistId: playlistId,
+          resourceId: {
+            kind: 'youtube#video',
+            videoId: videoId
+          }
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorMessage = await extractYouTubeErrorDetails(response);
+      console.error(`YouTube add to playlist error (${response.status}):`, errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    console.log(`Successfully added video ${videoId} to playlist ${playlistId}`);
+    return data;
+  } catch (error) {
+    console.error('Error adding to YouTube playlist:', error);
+    throw error;
+  }
+};
+
+/**
+ * Make a YouTube API request with automatic token refresh and retry logic
+ */
+export const makeYouTubeApiRequest = async (
+  endpoint: string, 
+  options: RequestInit = {}, 
+  retryCount = 0
+): Promise<Response> => {
+  const maxRetries = 2;
+  
+  try {
+    // Get current access token
+    const accessToken = await getYouTubeToken();
     
     if (!accessToken) {
       throw new Error('No valid YouTube access token available. Please reconnect your YouTube account.');
     }
     
-    // Add retry mechanism with exponential backoff
-    const maxRetries = 3;
-    let lastError = null;
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) {
-        // Wait with exponential backoff before retrying
-        const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-        console.log(`Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay for adding video ${videoId}`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+    // Add authorization header
+    const requestOptions: RequestInit = {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        ...options.headers
       }
+    };
+    
+    const response = await fetch(endpoint, requestOptions);
+    
+    // If we get a 401, try to refresh the token and retry
+    if (response.status === 401 && retryCount < maxRetries) {
+      console.log('YouTube API returned 401, attempting token refresh...');
       
-      try {
-        // Create a timeout promise
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Request timed out')), 15000); // 15-second timeout
-        });
-        
-        // Create the fetch promise
-        const fetchPromise = fetch(`${YOUTUBE_API_BASE_URL}/playlistItems?part=snippet`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            snippet: {
-              playlistId,
-              resourceId: {
-                kind: 'youtube#video',
-                videoId
-              }
-            }
-          })
-        });
-        
-        // Race the fetch against the timeout
-        const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-        
-        if (!response.ok) {
-          // Get more detailed error information
-          let errorMessage = await extractYouTubeErrorDetails(response);
-          
-          // Check specifically for duplicate video error (409 Conflict)
-          if (response.status === 409) {
-            console.log(`Video already exists: The video with ID ${videoId} is already in playlist ${playlistId}`);
-            // Return a mock success response for duplicate videos
-            return {
-              status: 'already_exists',
-              id: `duplicate-${videoId}`,
-              snippet: {
-                playlistId,
-                resourceId: {
-                  kind: 'youtube#video',
-                  videoId
-                }
-              }
-            };
-          }
-          
-          // For other errors, try again if we have retries left
-          lastError = new Error(errorMessage);
-          continue;
-        }
-        
-        // Success - return the result and exit the retry loop
-        const result = await response.json();
-        
-        // Add a small delay to avoid YouTube API rate limits
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        return result;
-      } catch (error) {
-        console.warn(`Attempt ${attempt + 1}/${maxRetries + 1} failed:`, error);
-        lastError = error;
-        
-        // If this is a timeout or network error, retry
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        if (errorMessage.includes('timed out') || 
-            errorMessage.includes('network') || 
-            errorMessage.includes('ECONNRESET')) {
-          continue;
-        }
-        
-        // For other errors, check if it's a duplicate
-        if (error instanceof Error && 
-            (error.message.includes('duplicate') || 
-             error.message.includes('already exists') || 
-             error.message.includes('Conflict') ||
-             error.message.includes('409'))) {
-          
-          console.log(`Handling duplicate video error gracefully for video ID ${videoId}`);
-          // Return a fake success response for duplicate videos
-          return {
-            status: 'already_exists',
-            id: `duplicate-${videoId}`,
-            snippet: {
-              playlistId,
-              resourceId: {
-                kind: 'youtube#video',
-                videoId
-              }
-            }
-          };
-        }
-        
-        // For other errors, continue retrying
+      const refreshSuccess = await refreshYouTubeToken();
+      if (refreshSuccess) {
+        console.log('Token refreshed successfully, retrying request...');
+        return makeYouTubeApiRequest(endpoint, options, retryCount + 1);
+      } else {
+        throw new Error('Failed to refresh YouTube token. Please reconnect your YouTube account.');
       }
     }
     
-    // If we've exhausted all retries and still failed, throw the last error
-    if (lastError) {
-      throw lastError;
-    }
-    
-    throw new Error(`Failed to add video ${videoId} to playlist after ${maxRetries + 1} attempts`);
-  } catch (error: unknown) {
-    console.error('Error adding video to YouTube playlist:', error);
-    
-    // Check if the error message indicates a duplicate video
-    if (error instanceof Error && 
-        (error.message.includes('duplicate') || 
-         error.message.includes('already exists') || 
-         error.message.includes('Conflict') ||
-         error.message.includes('409'))) {
-      
-      console.log(`Handling duplicate video error gracefully for video ID ${videoId}`);
-      // Return a fake success response for duplicate videos
-      return {
-        status: 'already_exists',
-        id: `duplicate-${videoId}`,
-        snippet: {
-          playlistId,
-          resourceId: {
-            kind: 'youtube#video',
-            videoId
-          }
-        }
-      };
-    }
-    
-    throw error instanceof Error ? error : new Error(String(error));
+    return response;
+  } catch (error) {
+    console.error('YouTube API request failed:', error);
+    throw error;
   }
 };
 

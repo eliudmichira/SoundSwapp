@@ -250,7 +250,15 @@ export const Preloader: React.FC<PreloaderProps> = ({
                             <img
                               src="/images/yt_logo_rgb_dark.png"
                               alt="YouTube"
-                              style={{ height: 32, minHeight: 20, maxHeight: 40, width: 'auto', objectFit: 'contain', display: 'block' }}
+                              style={{ 
+                                height: 32, 
+                                minHeight: 20, 
+                                maxHeight: 40, 
+                                width: 'auto', 
+                                objectFit: 'contain', 
+                                display: 'block',
+                                minWidth: '32px'
+                              }}
                             />
                           </div>
                         ) : (

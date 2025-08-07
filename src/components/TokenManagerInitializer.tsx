@@ -40,37 +40,8 @@ const TokenManagerInitializer: React.FC<TokenManagerInitializerProps> = ({ child
     }
   }, [user]);
 
-  // Show loading state while initializing
-  if (!isInitialized) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-sm text-gray-600">Initializing authentication...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state if initialization failed
-  if (initializationError) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md mx-auto p-6">
-          <div className="text-red-500 text-4xl mb-4">⚠️</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Authentication Error</h3>
-          <p className="text-sm text-gray-600 mb-4">{initializationError}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  // Always render children, don't show loading screen
+  // The token manager will initialize in the background
   return <>{children}</>;
 };
 

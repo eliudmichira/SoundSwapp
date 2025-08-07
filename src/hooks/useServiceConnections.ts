@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import TokenManager from '../lib/tokenManager';
+import { getAuth } from 'firebase/auth';
 
 interface UserProfile {
   displayName?: string;
@@ -104,80 +105,102 @@ export const useServiceConnections = () => {
       const tokens = await TokenManager.getTokens(service);
       const isConnected = tokens !== null;
       
-      // Mock user data for demonstration
-      const mockUserProfile: UserProfile = {
-        displayName: service === 'spotify' ? 'Mich' : 'MICH',
-        imageUrl: service === 'spotify' ? '/images/spotify-profile.jpg' : '/images/youtube-profile.jpg',
-        email: 'michmichira@gmail.com'
+      if (!isConnected) {
+        return { connected: false };
+      }
+
+      // Get real user data from Firebase Auth
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        return { connected: false };
+      }
+
+      // Create user profile from Firebase Auth data
+      const userProfile: UserProfile = {
+        displayName: currentUser.displayName || 'User',
+        imageUrl: currentUser.photoURL || undefined,
+        email: currentUser.email || undefined
       };
 
-      const mockUserMeta: UserMeta = service === 'spotify' ? {
-        plan: 'Free',
+      // Get service-specific metadata
+      let userMeta: UserMeta = {
+        plan: `${service === 'spotify' ? 'Spotify' : 'YouTube'} Connected`,
         lastSignInTime: new Date().toISOString(),
-        country: 'US',
-        followers: { total: 1250 },
-        product: 'free',
-        explicit_content: false,
-        totalTracks: 2847,
-        lastActive: new Date().toISOString(),
-        publicPlaylists: 12,
-        privatePlaylists: 8,
-        collaborativePlaylists: 3,
-        followedPlaylists: 45,
-        recentlyPlayed: 'Last 30 days',
-        topGenres: ['Pop', 'Hip-Hop', 'Electronic'],
-        listeningTime: '2.5 hours/day',
-        favoriteArtists: 23,
-        savedAlbums: 67,
-        savedTracks: 2847,
-        monthlyListeners: 890,
-        accountType: 'Individual',
-        familyPlanMembers: null,
-        studentVerification: false,
-        deviceLimit: 1,
-        offlineDownloads: 'Not available',
-        audioQuality: 'Standard (128kbps)',
-        crossfade: '12 seconds',
-        equalizer: 'Custom',
-        socialFeatures: 'Enabled',
-        dataSaver: false,
-        privateSession: false,
-        lastSync: '2 hours ago',
-        nextBilling: '9/5/2025',
-        paymentMethod: 'Credit Card',
-        autoRenew: true
-      } : {
-        plan: 'YouTube Connected',
-        lastSignInTime: new Date().toISOString(),
-        channelId: 'UC123456789',
-        subscriberCount: 1500,
-        videoCount: 45,
-        playlistCount: 12,
-        viewCount: 25000,
-        channelType: 'personal',
-        monetizationStatus: 'disabled',
-        verificationStatus: 'unverified',
-        contentRating: 'standard',
-        language: 'English',
-        location: 'United States',
-        joinDate: '2020-01-01',
-        lastUploadDate: '2024-01-15',
-        averageViews: 1500,
-        topCategories: ['Music', 'Entertainment', 'Gaming'],
-        collaborationStatus: false,
-        liveStreamingEnabled: true,
-        communityTabEnabled: true,
-        membershipsEnabled: false,
-        superChatEnabled: false,
-        channelMembershipLevel: 'none'
+        lastActive: new Date().toISOString()
       };
+
+      if (service === 'spotify') {
+        // Add Spotify-specific metadata
+        userMeta = {
+          ...userMeta,
+          country: 'US',
+          followers: { total: 0 },
+          product: 'free',
+          explicit_content: false,
+          totalTracks: 0,
+          publicPlaylists: 0,
+          privatePlaylists: 0,
+          collaborativePlaylists: 0,
+          followedPlaylists: 0,
+          recentlyPlayed: 'Last 30 days',
+          topGenres: [],
+          listeningTime: '0 hours/day',
+          favoriteArtists: 0,
+          savedAlbums: 0,
+          savedTracks: 0,
+          monthlyListeners: 0,
+          accountType: 'Individual',
+          familyPlanMembers: null,
+          studentVerification: false,
+          deviceLimit: 1,
+          offlineDownloads: 'Not available',
+          audioQuality: 'Standard (128kbps)',
+          crossfade: '12 seconds',
+          equalizer: 'Custom',
+          socialFeatures: 'Enabled',
+          dataSaver: false,
+          privateSession: false,
+          lastSync: '2 hours ago',
+          nextBilling: 'N/A',
+          paymentMethod: 'N/A',
+          autoRenew: false
+        };
+      } else if (service === 'youtube') {
+        // Add YouTube-specific metadata
+        userMeta = {
+          ...userMeta,
+          channelId: 'UC' + Math.random().toString(36).substring(2, 15),
+          subscriberCount: 0,
+          videoCount: 0,
+          playlistCount: 0,
+          viewCount: 0,
+          channelType: 'personal',
+          monetizationStatus: 'disabled',
+          verificationStatus: 'unverified',
+          contentRating: 'standard',
+          language: 'English',
+          location: 'United States',
+          joinDate: new Date().toISOString().split('T')[0],
+          lastUploadDate: new Date().toISOString().split('T')[0],
+          averageViews: 0,
+          topCategories: [],
+          collaborationStatus: false,
+          liveStreamingEnabled: true,
+          communityTabEnabled: true,
+          membershipsEnabled: false,
+          superChatEnabled: false,
+          channelMembershipLevel: 'none'
+        };
+      }
 
       return {
         connected: isConnected,
-        userProfile: isConnected ? mockUserProfile : undefined,
-        userEmail: isConnected ? 'michmichira@gmail.com' : undefined,
-        userMeta: isConnected ? mockUserMeta : undefined,
-        lastSync: isConnected ? new Date().toISOString() : undefined
+        userProfile: userProfile,
+        userEmail: currentUser.email || undefined,
+        userMeta: userMeta,
+        lastSync: new Date().toISOString()
       };
     } catch (error) {
       console.error(`[useServiceConnections] Error checking ${service} connection:`, error);

@@ -7,6 +7,7 @@ import { db as firebaseDb, auth, reconnectFirestore } from './firebase';
 import { isSpotifyAuthenticated, getSpotifyToken } from './spotifyAuth';
 import { checkForExistingPlaylist, generateUniquePlaylistName, ConversionLock } from './duplicatePrevention';
 import { parseYouTubeTitle, calculateTrackSimilarity, generateSearchQueries } from './improvedConversion';
+import { profileService } from '../services/profileService';
 
 // Type assertion for the Firestore db
 const db = firebaseDb as Firestore;
@@ -84,16 +85,7 @@ export interface FailedTrack {
 }
 
 // === STATE MANAGEMENT ===
-export enum ConversionStatus {
-  IDLE = 'idle',
-  LOADING_PLAYLISTS = 'loading_playlists',
-  SELECTING_PLAYLIST = 'selecting_playlist',
-  LOADING_TRACKS = 'loading_tracks',
-  MATCHING_TRACKS = 'matching_tracks',
-  CREATING_PLAYLIST = 'creating_playlist',
-  SUCCESS = 'success',
-  ERROR = 'error',
-}
+import { ConversionStatus } from '../types/conversion';
 
 type ConversionState = {
   status: ConversionStatus;
@@ -446,8 +438,31 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const response = await getYouTubePlaylists();
       
       if (response && response.items) {
-        // Store the playlists directly in state, preserving the YouTube API structure
-        dispatch({ type: 'SET_YOUTUBE_PLAYLISTS', payload: response.items });
+        // Filter out playlists with invalid thumbnails and clean the data
+        const cleanedPlaylists = response.items.map((playlist: any) => {
+          // Check if thumbnail URL is invalid
+          const thumbnailUrl = playlist.snippet?.thumbnails?.default?.url;
+          if (thumbnailUrl) {
+            console.log('Processing YouTube playlist thumbnail:', {
+              playlistName: playlist.snippet?.title,
+              thumbnailUrl: thumbnailUrl
+            });
+            
+            // Only remove truly invalid thumbnails, not all default ones
+            if (thumbnailUrl.includes('no_thumbnail.jpg')) {
+              console.log('Removing invalid thumbnail for playlist:', playlist.snippet?.title);
+              // Remove the invalid thumbnail
+              if (playlist.snippet?.thumbnails?.default) {
+                delete playlist.snippet.thumbnails.default;
+              }
+            }
+          }
+          return playlist;
+        });
+        
+        // Store the cleaned playlists in state
+        console.log(`Processed ${cleanedPlaylists.length} YouTube playlists`);
+        dispatch({ type: 'SET_YOUTUBE_PLAYLISTS', payload: cleanedPlaylists });
       } else {
         dispatch({ type: 'SET_YOUTUBE_PLAYLISTS', payload: [] });
       }
@@ -1068,7 +1083,10 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     videoId: bestMatch.id.videoId,
                     title: bestMatch.snippet.title,
                     channelTitle: bestMatch.snippet.channelTitle,
-                    thumbnailUrl: bestMatch.snippet.thumbnails?.default?.url || '',
+                    thumbnailUrl: bestMatch.snippet.thumbnails?.default?.url && 
+                                 !bestMatch.snippet.thumbnails.default.url.includes('no_thumbnail') 
+                                 ? bestMatch.snippet.thumbnails.default.url 
+                                 : 'https://via.placeholder.com/120x90/666666/FFFFFF?text=No+Thumbnail',
                     score: Math.round(bestScore * 100),
                     matchDetails: {
                       titleMatch: Math.round(bestScore * 100),
@@ -1276,6 +1294,18 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
           }
           
+          // Update user stats when conversion is successful
+          if (user?.uid) {
+            try {
+              // Determine platform direction based on conversion type
+              const platformDirection = 'youtube-to-spotify' as const; // YouTube to Spotify conversion
+              await profileService.addConversion(user.uid, successCount, platformDirection);
+              console.log('Successfully updated user stats for conversion');
+            } catch (error) {
+              console.error('Failed to update user stats:', error);
+            }
+          }
+          
           // Update state to indicate success
           dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SUCCESS });
           
@@ -1416,15 +1446,24 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
       } else if (destinationPlatform === 'spotify') {
         // YouTube → Spotify conversion
-        console.log('Starting YouTube to Spotify conversion');
+        console.log('=== Starting YouTube to Spotify conversion ===');
+        console.log('Source platform:', sourcePlatform);
+        console.log('Destination platform:', destinationPlatform);
+        console.log('Playlist ID:', playlistId);
+        console.log('Tracks count:', tracks.length);
         
         // Check if user has Spotify authentication
-        if (!(await isSpotifyAuthenticated())) {
+        const isSpotifyAuthed = await isSpotifyAuthenticated();
+        console.log('Spotify authentication status:', isSpotifyAuthed);
+        
+        if (!isSpotifyAuthed) {
           throw new Error('Spotify authentication required. Please reconnect your Spotify account.');
         }
         
         // Get the selected playlist details
         const selectedPlaylist = state.youtubePlaylists.find((p: any) => p.id === playlistId);
+        console.log('Selected YouTube playlist:', selectedPlaylist);
+        
         if (!selectedPlaylist) {
           throw new Error('Selected playlist details not found');
         }
@@ -1433,13 +1472,18 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const spotifyPlaylistName = `${selectedPlaylist.snippet?.title || 'YouTube Playlist'} (Converted)`;
         const spotifyPlaylistDescription = `Converted from YouTube using SoundSwapp`;
         
-        try {
-          // Import Spotify API functions
-          const { createSpotifyPlaylist, addTracksToSpotifyPlaylist } = await import('./spotifyApi');
-          
-          // Create the Spotify playlist
-          console.log('Creating Spotify playlist:', spotifyPlaylistName);
-          const newSpotifyPlaylist = await createSpotifyPlaylist(spotifyPlaylistName, spotifyPlaylistDescription);
+        console.log('Spotify playlist name:', spotifyPlaylistName);
+        console.log('Spotify playlist description:', spotifyPlaylistDescription);
+        
+                  try {
+            // Import Spotify API functions
+            const { createSpotifyPlaylist, addTracksToSpotifyPlaylist } = await import('./spotifyApi');
+            
+            // Create the Spotify playlist
+            console.log('Creating Spotify playlist:', spotifyPlaylistName);
+            console.log('Playlist description:', spotifyPlaylistDescription);
+            
+            const newSpotifyPlaylist = await createSpotifyPlaylist(spotifyPlaylistName, spotifyPlaylistDescription);
           
           if (!newSpotifyPlaylist || !newSpotifyPlaylist.id) {
             throw new Error('Failed to create Spotify playlist');
@@ -1466,14 +1510,18 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           let failedTracks: FailedTrack[] = []; // Track failed tracks
           
           console.log(`Starting to add ${totalTracks} tracks to Spotify playlist ${spotifyPlaylistId}`);
+          console.log('First few tracks:', tracks.slice(0, 3).map(t => ({ name: t.name, artists: t.artists })));
           
           // Process tracks one by one with progress updates
           for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             
             try {
+              console.log(`\n--- Processing track ${i + 1}/${totalTracks}: "${track.name}" by ${track.artists[0]} ---`);
+              
               // Use improved search queries
               const searchQueries = generateSearchQueries(track);
+              console.log('Generated search queries:', searchQueries);
               
               let bestMatch = null;
               let bestScore = 0;
@@ -1484,26 +1532,39 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               for (const searchQuery of searchQueries) {
                 console.log(`Searching Spotify for: "${searchQuery}"`);
                 
-                // Import Spotify search function
-                const { searchSpotifyTracks } = await import('./spotifyApi');
-                const searchResults = await searchSpotifyTracks(searchQuery, 20); // Get more results
-                
-                if (searchResults && searchResults.tracks && searchResults.tracks.items && searchResults.tracks.items.length > 0) {
-                  // Score each result based on similarity
-                  for (const result of searchResults.tracks.items) {
-                    const score = calculateTrackSimilarity(track, result);
+                try {
+                  // Import Spotify search function
+                  const { searchSpotifyTracks } = await import('./spotifyApi');
+                  console.log(`Searching Spotify for: "${searchQuery}"`);
+                  const searchResults = await searchSpotifyTracks(searchQuery, 20); // Get more results
+                  
+                  console.log(`Search results for "${searchQuery}":`, searchResults ? 'Found results' : 'No results');
+                  
+                  if (searchResults && searchResults.tracks && searchResults.tracks.items && searchResults.tracks.items.length > 0) {
+                    console.log(`Found ${searchResults.tracks.items.length} results for "${searchQuery}"`);
                     
-                    if (score > bestScore) {
-                      bestScore = score;
-                      bestMatch = result;
-                      bestMatchTitle = result.name;
-                      bestMatchArtist = result.artists[0].name;
+                    // Score each result based on similarity
+                    for (const result of searchResults.tracks.items) {
+                      const score = calculateTrackSimilarity(track, result);
+                      console.log(`  Result: "${result.name}" by ${result.artists[0].name} - Score: ${score.toFixed(2)}`);
+                      
+                      if (score > bestScore) {
+                        bestScore = score;
+                        bestMatch = result;
+                        bestMatchTitle = result.name;
+                        bestMatchArtist = result.artists[0].name;
+                      }
                     }
+                  } else {
+                    console.log(`No search results found for "${searchQuery}"`);
                   }
+                } catch (searchError) {
+                  console.error(`Error searching for "${searchQuery}":`, searchError);
                 }
                 
                 // If we found a good match (score > 0.6), stop searching
                 if (bestScore > 0.6) {
+                  console.log(`Found good match with score ${bestScore.toFixed(2)}, stopping search`);
                   break;
                 }
               }
@@ -1513,12 +1574,29 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 const trackUri = bestMatch.uri;
                 
                 console.log(`Found Spotify track: ${bestMatch.name} by ${bestMatch.artists[0].name} (score: ${bestScore.toFixed(2)})`);
+                console.log(`Adding track URI: ${trackUri} to playlist ${spotifyPlaylistId}`);
                 
-                // Add the track to the Spotify playlist
-                await addTracksToSpotifyPlaylist(spotifyPlaylistId, [trackUri]);
-                
-                successCount++;
-                console.log(`Successfully added track ${i + 1}/${totalTracks}`);
+                try {
+                  // Add the track to the Spotify playlist
+                  await addTracksToSpotifyPlaylist(spotifyPlaylistId, [trackUri]);
+                  console.log(`Successfully added track ${i + 1}/${totalTracks}`);
+                  successCount++;
+                } catch (addError) {
+                  console.error(`Error adding track to playlist:`, addError);
+                  failureCount++;
+                  
+                  // Track the failed track with details
+                  const failedTrack: FailedTrack = {
+                    name: track.name,
+                    artists: track.artists,
+                    reason: `Failed to add to playlist: ${addError instanceof Error ? addError.message : 'Unknown error'}`,
+                    searchQueries: searchQueries,
+                    bestMatchScore: bestScore,
+                    bestMatchTitle: bestMatchTitle || 'None',
+                    bestMatchArtist: bestMatchArtist || 'None'
+                  };
+                  failedTracks.push(failedTrack);
+                }
               } else {
                 failureCount++;
                 console.log(`No good Spotify match found for: "${track.name}" by ${track.artists[0]} (best score: ${bestScore.toFixed(2)})`);
@@ -1527,7 +1605,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 const failedTrack: FailedTrack = {
                   name: track.name,
                   artists: track.artists,
-                  reason: bestScore > 0 ? `Best match score (${bestScore.toFixed(2)}) below threshold (0.5)` : 'No matches found',
+                  reason: bestScore > 0 ? `Best match score (${bestScore.toFixed(2)}) below threshold (0.3)` : 'No matches found',
                   searchQueries: searchQueries,
                   bestMatchScore: bestScore,
                   bestMatchTitle: bestMatchTitle || 'None',
@@ -1564,6 +1642,28 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             
             // Small delay to avoid rate limiting
             await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
+          console.log(`\n--- Conversion Summary ---`);
+          console.log(`Total tracks: ${totalTracks}`);
+          console.log(`Successfully converted: ${successCount}`);
+          console.log(`Failed to convert: ${failureCount}`);
+          console.log(`Success rate: ${((successCount / totalTracks) * 100).toFixed(1)}%`);
+          
+          if (failedTracks.length > 0) {
+            console.log('Failed tracks:', failedTracks);
+          }
+          
+          // Update user stats when conversion is successful
+          if (user?.uid) {
+            try {
+              // Determine platform direction based on conversion type
+              const platformDirection = 'spotify-to-youtube' as const; // Spotify to YouTube conversion
+              await profileService.addConversion(user.uid, successCount, platformDirection);
+              console.log('Successfully updated user stats for conversion');
+            } catch (error) {
+              console.error('Failed to update user stats:', error);
+            }
           }
           
           // Update state to indicate success
@@ -1688,6 +1788,14 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       // Try getting history from localStorage first
       const localHistory = getConversionHistoryFromLocalStorage(user.uid);
+      console.log('Loaded from localStorage:', {
+        count: localHistory.length,
+        conversions: localHistory.map(c => ({
+          id: c.id,
+          tracksFailed: c.tracksFailed,
+          failedTracksLength: c.failedTracks?.length
+        }))
+      });
       if (localHistory.length > 0) {
         dispatch({ type: 'SET_CONVERSION_HISTORY', payload: localHistory });
       }
@@ -1720,6 +1828,12 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         
         querySnapshot.forEach((doc) => {
           const data = doc.data();
+          console.log('Loading conversion from Firestore:', {
+            id: doc.id,
+            tracksFailed: data.tracksFailed,
+            failedTracks: data.failedTracks,
+            failedTracksLength: data.failedTracks?.length
+          });
           history.push({
             id: doc.id,
             spotifyPlaylistId: data.spotifyPlaylistId,

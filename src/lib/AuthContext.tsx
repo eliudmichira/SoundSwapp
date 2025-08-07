@@ -10,7 +10,7 @@ import {
   updateProfile,
   signOut as firebaseSignOut
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { signInWithGoogle as firebaseSignInWithGoogle } from './firebase';
 import TokenManager from './tokenManager';
@@ -206,6 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           displayName: 'Connect Spotify', 
           id: 'spotify_user_id' 
         });
+        setHasSpotifyAuth(false);
         return;
       }
       
@@ -218,7 +219,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       
       if (!response.ok) {
-        throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+        if (response.status === 401) {
+          console.log('Spotify token expired, attempting refresh...');
+          // Try to refresh the token and retry
+          const refreshedTokens = await TokenManager.refreshTokensPublic('spotify', tokens.refreshToken);
+          if (refreshedTokens) {
+            // Retry with refreshed token
+            const retryResponse = await fetch('https://api.spotify.com/v1/me', {
+              headers: {
+                'Authorization': `Bearer ${refreshedTokens.accessToken}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (!retryResponse.ok) {
+              if (retryResponse.status === 401) {
+                // Refresh failed, clear tokens and prompt reconnection
+                console.log('Spotify token refresh failed, clearing tokens');
+                await TokenManager.removeTokens('spotify');
+                setHasSpotifyAuth(false);
+                setSpotifyUserProfile({ 
+                  displayName: 'Connect Spotify', 
+                  id: 'spotify_user_id' 
+                });
+                setSpotifyError('Your Spotify session has expired. Please reconnect your Spotify account.');
+                return;
+              } else {
+                throw new Error(`Spotify API error: ${retryResponse.status} ${retryResponse.statusText}`);
+              }
+            }
+            
+            const profile = await retryResponse.json();
+            console.log('Spotify profile fetched with refreshed token:', profile);
+            
+            // Set the actual profile data
+            setSpotifyUserProfile({
+              id: profile.id,
+              displayName: profile.display_name,
+              email: profile.email,
+              imageUrl: profile.images?.[0]?.url,
+              country: profile.country,
+              product: profile.product, // premium, free, etc.
+              followers: profile.followers?.total
+            });
+            setHasSpotifyAuth(true);
+            return;
+          } else {
+            // Refresh failed, clear tokens and prompt reconnection
+            console.log('Spotify token refresh failed, clearing tokens');
+            await TokenManager.removeTokens('spotify');
+            setHasSpotifyAuth(false);
+            setSpotifyUserProfile({ 
+              displayName: 'Connect Spotify', 
+              id: 'spotify_user_id' 
+            });
+            setSpotifyError('Your Spotify session has expired. Please reconnect your Spotify account.');
+            return;
+          }
+        } else {
+          throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+        }
       }
       
       const profile = await response.json();
@@ -234,16 +294,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         product: profile.product, // premium, free, etc.
         followers: profile.followers?.total
       });
+      setHasSpotifyAuth(true);
       
     } catch (err) {
       console.error('Error fetching Spotify profile:', err);
-      setSpotifyError('Failed to fetch Spotify profile');
       
-      // Fallback to placeholder if API fails
-      setSpotifyUserProfile({ 
-        displayName: 'Spotify User', 
-        id: 'spotify_user_id' 
-      });
+      if (err instanceof Error && err.message.includes('401')) {
+        setSpotifyError('Your Spotify session has expired. Please reconnect your Spotify account.');
+        setHasSpotifyAuth(false);
+        setSpotifyUserProfile({ 
+          displayName: 'Connect Spotify', 
+          id: 'spotify_user_id' 
+        });
+      } else {
+        setSpotifyError('Failed to fetch Spotify profile. Please try again.');
+        setSpotifyUserProfile({ 
+          displayName: 'Spotify User', 
+          id: 'spotify_user_id' 
+        });
+      }
     } finally {
       setIsConnectingSpotify(false);
     }
@@ -290,7 +359,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             
             if (!retryResponse.ok) {
-              throw new Error(`YouTube API error: ${retryResponse.status} ${retryResponse.statusText}`);
+              if (retryResponse.status === 403) {
+                throw new Error('YouTube API quota exceeded or insufficient permissions. Please try again later.');
+              } else if (retryResponse.status === 401) {
+                // Clear invalid tokens and prompt reconnection
+                TokenManager.clearTokens('youtube');
+                setHasYouTubeAuth(false);
+                setYoutubeUserProfile({ 
+                  displayName: 'Connect YouTube', 
+                  id: 'youtube_user_id' 
+                });
+                setYoutubeError('YouTube authentication expired. Please reconnect your YouTube account.');
+                return;
+              } else {
+                throw new Error(`YouTube API error: ${retryResponse.status} ${retryResponse.statusText}`);
+              }
             }
             
             const data = await retryResponse.json();
@@ -318,6 +401,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             throw new Error('Failed to refresh YouTube token');
           }
+        } else if (response.status === 403) {
+          console.error('YouTube API 403 error - quota exceeded or insufficient permissions');
+          setYoutubeError('YouTube API quota exceeded. Please try again later or check your YouTube account permissions.');
+          setHasYouTubeAuth(false);
+          setYoutubeUserProfile({ 
+            displayName: 'Connect YouTube', 
+            id: 'youtube_user_id' 
+          });
+          return;
         } else {
           throw new Error(`YouTube API error: ${response.status} ${response.statusText}`);
         }
@@ -348,13 +440,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
     } catch (err) {
       console.error('Error fetching YouTube profile:', err);
-      setYoutubeError('Failed to fetch YouTube profile');
       
-      // Fallback to placeholder if API fails
-      setYoutubeUserProfile({ 
-        displayName: 'YouTube User', 
-        id: 'youtube_user_id' 
-      });
+      // Handle specific error types
+      if (err instanceof Error) {
+        if (err.message.includes('quota exceeded') || err.message.includes('403')) {
+          setYoutubeError('YouTube API quota exceeded. Please try again later.');
+          setHasYouTubeAuth(false);
+          setYoutubeUserProfile({ 
+            displayName: 'Connect YouTube', 
+            id: 'youtube_user_id' 
+          });
+        } else if (err.message.includes('401') || err.message.includes('expired')) {
+          setYoutubeError('YouTube authentication expired. Please reconnect your YouTube account.');
+          setHasYouTubeAuth(false);
+          setYoutubeUserProfile({ 
+            displayName: 'Connect YouTube', 
+            id: 'youtube_user_id' 
+          });
+          TokenManager.clearTokens('youtube');
+        } else {
+          setYoutubeError('Failed to fetch YouTube profile. Please try again.');
+          setHasYouTubeAuth(false);
+          setYoutubeUserProfile({ 
+            displayName: 'Connect YouTube', 
+            id: 'youtube_user_id' 
+          });
+        }
+      } else {
+        setYoutubeError('An unexpected error occurred while fetching YouTube profile.');
+        setHasYouTubeAuth(false);
+        setYoutubeUserProfile({ 
+          displayName: 'Connect YouTube', 
+          id: 'youtube_user_id' 
+        });
+      }
     } finally {
       setIsConnectingYouTube(false);
     }

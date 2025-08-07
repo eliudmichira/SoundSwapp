@@ -44,7 +44,7 @@
     
     <!-- Browser API Polyfill -->
     <script>
-      // Browser API Polyfill
+      // Browser API Polyfill with enhanced error handling
       if (typeof browser === 'undefined') {
         window.browser = {
           runtime: { 
@@ -76,6 +76,199 @@
           }
         };
       }
+      
+      // Enhanced error handling for Chrome extension message channels
+      window.addEventListener('error', function(event) {
+        // Check if this is a Chrome extension message channel error
+        if (event.error && event.error.message && 
+            (event.error.message.includes('message channel closed') || 
+             event.error.message.includes('asynchronous response'))) {
+          console.warn('Chrome extension message channel error suppressed:', event.error.message);
+          event.preventDefault();
+          return false;
+        }
+      });
+      
+      // Handle unhandled promise rejections related to Chrome extensions
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason && event.reason.message && 
+            (event.reason.message.includes('message channel closed') || 
+             event.reason.message.includes('asynchronous response'))) {
+          console.warn('Chrome extension promise rejection suppressed:', event.reason.message);
+          event.preventDefault();
+        }
+      });
+      
+      // Prevent MetaMask connection errors
+      window.addEventListener('error', function(event) {
+        if (event.error && event.error.message && 
+            (event.error.message.includes('MetaMask') || 
+             event.error.message.includes('Failed to connect to MetaMask') ||
+             event.error.message.includes('MetaMask extension not found'))) {
+          console.warn('MetaMask connection error suppressed:', event.error.message);
+          event.preventDefault();
+          return false;
+        }
+      });
+      
+      // Enhanced MetaMask error handling
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason && event.reason.message && 
+            (event.reason.message.includes('MetaMask') || 
+             event.reason.message.includes('Failed to connect to MetaMask') ||
+             event.reason.message.includes('MetaMask extension not found'))) {
+          console.warn('MetaMask promise rejection suppressed:', event.reason.message);
+          event.preventDefault();
+        }
+      });
+      
+      // Override any global MetaMask connection attempts
+      if (typeof window !== 'undefined') {
+        // Prevent automatic MetaMask connection attempts
+        const originalEthereum = window.ethereum;
+        if (originalEthereum) {
+          // Wrap the connect method to prevent errors
+          const originalConnect = originalEthereum.connect;
+          if (originalConnect) {
+            originalEthereum.connect = function() {
+              console.warn('MetaMask connection attempt intercepted - not needed for this app');
+              return Promise.resolve({ accounts: [] });
+            };
+          }
+          
+          // Also wrap request method
+          const originalRequest = originalEthereum.request;
+          if (originalRequest) {
+            originalEthereum.request = function(args) {
+              if (args && args.method === 'eth_requestAccounts') {
+                console.warn('MetaMask account request intercepted - not needed for this app');
+                return Promise.resolve([]);
+              }
+              return originalRequest.call(this, args);
+            };
+          }
+        }
+        
+        // Prevent ethereum object from being accessed
+        Object.defineProperty(window, 'ethereum', {
+          get: function() {
+            return {
+              connect: () => Promise.resolve({ accounts: [] }),
+              request: (args) => {
+                if (args && args.method === 'eth_requestAccounts') {
+                  return Promise.resolve([]);
+                }
+                return Promise.resolve(null);
+              },
+              isMetaMask: false,
+              on: () => {},
+              removeListener: () => {}
+            };
+          },
+          set: function() {
+            // Prevent setting ethereum object
+            console.warn('MetaMask ethereum object access prevented');
+          },
+          configurable: true
+        });
+      }
+      
+      // Suppress Google Analytics and Firebase network errors
+      window.addEventListener('error', function(event) {
+        const errorMessage = event.message || '';
+        const errorSource = event.filename || '';
+        
+        // Suppress Google Analytics errors
+        if (errorMessage.includes('google-analytics.com') ||
+            errorMessage.includes('analytics') ||
+            errorSource.includes('google-analytics.com') ||
+            errorSource.includes('googletagmanager.com')) {
+          console.warn('Google Analytics error suppressed:', errorMessage);
+          event.preventDefault();
+          return false;
+        }
+        
+        // Suppress Firebase/Firestore network errors
+        if (errorMessage.includes('firestore.googleapis.com') ||
+            errorMessage.includes('firebaseapp.com') ||
+            errorMessage.includes('identitytoolkit.googleapis.com') ||
+            errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+            errorMessage.includes('ERR_CONNECTION_TIMED_OUT') ||
+            errorMessage.includes('ERR_CONNECTION_ABORTED') ||
+            errorMessage.includes('ERR_NETWORK_CHANGED') ||
+            errorSource.includes('firestore.googleapis.com') ||
+            errorSource.includes('firebaseapp.com')) {
+          console.warn('Firebase network error suppressed:', errorMessage);
+          event.preventDefault();
+          return false;
+        }
+      });
+
+      window.addEventListener('unhandledrejection', function(event) {
+        const errorMessage = event.reason?.message || event.reason || '';
+        const errorStack = event.reason?.stack || '';
+        
+        // Suppress Google Analytics promise rejections
+        if (errorMessage.includes('google-analytics.com') ||
+            errorMessage.includes('analytics') ||
+            errorStack.includes('google-analytics.com') ||
+            errorStack.includes('googletagmanager.com')) {
+          console.warn('Google Analytics promise rejection suppressed:', errorMessage);
+          event.preventDefault();
+          return false;
+        }
+        
+        // Suppress Firebase/Firestore network promise rejections
+        if (errorMessage.includes('firestore.googleapis.com') ||
+            errorMessage.includes('firebaseapp.com') ||
+            errorMessage.includes('identitytoolkit.googleapis.com') ||
+            errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+            errorMessage.includes('ERR_CONNECTION_TIMED_OUT') ||
+            errorMessage.includes('ERR_CONNECTION_ABORTED') ||
+            errorMessage.includes('ERR_NETWORK_CHANGED') ||
+            errorStack.includes('firestore.googleapis.com') ||
+            errorStack.includes('firebaseapp.com')) {
+          console.warn('Firebase network promise rejection suppressed:', errorMessage);
+          event.preventDefault();
+          return false;
+        }
+      });
+
+      // Override console methods to filter out specific errors
+      const originalConsoleError = console.error;
+      const originalConsoleWarn = console.warn;
+      
+      console.error = function(...args) {
+        const message = args.join(' ');
+        
+        // Filter out specific error messages
+        if (message.includes('google-analytics.com') ||
+            message.includes('firestore.googleapis.com') ||
+            message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+            message.includes('ERR_CONNECTION_TIMED_OUT') ||
+            message.includes('ERR_CONNECTION_ABORTED') ||
+            message.includes('ERR_NETWORK_CHANGED') ||
+            message.includes('MetaMask') ||
+            message.includes('Chrome extension')) {
+          return; // Don't log these errors
+        }
+        
+        originalConsoleError.apply(console, args);
+      };
+      
+      console.warn = function(...args) {
+        const message = args.join(' ');
+        
+        // Filter out specific warning messages
+        if (message.includes('google-analytics.com') ||
+            message.includes('firestore.googleapis.com') ||
+            message.includes('MetaMask') ||
+            message.includes('Chrome extension')) {
+          return; // Don't log these warnings
+        }
+        
+        originalConsoleWarn.apply(console, args);
+      };
     </script>
     
     <!-- Force HTTPS redirect for better security on mobile -->

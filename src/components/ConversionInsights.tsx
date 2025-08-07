@@ -2,16 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import { useConversion } from '../lib/ConversionContext';
-import { PlaylistInsights } from './visualization/PlaylistInsights';
+import { PlaylistInsights, MobilePlaylistInsights } from './visualization/PlaylistInsights';
 import { GlassmorphicContainer } from './ui/GlassmorphicContainer';
 import { motion } from 'framer-motion';
 import { doc, getDoc, type Firestore } from 'firebase/firestore';
 import { db, waitForFirestore, handleFirestoreError, saveUserInsights, getUserInsights } from '../lib/firebase';
 import { ChevronLeft } from 'lucide-react';
-import { generatePlaylistInsights } from './EnhancedPlaylistConverter';
+import { generatePlaylistInsights } from '../lib/playlistInsights';
 import type { PlaylistTypes } from '../types/playlist';
 import { SpotifyService } from '../lib/spotifyApi';
 import { Preloader } from './ui/Preloader';
+import useMobileDetection from '../hooks/useMobileDetection';
 
 // Type assertion for Firestore db
 const firestore = db as Firestore;
@@ -72,6 +73,7 @@ export const ConversionInsights: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playlistStats, setPlaylistStats] = useState<PlaylistTypes.PlaylistStats | null>(null);
+  const { isMobile } = useMobileDetection();
 
   useEffect(() => {
     const loadConversion = async () => {
@@ -330,17 +332,24 @@ export const ConversionInsights: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <GlassmorphicContainer
-            className="p-4 sm:p-6"
-            shadow="xl"
-            animate={true}
-            hoverEffect={true}
-          >
-            <PlaylistInsights
+          {isMobile ? (
+            <MobilePlaylistInsights
               stats={statsToShow}
               tracks={conversionData.tracks}
             />
-          </GlassmorphicContainer>
+          ) : (
+            <GlassmorphicContainer
+              className="p-4 sm:p-6"
+              shadow="xl"
+              animate={true}
+              hoverEffect={true}
+            >
+              <PlaylistInsights
+                stats={statsToShow}
+                tracks={conversionData.tracks}
+              />
+            </GlassmorphicContainer>
+          )}
         </motion.div>
       </div>
     </div>

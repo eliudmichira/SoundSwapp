@@ -5,10 +5,27 @@ import { isMobileDevice, isIOSDevice, isAndroidDevice } from '../lib/utils';
  * Hook to detect mobile devices and provide responsive information
  */
 export const useMobileDetection = () => {
-  const [isMobile, setIsMobile] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isAndroid, setIsAndroid] = useState(false);
+  // Initialize with immediate detection to avoid flash
+  const initialMobile = isMobileDevice() || window.innerWidth < 768;
+  const initialPortrait = window.innerHeight > window.innerWidth;
+  const initialIOS = isIOSDevice();
+  const initialAndroid = isAndroidDevice();
+  
+  console.log('useMobileDetection: Initial detection:', {
+    isMobileDevice: isMobileDevice(),
+    windowWidth: window.innerWidth,
+    windowHeight: window.innerHeight,
+    initialMobile,
+    initialPortrait,
+    initialIOS,
+    initialAndroid,
+    userAgent: navigator.userAgent
+  });
+  
+  const [isMobile, setIsMobile] = useState(initialMobile);
+  const [isPortrait, setIsPortrait] = useState(initialPortrait);
+  const [isIOS, setIsIOS] = useState(initialIOS);
+  const [isAndroid, setIsAndroid] = useState(initialAndroid);
   const [viewport, setViewport] = useState({
     width: window.innerWidth,
     height: window.innerHeight
@@ -18,6 +35,12 @@ export const useMobileDetection = () => {
     // Initial detection
     const detectMobile = () => {
       const mobile = isMobileDevice() || window.innerWidth < 768;
+      console.log('useMobileDetection: Detecting mobile:', { 
+        isMobileDevice: isMobileDevice(), 
+        windowWidth: window.innerWidth, 
+        mobile, 
+        userAgent: navigator.userAgent 
+      });
       setIsMobile(mobile);
       setIsIOS(isIOSDevice());
       setIsAndroid(isAndroidDevice());

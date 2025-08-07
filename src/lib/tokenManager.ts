@@ -155,17 +155,45 @@ class TokenManager {
       try {
         console.log(`[TokenManager] Refreshing ${service} tokens, attempt ${attempt}/${maxRetries}`);
         
-        const response = await fetch(`/api/auth/${service}/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken })
-        });
+        let response: Response;
+        
+        if (service === 'spotify') {
+          // Use direct Spotify API
+          response = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: refreshToken,
+              client_id: import.meta.env.VITE_SPOTIFY_CLIENT_ID || '',
+              client_secret: import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || ''
+            }).toString()
+          });
+        } else if (service === 'youtube') {
+          // Use direct Google API
+          response = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: refreshToken,
+              client_id: import.meta.env.VITE_YOUTUBE_CLIENT_ID || '',
+              client_secret: import.meta.env.VITE_YOUTUBE_CLIENT_SECRET || ''
+            }).toString()
+          });
+        } else {
+          throw new Error(`Unsupported service: ${service}`);
+        }
 
         if (response.ok) {
           const data = await response.json();
           const newTokens: ServiceTokens = {
             accessToken: data.access_token,
-            refreshToken: data.refresh_token || refreshToken,
+            refreshToken: data.refresh_token || refreshToken, // Keep old refresh token if new one not provided
             expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
             scope: data.scope
           };
@@ -174,7 +202,17 @@ class TokenManager {
           return newTokens;
         } else {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(`HTTP ${response.status}: ${errorData.error || 'Unknown error'}`);
+          const errorMessage = errorData.error || 'Unknown error';
+          
+          // Handle specific error cases
+          if (response.status === 400 && errorMessage === 'invalid_grant') {
+            console.log(`[TokenManager] Invalid grant for ${service}, tokens are permanently invalid`);
+            // Clear tokens immediately for invalid_grant
+            this.clearTokens(service);
+            throw new Error(`HTTP ${response.status}: ${errorMessage} - Tokens are permanently invalid`);
+          }
+          
+          throw new Error(`HTTP ${response.status}: ${errorMessage}`);
         }
       } catch (error) {
         lastError = error as Error;
@@ -189,6 +227,11 @@ class TokenManager {
 
     console.error(`[TokenManager] All refresh attempts failed for ${service}:`, lastError);
     return null;
+  }
+
+  // Public method to refresh tokens
+  static async refreshTokensPublic(service: 'spotify' | 'youtube', refreshToken: string): Promise<ServiceTokens | null> {
+    return this.refreshTokens(service, refreshToken);
   }
 
   // Token status listeners for UI updates

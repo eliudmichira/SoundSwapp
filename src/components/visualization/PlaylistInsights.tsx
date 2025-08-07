@@ -23,11 +23,15 @@ import {
   Heart,
   Volume2,
   Shuffle,
-  ChevronsUpDown
+  ChevronsUpDown,
+  ArrowLeft,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassmorphicContainer } from '../ui/GlassmorphicContainer';
 import { PlaylistTypes } from '../../types/playlist';
+import { useNavigate } from 'react-router-dom';
+import { cn } from '../../lib/utils';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -542,7 +546,7 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
         className="text-center space-y-4"
       >
         <div className="flex items-center justify-center gap-3">
-          <SoundSwappLogo size={48} className="animate-pulse-slow" />
+          <SoundSwappLogo size={48} className="text-purple-500" />
           {/* Show official YouTube logo for YouTube playlists, branding compliant */}
           {isYoutube && (
             <a
@@ -555,7 +559,14 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
               <img
                 src="/images/yt_logo_rgb_dark.png"
                 alt="YouTube"
-                style={{ height: 32, minHeight: 20, maxHeight: 40, width: 'auto', objectFit: 'contain' }}
+                style={{ 
+                  height: 32, 
+                  minHeight: 20, 
+                  maxHeight: 40, 
+                  width: 'auto', 
+                  objectFit: 'contain',
+                  minWidth: '32px'
+                }}
               />
             </a>
           )}
@@ -575,7 +586,7 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
         transition={{ delay: 0.1 }}
         className="flex justify-center"
       >
-        <GlassmorphicContainer className="flex p-1" rounded="xl">
+        <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl max-w-full overflow-x-auto hide-scrollbar">
           {[ 
             { key: 'overview', label: 'Overview', icon: BarChart3 },
             { key: 'genres', label: 'Genres', icon: PieChart },
@@ -585,20 +596,20 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
           ].map(({ key, label, icon: Icon }) => (
             <motion.button
               key={key}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => setActiveView(key as any)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all whitespace-nowrap min-w-0 flex-shrink-0 ${
                 activeView === key
-                  ? 'bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent-pink)] text-white shadow-md'
-                  : 'text-gray-900 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700/50 border border-gray-300 dark:border-transparent'
+                  ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-md'
+                  : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-200/60 dark:border-gray-600/60 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600'
               }`}
             >
-              <Icon size={16} />
-              <span className="text-sm font-medium">{label}</span>
+              <Icon size={14} />
+              <span className="text-xs font-medium">{label}</span>
             </motion.button>
           ))}
-        </GlassmorphicContainer>
+        </div>
       </motion.div>
 
       {/* Content sections with glassmorphic containers */}
@@ -1377,76 +1388,496 @@ export function EnhancedPlaylistInsights({ stats, tracks }: PlaylistInsightsProp
 // Add alias export for backward compatibility
 export const PlaylistInsights = EnhancedPlaylistInsights;
 
-// Add these styles to your CSS
-const brandStyles = `
-  :root {
-    --brand-primary: #8B5CF6;
-    --brand-accent-pink: #EC4899;
-    --brand-secondary: #06B6D4;
-    --brand-primary-rgb: 139, 92, 246;
-    --brand-accent-pink-rgb: 236, 72, 153;
-    --brand-secondary-rgb: 6, 182, 212;
-  }
+// Mobile-optimized insights component with premium desktop styling
+export function MobilePlaylistInsights({ stats, tracks }: PlaylistInsightsProps) {
+  const [activeView, setActiveView] = useState<'overview' | 'genres' | 'artists' | 'trends' | 'musicTaste'>('overview');
+  const navigate = useNavigate();
+  const advancedMetrics = calculateAdvancedMetrics(stats);
+  const isYoutube = isYouTubePlaylist(tracks);
+  const isSpotify = isSpotifyPlaylist(tracks);
 
-  @keyframes pulse-slow {
-    0%, 100% { opacity: 0.8; transform: scale(0.98); }
-    50% { opacity: 1; transform: scale(1.02); }
-  }
+  // Premium Mobile StatCard component matching desktop styling
+  const MobileStatCard = ({ 
+    icon: Icon, 
+    title, 
+    value, 
+    subtitle, 
+    color = 'purple', 
+    onClick 
+  }: StatCardProps) => {
+    const colorClasses: Record<string, { bg: string; icon: string; text: string; border: string }> = {
+      purple: { 
+        bg: 'bg-gradient-to-br from-purple-500/10 to-pink-500/10', 
+        icon: 'from-purple-500 to-pink-500',
+        text: 'text-purple-600 dark:text-purple-400',
+        border: 'border-purple-500/20'
+      },
+      blue: { 
+        bg: 'bg-gradient-to-br from-blue-500/10 to-cyan-500/10', 
+        icon: 'from-blue-500 to-cyan-500',
+        text: 'text-blue-600 dark:text-blue-400',
+        border: 'border-blue-500/20'
+      },
+      green: { 
+        bg: 'bg-gradient-to-br from-green-500/10 to-teal-500/10', 
+        icon: 'from-green-500 to-teal-500',
+        text: 'text-green-600 dark:text-green-400',
+        border: 'border-green-500/20'
+      },
+      red: { 
+        bg: 'bg-gradient-to-br from-red-500/10 to-orange-500/10', 
+        icon: 'from-red-500 to-orange-500',
+        text: 'text-red-600 dark:text-red-400',
+        border: 'border-red-500/20'
+      },
+      yellow: { 
+        bg: 'bg-gradient-to-br from-yellow-500/10 to-orange-500/10', 
+        icon: 'from-yellow-500 to-orange-500',
+        text: 'text-yellow-600 dark:text-yellow-400',
+        border: 'border-yellow-500/20'
+      },
+      indigo: { 
+        bg: 'bg-gradient-to-br from-indigo-500/10 to-purple-500/10', 
+        icon: 'from-indigo-500 to-purple-500',
+        text: 'text-indigo-600 dark:text-indigo-400',
+        border: 'border-indigo-500/20'
+      }
+    };
 
-  .animate-pulse-slow {
-    animation: pulse-slow 3s ease-in-out infinite;
-  }
+    const colors = colorClasses[color];
 
-  .ss-letter-main {
-    animation: pulseSSMain 2.8s ease-in-out infinite;
-    transform-origin: center;
-  }
+    return (
+      <motion.div
+        whileHover={{ scale: 1.02, y: -2 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={onClick}
+        className={`relative overflow-hidden rounded-xl border backdrop-blur-sm cursor-pointer ${colors.bg} ${colors.border} shadow-lg hover:shadow-xl transition-all duration-300`}
+      >
+        {/* Animated background gradient */}
+        <div className={`absolute inset-0 bg-gradient-to-r ${colors.icon} opacity-0 hover:opacity-5 transition-opacity duration-300`} />
+        
+        <div className="relative p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`p-2.5 rounded-lg bg-gradient-to-r ${colors.icon} text-white shadow-md`}>
+              <Icon size={18} />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</h3>
+            </div>
+          </div>
+          
+          <div className="space-y-1">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 }}
+              className={`text-xl font-bold ${colors.text}`}
+            >
+              {value}
+            </motion.div>
+            {subtitle && (
+              <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
 
-  .ss-letter-highlight {
-    animation: pulseSSHighlight 2.8s ease-in-out infinite;
-    transform-origin: center;
-    opacity: 0.7;
-  }
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 font-sf-pro">
+      {/* Premium Mobile Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 shadow-sm"
+      >
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => navigate(-1)}
+              className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            >
+              <ArrowLeft size={20} />
+            </motion.button>
+            <div className="flex items-center gap-2">
+              <div className="soundswapp-logo">
+                <SoundSwappLogo size={32} />
+              </div>
+              <div>
+                <h1 className="text-lg font-sf-pro-display font-bold text-gray-900 dark:text-white">
+                  Playlist Insights
+                </h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-sf-pro-text">
+                  {tracks[0]?.playlistName || 'Playlist Analysis'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
 
-  @keyframes pulseSSMain {
-    0%, 100% { 
-      opacity: 0.9;
-      transform: scale(0.98);
-      stroke-dasharray: 1000;
-      stroke-dashoffset: 1000;
-    }
-    40% {
-      stroke-dashoffset: 0;
-      opacity: 1;
-    }
-    50% { 
-      opacity: 1;
-      transform: scale(1.02);
-    }
-    90%, 100% {
-      stroke-dashoffset: -1000;
-      opacity: 0.9;
-    }
-  }
+      {/* Mobile Content */}
+      <div className="px-4 py-6 space-y-6">
+        {/* Premium Hero Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center space-y-4"
+        >
+          <div className="flex items-center justify-center gap-3 mb-4">
+            {isYoutube && (
+              <div className="p-2 rounded-xl bg-white shadow-md">
+                <img
+                  src="/images/yt_logo_rgb_dark.png"
+                  alt="YouTube"
+                  className="h-6 w-auto object-contain"
+                />
+              </div>
+            )}
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400 font-sf-pro-text max-w-sm mx-auto">
+            Discover the hidden patterns and stories within your music collection with advanced analytics and beautiful visualizations.
+          </p>
+        </motion.div>
 
-  @keyframes pulseSSHighlight {
-    0%, 100% { 
-      opacity: 0.5;
-      transform: scale(0.96);
-      stroke-dasharray: 1000;
-      stroke-dashoffset: 1000;
-    }
-    40% {
-      stroke-dashoffset: 0;
-      opacity: 0.7;
-    }
-    50% { 
-      opacity: 0.7;
-      transform: scale(1);
-    }
-    90%, 100% {
-      stroke-dashoffset: -1000;
-      opacity: 0.5;
-    }
-  }
-`;
+        {/* Premium Mobile Navigation Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="flex justify-center px-2"
+        >
+          <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl max-w-full overflow-x-auto hide-scrollbar">
+            {[ 
+              { key: 'overview', label: 'Overview', icon: BarChart3 },
+              { key: 'genres', label: 'Genres', icon: PieChart },
+              { key: 'artists', label: 'Artists', icon: Users },
+              { key: 'trends', label: 'Trends', icon: TrendingUp },
+              { key: 'musicTaste', label: 'Music Taste', icon: Heart }
+            ].map(({ key, label, icon: Icon }) => (
+              <motion.button
+                key={key}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setActiveView(key as any)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all whitespace-nowrap min-w-0 flex-shrink-0 ${
+                  activeView === key
+                    ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-md'
+                    : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-200/60 dark:border-gray-600/60 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600'
+                }`}
+              >
+                <Icon size={14} />
+                <span className="text-xs font-medium">{label}</span>
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Content Sections */}
+        <AnimatePresence mode="wait">
+          {activeView === 'overview' && (
+            <motion.div
+              key="overview"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="space-y-6"
+            >
+              {/* Premium Stats Cards */}
+              <motion.div
+                variants={staggerChildren}
+                initial="initial"
+                animate="animate"
+                className="grid grid-cols-2 gap-4"
+              >
+                <MobileStatCard
+                  icon={Music}
+                  title="Total Tracks"
+                  value={formatNumber(stats.totalTracks)}
+                  subtitle={`${formatNumber(stats.uniqueArtists)} unique artists`}
+                  color="purple"
+                />
+                <MobileStatCard
+                  icon={Clock}
+                  title="Total Duration"
+                  value={formatMinutes(stats.totalDuration)}
+                  color="blue"
+                />
+                <MobileStatCard
+                  icon={Flame}
+                  title="Avg. Popularity"
+                  value={formatNumber(Math.round(stats.avgPopularity))}
+                  subtitle="Out of 100"
+                  color="red"
+                />
+                <MobileStatCard
+                  icon={Award}
+                  title="Diversity Score"
+                  value={formatPercent(advancedMetrics.diversityScore)}
+                  subtitle="Genre variety index"
+                  color="green"
+                />
+              </motion.div>
+
+              {/* Premium Quick Insights */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-4 border border-gray-200/50 dark:border-gray-700/50 shadow-lg backdrop-blur-sm"
+              >
+                <h3 className="text-lg font-sf-pro-display font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Sparkles className="text-purple-500" size={20} />
+                  Quick Insights
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Listening Time</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white font-sf-pro-display">
+                      {Math.round(stats.totalDuration / 3600000)}h {Math.round((stats.totalDuration % 3600000) / 60000)}m
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Top Genre</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white font-sf-pro-display">
+                      {stats.genres && stats.genres.length > 0 ? stats.genres[0].name : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Avg. Tracks/Artist</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white font-sf-pro-display">
+                      {stats.uniqueArtists ? Math.round(stats.totalTracks / stats.uniqueArtists) : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+
+          {activeView === 'genres' && (
+            <motion.div
+              key="genres"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="space-y-4"
+            >
+              <div className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-4 border border-gray-200/50 dark:border-gray-700/50 shadow-lg backdrop-blur-sm">
+                <h3 className="text-lg font-sf-pro-display font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <PieChart className="text-purple-500" size={20} />
+                  Genre Distribution
+                </h3>
+                <div className="space-y-3">
+                  {stats.genres.map((genre, index) => {
+                    const percentage = Math.round((genre.count / (stats.totalGenreMentions || stats.totalTracks)) * 100);
+                    return (
+                      <motion.div
+                        key={genre.name}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div 
+                              className="w-3 h-3 rounded-full shadow-sm"
+                              style={{ backgroundColor: genre.color }}
+                            />
+                            <span className="font-medium text-gray-900 dark:text-white">{genre.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">{genre.count} tracks</span>
+                            <span className="text-xs font-medium text-gray-900 dark:text-white">{percentage}%</span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${percentage}%` }}
+                            transition={{ delay: index * 0.1 + 0.2, duration: 0.5 }}
+                            className="h-2 rounded-full shadow-sm"
+                            style={{ backgroundColor: genre.color }}
+                          />
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeView === 'artists' && (
+            <motion.div
+              key="artists"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="space-y-4"
+            >
+              <div className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-4 border border-gray-200/50 dark:border-gray-700/50 shadow-lg backdrop-blur-sm">
+                <h3 className="text-lg font-sf-pro-display font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Users className="text-purple-500" size={20} />
+                  Top Artists
+                </h3>
+                <div className="space-y-3">
+                  {stats.topArtists.map((artist, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      className="flex items-center p-3 bg-gray-50/80 dark:bg-gray-700/50 rounded-xl backdrop-blur-sm"
+                    >
+                      <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-white/20 shadow-md">
+                        {artist.image ? (
+                          <img 
+                            src={artist.image} 
+                            alt={artist.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-purple-500/10 to-pink-500/10 flex items-center justify-center">
+                            <span className="text-lg font-bold text-purple-500/70 font-sf-pro-display">{artist.name.charAt(0).toUpperCase()}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 ml-3">
+                        <h4 className="font-medium text-gray-900 dark:text-white">{artist.name}</h4>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{artist.count} tracks</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">
+                          {Math.round((artist.count / stats.totalTracks) * 100)}%
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeView === 'trends' && (
+            <motion.div
+              key="trends"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="space-y-4"
+            >
+              <div className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-4 border border-gray-200/50 dark:border-gray-700/50 shadow-lg backdrop-blur-sm">
+                <h3 className="text-lg font-sf-pro-display font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <TrendingUp className="text-green-500" size={20} />
+                  Listening Trends
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* Popularity Distribution */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Popularity Distribution</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: 'High', range: '80-100', count: Math.round(stats.avgPopularity * 0.3) },
+                        { label: 'Medium', range: '40-79', count: Math.round(stats.avgPopularity * 0.5) },
+                        { label: 'Low', range: '0-39', count: Math.round(stats.avgPopularity * 0.2) }
+                      ].map((item, i) => (
+                        <div key={item.label} className="text-center p-3 bg-gray-50/80 dark:bg-gray-700/50 rounded-lg">
+                          <div className="text-lg font-bold text-gray-900 dark:text-white">{item.count}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">{item.label}</div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500">{item.range}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Release Year Trends */}
+                  {stats.releaseYears && Object.keys(stats.releaseYears).length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Release Year Trends</h4>
+                      <div className="space-y-2">
+                        {Object.entries(stats.releaseYears)
+                          .sort(([a], [b]) => parseInt(b) - parseInt(a))
+                          .slice(0, 5)
+                          .map(([year, count], i) => (
+                            <div key={year} className="flex items-center justify-between p-2 bg-gray-50/80 dark:bg-gray-700/50 rounded-lg">
+                              <span className="text-sm font-medium text-gray-900 dark:text-white">{year}</span>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">{count} tracks</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeView === 'musicTaste' && (
+            <motion.div
+              key="musicTaste"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="space-y-4"
+            >
+              <div className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-4 border border-gray-200/50 dark:border-gray-700/50 shadow-lg backdrop-blur-sm">
+                <h3 className="text-lg font-sf-pro-display font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Heart className="text-red-500" size={20} />
+                  Music Taste Analysis
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* Musical Identity */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Your Musical Identity</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="text-center p-3 bg-purple-50/80 dark:bg-purple-900/20 rounded-lg border border-purple-200/50 dark:border-purple-700/50">
+                        <div className="text-lg font-bold text-purple-600 dark:text-purple-400">{advancedMetrics.diversityScore}%</div>
+                        <div className="text-xs text-purple-500 dark:text-purple-300">Diversity</div>
+                      </div>
+                      <div className="text-center p-3 bg-blue-50/80 dark:bg-blue-900/20 rounded-lg border border-blue-200/50 dark:border-blue-700/50">
+                        <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{advancedMetrics.avgTracksPerArtist}</div>
+                        <div className="text-xs text-blue-500 dark:text-blue-300">Tracks/Artist</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Listening Patterns */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Listening Patterns</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between p-2 bg-gray-50/80 dark:bg-gray-700/50 rounded-lg">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Total Listening Time</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {Math.round(stats.totalDuration / 3600000)}h {Math.round((stats.totalDuration % 3600000) / 60000)}m
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 bg-gray-50/80 dark:bg-gray-700/50 rounded-lg">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Average Track Length</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {Math.round(stats.totalDuration / stats.totalTracks / 60000)}m
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+

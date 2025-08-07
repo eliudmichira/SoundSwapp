@@ -3,7 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { EnhancedHeroSection } from './EnhancedHeroSection';
 import { useTheme } from '../lib/ThemeContext';
 import { useAuth } from '../lib/AuthContext';
-import { useConversion, ConversionStatus, type FailedTrack } from '../lib/ConversionContext';
+import { useConversion, type FailedTrack } from '../lib/ConversionContext';
+import { ConversionStatus } from '../types/conversion';
 import { getYouTubeAuthUrl } from '../lib/youtubeAuth';
 import { initSpotifyAuth } from '../lib/spotifyAuth';
 import { cn } from '../lib/utils';
@@ -195,15 +196,43 @@ interface ConnectButtonProps {
 
 // Platform connection button component
 const ConnectButton: React.FC<ConnectButtonProps> = ({ platform, isConnected, onConnect, className }) => {
+  const { isDark } = useTheme();
+  
   const platformData = {
     spotify: {
-      icon: <img src="/images/Spotify_Primary_Logo_RGB_Green.png" alt="Spotify" style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }} className="h-6 w-auto" />,
+      icon: (
+        <img 
+          src="/images/Spotify_Primary_Logo_RGB_Green.png" 
+          alt="Spotify" 
+          style={{ 
+            height: 24, 
+            width: 'auto', 
+            objectFit: 'contain', 
+            display: 'block',
+            minWidth: '24px'
+          }} 
+          className="h-6 w-auto" 
+        />
+      ),
       text: 'Spotify',
       bgColor: 'bg-platform-spotify hover:bg-platform-spotify-hover',
       bgColorConnected: 'bg-platform-spotify-connected text-content-on-platform-spotify-connected'
     },
     youtube: {
-      icon: <Youtube className="h-5 w-5" />,
+      icon: (
+        <img 
+          src={isConnected ? "/images/yt_logo_rgb_dark.png" : (isDark ? "/images/yt_logo_mono_dark.png" : "/images/yt_logo_mono_light.png")}
+          alt="YouTube" 
+          style={{ 
+            height: 24, 
+            width: 'auto', 
+            objectFit: 'contain', 
+            display: 'block',
+            minWidth: '24px'
+          }} 
+          className="h-6 w-auto" 
+        />
+      ),
       text: 'YouTube',
       bgColor: 'bg-platform-youtube hover:bg-platform-youtube-hover',
       bgColorConnected: 'bg-platform-youtube-connected text-content-on-platform-youtube-connected'
@@ -292,7 +321,7 @@ const generateGenreColor = (genre: string): string => {
 };
 
 // Function to get playlist insights from the tracks data
-export const generatePlaylistInsights = (tracks: ConversionTrack[]): PlaylistStats => {
+const generatePlaylistInsights = (tracks: ConversionTrack[]): PlaylistStats => {
   const artistCounts: Record<string, number> = {};
   const artistImages: Record<string, string> = {};
   const genreCounts: Record<string, number> = {};
@@ -1689,7 +1718,13 @@ const ModernPlaylistConverter: React.FC = () => {
                                 <img
                                   src="/images/Spotify_Primary_Logo_RGB_Green.png"
                                   alt="Spotify"
-                                  style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                  style={{ 
+                                    height: 24, 
+                                    width: 'auto', 
+                                    objectFit: 'contain', 
+                                    display: 'block',
+                                    minWidth: '24px'
+                                  }}
                                   className="h-6 w-auto"
                                 />
                                 <span className={cn(
@@ -1715,9 +1750,15 @@ const ModernPlaylistConverter: React.FC = () => {
                                 aria-label="Select YouTube as source platform"
                               >
                                 <img
-                                  src="/images/yt_logo_rgb_dark.png"
+                                  src={sourcePlatform === 'youtube' ? "/images/yt_logo_rgb_dark.png" : (isDark ? "/images/yt_logo_mono_dark.png" : "/images/yt_logo_mono_light.png")}
                                   alt="YouTube"
-                                  style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                  style={{ 
+                                    height: 24, 
+                                    width: 'auto', 
+                                    objectFit: 'contain', 
+                                    display: 'block',
+                                    minWidth: '24px'
+                                  }}
                                   className={cn(
                                     "h-6 w-auto",
                                     sourcePlatform === 'youtube' ? "" : "opacity-70 grayscale"
@@ -1752,7 +1793,13 @@ const ModernPlaylistConverter: React.FC = () => {
                                 <img
                                   src="/images/Spotify_Primary_Logo_RGB_Green.png"
                                   alt="Spotify"
-                                  style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                  style={{ 
+                                    height: 24, 
+                                    width: 'auto', 
+                                    objectFit: 'contain', 
+                                    display: 'block',
+                                    minWidth: '24px'
+                                  }}
                                   className="h-6 w-auto"
                                 />
                                 <span className="text-green-500 dark:text-green-400">Spotify</span>
@@ -1775,7 +1822,7 @@ const ModernPlaylistConverter: React.FC = () => {
                                 aria-label="Select YouTube as destination platform"
                               >
                                 <img
-                                  src="/images/yt_logo_rgb_dark.png"
+                                  src={destinationPlatform === 'youtube' ? "/images/yt_logo_rgb_dark.png" : (isDark ? "/images/yt_logo_mono_dark.png" : "/images/yt_logo_mono_light.png")}
                                   alt="YouTube"
                                   style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
                                   className={cn(

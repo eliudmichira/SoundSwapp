@@ -112,9 +112,9 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-surface-card rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-border-default">
-          <h3 className="text-xl font-bold text-content-primary flex items-center gap-2">
+      <div className="bg-surface-card rounded-lg shadow-xl max-w-6xl w-full max-h-[80vh] overflow-hidden">
+        <div className="flex items-center justify-between p-4 md:p-6 border-b border-border-default">
+          <h3 className="text-lg md:text-xl font-bold text-content-primary flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-error-text" />
             Failed Tracks Details
           </h3>
@@ -127,14 +127,14 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
           </button>
         </div>
         
-        <div className="p-6 overflow-y-auto max-h-[70vh]">
-          <div className="mb-6">
-            <div className="text-sm text-content-secondary mb-4">
+        <div className="p-4 md:p-6 overflow-y-auto max-h-[60vh]">
+          <div className="mb-4 md:mb-6">
+            <div className="text-sm text-content-secondary mb-3 md:mb-4">
               {failedTracks.length} tracks failed to convert. Use the search tools below to find and add missing tracks:
             </div>
             
             {/* Smart Search Tips */}
-            <div className="bg-warning-bg border border-warning-border rounded-lg p-4 mb-6">
+            <div className="bg-warning-bg border border-warning-border rounded-lg p-3 md:p-4 mb-4 md:mb-6">
               <h4 className="font-semibold text-warning-text mb-2 flex items-center gap-2">
                 <Info className="h-4 w-4" />
                 Smart Search Tips
@@ -150,10 +150,10 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
             </div>
           </div>
           
-          <div className="space-y-6">
+          <div className="space-y-4 md:space-y-6">
             {failedTracks.map((track, index) => (
-              <div key={index} className="border border-border-default rounded-lg p-4 bg-surface-alt">
-                <div className="flex items-start justify-between mb-4">
+              <div key={index} className="border border-border-default rounded-lg p-3 md:p-4 bg-surface-alt">
+                <div className="flex items-start justify-between mb-3 md:mb-4">
                   <div className="flex-1">
                     <h4 className="font-semibold text-content-primary mb-1">
                       {track.name}
@@ -171,7 +171,7 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
                   )}
                 </div>
                 
-                <div className="space-y-3 mb-4">
+                <div className="space-y-2 md:space-y-3 mb-3 md:mb-4">
                   <div>
                     <span className="text-sm font-medium text-content-primary">Reason:</span>
                     <p className="text-sm text-error-text mt-1">{track.reason}</p>
@@ -251,10 +251,9 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
                             const query = encodeURIComponent(track.artists[0] + ' ' + track.name);
                             window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
                           }}
-                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm flex items-center gap-1"
+                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm flex items-center justify-center"
                         >
-                          <ExternalLink className="h-3 w-3" />
-                          Search
+                          <Search className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
@@ -274,10 +273,9 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
                             const query = encodeURIComponent(track.artists[0] + ' ' + track.name);
                             window.open(`https://open.spotify.com/search/${query}`, '_blank');
                           }}
-                          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm flex items-center gap-1"
+                          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm flex items-center justify-center"
                         >
-                          <ExternalLink className="h-3 w-3" />
-                          Search
+                          <Search className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
@@ -336,11 +334,11 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
           </div>
         </div>
         
-        <div className="flex items-center justify-between p-6 border-t border-border-default bg-surface-alt">
+        <div className="flex items-center justify-between p-4 md:p-6 border-t border-border-default bg-surface-alt">
           <div className="text-sm text-content-secondary">
             {failedTracks.length} failed tracks
           </div>
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => {
                 // Open all failed tracks in YouTube search
@@ -351,14 +349,14 @@ export const EnhancedFailedTracksModal: React.FC<EnhancedFailedTracksModalProps>
                   window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
                 });
               }}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm flex items-center gap-2"
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm flex items-center gap-2 whitespace-nowrap shadow-sm"
             >
               <ExternalLink className="h-4 w-4" />
               Search All on YouTube
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-brand-primary text-white rounded-md hover:bg-brand-primaryHover transition-colors"
+              className="px-4 py-2 bg-brand-primary text-white rounded-md hover:bg-brand-primaryHover transition-colors text-sm shadow-sm"
             >
               Close
             </button>

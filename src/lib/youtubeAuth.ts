@@ -17,7 +17,10 @@ const YOUTUBE_REDIRECT_URI = youtubeConfig.redirectUri;
 const YOUTUBE_SCOPES = [
   'https://www.googleapis.com/auth/youtube',
   'https://www.googleapis.com/auth/youtube.readonly',
-  'https://www.googleapis.com/auth/youtube.force-ssl'
+  'https://www.googleapis.com/auth/youtube.force-ssl',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'openid',
+  'profile'
 ];
 
 // Storage keys
@@ -279,10 +282,13 @@ export const refreshYouTubeToken = async (): Promise<boolean> => {
   const refreshToken = tokens?.refreshToken;
   
   if (!refreshToken) {
+    console.log('No refresh token available for YouTube');
     return false;
   }
   
   try {
+    console.log('Attempting to refresh YouTube token...');
+    
     const response = await fetch(YOUTUBE_TOKEN_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -297,10 +303,24 @@ export const refreshYouTubeToken = async (): Promise<boolean> => {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to refresh token');
+      const errorText = await response.text();
+      console.error('YouTube token refresh failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      
+      // If refresh token is invalid, clear all auth data
+      if (response.status === 400 || response.status === 401) {
+        console.log('Refresh token is invalid, clearing YouTube auth data');
+        clearYouTubeAuth();
+      }
+      
+      throw new Error(`Failed to refresh token: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log('YouTube token refreshed successfully');
     
     // Update tokens using TokenManager
     TokenManager.storeTokens('youtube', {
@@ -311,8 +331,10 @@ export const refreshYouTubeToken = async (): Promise<boolean> => {
     
     return true;
   } catch (error) {
-    console.error('Error refreshing token:', error);
-    clearYouTubeAuth(); // Clear invalid auth data
+    console.error('Error refreshing YouTube token:', error);
+    
+    // Clear invalid auth data on any error
+    clearYouTubeAuth();
     return false;
   }
 };
@@ -333,6 +355,19 @@ export const getYouTubeToken = async (): Promise<string | null> => {
     const tokens = await TokenManager.getTokens('youtube');
     
     if (tokens?.accessToken) {
+      // Check if token is expired and refresh if needed
+      if (tokens.expiresAt && Date.now() >= tokens.expiresAt) {
+        console.log("YouTube token expired, attempting to refresh...");
+        const refreshSuccess = await refreshYouTubeToken();
+        if (refreshSuccess) {
+          const refreshedTokens = await TokenManager.getTokens('youtube');
+          return refreshedTokens?.accessToken || null;
+        } else {
+          console.log("Failed to refresh YouTube token");
+          return null;
+        }
+      }
+      
       return tokens.accessToken;
     }
     

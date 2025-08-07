@@ -96,21 +96,41 @@ export const calculateTrackSimilarity = (originalTrack: SpotifyTrack, spotifyTra
 
 // Generate better search queries for YouTube to Spotify conversion
 export const generateSearchQueries = (track: SpotifyTrack) => {
-  const { artist, song } = parseYouTubeTitle(track.name, track.artists[0]);
+  // For YouTube to Spotify conversion, the track data is already processed
+  // so we can use the track.name and track.artists directly
+  const artist = track.artists[0];
+  const song = track.name;
+  
+  // Clean up the song title
+  const cleanSong = song
+    .replace(/^\d+\s*[-–]\s*/, '') // Remove "1 - " from start
+    .replace(/\s*\([^)]*\)/g, '') // Remove parentheses
+    .replace(/\s*\[[^\]]*\]/g, '') // Remove brackets
+    .trim();
+  
+  // Clean up the artist name
+  const cleanArtist = artist
+    .replace(/\s*\([^)]*\)/g, '') // Remove parentheses
+    .replace(/\s*\[[^\]]*\]/g, '') // Remove brackets
+    .trim();
   
   return [
+    `${cleanArtist} ${cleanSong}`,
+    `${cleanSong} ${cleanArtist}`,
+    cleanSong,
+    `${cleanArtist} - ${cleanSong}`,
+    `${cleanArtist} "${cleanSong}"`,
+    // Add more specific queries
+    `${cleanArtist} ${cleanSong} official`,
+    `${cleanArtist} ${cleanSong} audio`,
+    `${cleanSong} by ${cleanArtist}`,
+    // Try without featured artists
+    cleanSong.replace(/\s*ft\.\s*[^,\s]+/gi, '').trim(),
+    // Try just the main artist
+    `${cleanArtist} ${cleanSong.replace(/\s*ft\.\s*[^,\s]+/gi, '').trim()}`,
+    // Try with original data as fallback
     `${artist} ${song}`,
     `${song} ${artist}`,
-    song,
-    `${artist} - ${song}`,
-    `${artist} "${song}"`,
-    // Add more specific queries
-    `${artist} ${song} official`,
-    `${artist} ${song} audio`,
-    `${song} by ${artist}`,
-    // Try without featured artists
-    song.replace(/\s*ft\.\s*[^,\s]+/gi, '').trim(),
-    // Try just the main artist
-    `${artist} ${song.replace(/\s*ft\.\s*[^,\s]+/gi, '').trim()}`
+    song
   ].filter(query => query.length > 0);
 }; 

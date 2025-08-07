@@ -382,7 +382,8 @@ async function refreshAccessToken(refreshToken: string): Promise<SpotifyTokens |
           body: new URLSearchParams({
             grant_type: 'refresh_token',
         refresh_token: refreshToken,
-        client_id: SPOTIFY_CONFIG.CLIENT_ID
+        client_id: SPOTIFY_CONFIG.CLIENT_ID,
+        client_secret: SPOTIFY_CONFIG.CLIENT_SECRET
       }).toString()
     });
 

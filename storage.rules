@@ -77,7 +77,17 @@ service firebase.storage {
       allow write: if false; // Only allow admin writes through Firebase Console
     }
 
-    // Block access to all other paths
+    // Allow users to read and write their own profile images
+    match /profile-images/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow public read access to profile images (for display)
+    match /profile-images/{userId}/{allPaths=**} {
+      allow read: if true;
+    }
+    
+    // Deny all other access
     match /{allPaths=**} {
       allow read, write: if false;
     }

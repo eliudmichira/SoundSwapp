@@ -2,6 +2,7 @@ import { db as firebaseDb } from './firebase';
 import { doc, setDoc, getDoc, Firestore } from 'firebase/firestore';
 import { spotifyConfig } from './env';
 import { getSpotifyToken, getSpotifyTokenSync } from './spotifyAuth';
+import TokenManager from './tokenManager';
 
 // Type assertion for Firestore db
 const db = firebaseDb as Firestore;
@@ -233,17 +234,28 @@ class SpotifyApiClient {
       // Handle token expiration with refresh
       if (response.status === 401 && retryCount < this.MAX_RETRIES) {
         console.log(`[DEBUG] Access token expired (401), refreshing...`);
-        localStorage.removeItem(CACHE.KEYS.TOKEN_EXPIRES);
-        accessToken = (await getSpotifyToken()) || undefined;
         
-        if (accessToken) {
-          console.log(`[DEBUG] Got new token, retrying request...`);
-          // Update the authorization header with the new token
-          Object.assign(options.headers, { 'Authorization': `Bearer ${accessToken}` });
-          
-          // Retry the request with the new token
-          return this.request<T>(url, options, retryCount + 1);
+        try {
+          // Get current tokens from TokenManager
+          const currentTokens = await TokenManager.getTokens('spotify');
+          if (currentTokens?.refreshToken) {
+            // Try to refresh using TokenManager
+            const refreshedTokens = await TokenManager.refreshTokensPublic('spotify', currentTokens.refreshToken);
+            if (refreshedTokens) {
+              console.log(`[DEBUG] Token refresh successful, retrying request...`);
+              // Update the authorization header with the new token
+              Object.assign(options.headers, { 'Authorization': `Bearer ${refreshedTokens.accessToken}` });
+              
+              // Retry the request with the new token
+              return this.request<T>(url, options, retryCount + 1);
+            }
+          }
+        } catch (refreshError) {
+          console.error(`[DEBUG] Token refresh failed:`, refreshError);
         }
+        
+        // If refresh failed, throw a specific error for auth issues
+        throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
       }
       
       // Extract error details from response
@@ -892,10 +904,46 @@ export const getSpotifyPlaylists = async (accessToken: string): Promise<SpotifyP
     });
 
     if (!response.ok) {
-      if (response.status === 403) {
+      if (response.status === 401) {
+        console.log('Spotify token expired in getSpotifyPlaylists, attempting refresh...');
+        
+        // Try to refresh the token
+        const tokens = await TokenManager.getTokens('spotify');
+        if (tokens) {
+          const refreshedTokens = await TokenManager.refreshTokensPublic('spotify', tokens.refreshToken);
+          if (refreshedTokens) {
+            // Retry with refreshed token
+            const retryResponse = await fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
+              headers: {
+                'Authorization': `Bearer ${refreshedTokens.accessToken}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (!retryResponse.ok) {
+              if (retryResponse.status === 401) {
+                // Refresh failed, clear tokens
+                await TokenManager.removeTokens('spotify');
+                throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
+              } else if (retryResponse.status === 403) {
+                throw new Error('You do not have permission to access Spotify playlists. Please check your account settings and try reconnecting.');
+              } else {
+                throw new Error(`Failed to fetch playlists: ${retryResponse.status} ${retryResponse.statusText}`);
+              }
+            }
+            
+            const data = await retryResponse.json();
+            return data.items || [];
+          } else {
+            // Refresh failed, clear tokens
+            await TokenManager.removeTokens('spotify');
+            throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
+          }
+        } else {
+          throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
+        }
+      } else if (response.status === 403) {
         throw new Error('You do not have permission to access Spotify playlists. Please check your account settings and try reconnecting.');
-      } else if (response.status === 401) {
-        throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
       } else {
         throw new Error(`Failed to fetch playlists: ${response.status} ${response.statusText}`);
       }
