@@ -362,3 +362,134 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
     </AnimatePresence>
   );
 }; 
+
+export const PremiumPage: React.FC<{ onShowToast?: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void }> = ({ onShowToast }) => {
+  const { user } = useAuth();
+  const [plans, setPlans] = useState<PaymentPlan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<string>('premium-monthly');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const availablePlans = await paymentService.getPaymentPlans();
+        setPlans(availablePlans);
+        if (user?.uid) {
+          const details = await paymentService.getSubscriptionDetails(user.uid);
+          setSubscriptionDetails(details);
+        }
+      } catch (e) {
+        console.error('PremiumPage load error:', e);
+        onShowToast?.('error', 'Failed to load premium data');
+      }
+    };
+    load();
+  }, [user?.uid, onShowToast]);
+
+  const handleUpgrade = async () => {
+    if (!user?.uid) return;
+    setIsProcessing(true);
+    try {
+      const sessionId = await paymentService.createCheckoutSession(selectedPlan, user.uid);
+      await paymentService.redirectToCheckout(sessionId);
+    } catch (e) {
+      console.error('upgrade error:', e);
+      onShowToast?.('error', 'Failed to start checkout');
+    } finally { setIsProcessing(false); }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!user?.uid) return;
+    setIsProcessing(true);
+    try {
+      await paymentService.cancelSubscription(user.uid);
+      onShowToast?.('success', 'Subscription canceled');
+      window.history.back();
+    } catch (e) {
+      console.error('cancel error:', e);
+      onShowToast?.('error', 'Failed to cancel subscription');
+    } finally { setIsProcessing(false); }
+  };
+
+  const handleReactivateSubscription = async () => {
+    if (!user?.uid) return;
+    setIsProcessing(true);
+    try {
+      await paymentService.reactivateSubscription(user.uid);
+      onShowToast?.('success', 'Subscription reactivated');
+    } catch (e) {
+      console.error('reactivate error:', e);
+      onShowToast?.('error', 'Failed to reactivate');
+    } finally { setIsProcessing(false); }
+  };
+
+  const selectedPlanData = plans.find(p => p.id === selectedPlan);
+
+  return (
+    <div className="min-h-screen px-4 sm:px-6 py-6 space-y-8">
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => window.history.back()} aria-label="Go back" className="p-2 rounded-full hover:bg-accent">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <h1 className="text-2xl font-bold flex items-center"><Crown className="w-6 h-6 mr-2 text-yellow-500"/>Premium</h1>
+        </div>
+        {subscriptionDetails?.isPremium ? (
+          <button onClick={handleCancelSubscription} disabled={isProcessing} className="bg-red-500 text-white py-2 px-4 rounded-lg font-medium disabled:opacity-50">{isProcessing ? 'Processing…' : 'Cancel'}</button>
+        ) : (
+          <button onClick={handleUpgrade} disabled={isProcessing||isLoading} className="bg-gradient-to-r from-blue-500 to-purple-500 text-white py-2 px-4 rounded-lg font-medium disabled:opacity-50">{isProcessing ? 'Processing…' : 'Upgrade'}</button>
+        )}
+      </header>
+
+      {subscriptionDetails && (
+        <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+          <h3 className="font-semibold mb-2">Current Subscription</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div><span className="text-muted-foreground">Plan:</span><span className="ml-2 font-medium">{subscriptionDetails.planName}</span></div>
+            <div><span className="text-muted-foreground">Status:</span><span className={`ml-2 font-medium ${subscriptionDetails.isPremium ? 'text-green-600' : 'text-red-600'}`}>{subscriptionDetails.status}</span></div>
+            {subscriptionDetails.nextBillingDate && (<div><span className="text-muted-foreground">Next billing:</span><span className="ml-2 font-medium">{new Date(subscriptionDetails.nextBillingDate).toLocaleDateString()}</span></div>)}
+          </div>
+          {subscriptionDetails.cancelAtPeriodEnd && (
+            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+              Your subscription will end on {new Date(subscriptionDetails.nextBillingDate).toLocaleDateString()}
+              <button onClick={handleReactivateSubscription} className="ml-2 text-blue-600 hover:text-blue-800 font-medium">Reactivate</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Choose Your Plan</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {plans.map((plan) => (
+            <button key={plan.id} onClick={() => setSelectedPlan(plan.id)} className={`text-left p-6 rounded-xl border-2 transition-all ${selectedPlan===plan.id ? 'border-blue-500 bg-blue-50' : 'border-border hover:border-gray-300'}`}>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-semibold">{plan.name}</h4>
+                <div className="text-right">
+                  <div className="text-2xl font-bold">${plan.price}</div>
+                  <div className="text-sm text-muted-foreground">per {plan.interval}</div>
+                </div>
+              </div>
+              <div className="space-y-2 text-sm">
+                {plan.features.map((feature, i) => (
+                  <div key={i} className="flex items-center"><Check className="w-4 h-4 text-green-500 mr-2"/><span>{feature}</span></div>
+                ))}
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Premium Features</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200"><div className="flex items-center mb-2"><Zap className="w-5 h-5 mr-2"/><span className="font-semibold">Unlimited Conversions</span></div><p className="text-sm text-muted-foreground">Convert as many playlists as you want</p></div>
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200"><div className="flex items-center mb-2"><Music className="w-5 h-5 mr-2"/><span className="font-semibold">Advanced Matching</span></div><p className="text-sm text-muted-foreground">Better track matching algorithms</p></div>
+          <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200"><div className="flex items-center mb-2"><Shield className="w-5 h-5 mr-2"/><span className="font-semibold">Priority Support</span></div><p className="text-sm text-muted-foreground">Get help faster with priority support</p></div>
+        </div>
+      </section>
+    </div>
+  );
+}; 

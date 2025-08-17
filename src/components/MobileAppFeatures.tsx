@@ -285,7 +285,7 @@ export const MobileAppFeatures: React.FC<MobileAppFeaturesProps> = ({
               </motion.a>
               
               <motion.a
-                href="https://apps.apple.com/app/soundswapp/id123456789"
+                href="#" // TODO: Replace with actual App Store URL when app is published
                 target="_blank"
                 rel="noopener noreferrer"
                 whileHover={{ scale: 1.05 }}

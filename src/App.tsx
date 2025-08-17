@@ -1,5 +1,4 @@
-// The new JSX transform in React 17+ doesn't require this import for just JSX
-// import React from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; // Removed useNavigate
 import { ThemeProvider } from './lib/ThemeContext';
 import { AuthProvider } from './lib/AuthContext'; // Removed useAuth, as RedirectHandler is removed
@@ -14,10 +13,10 @@ import MobileLogin from './components/MobileLogin';
 import { PrivateRoute } from './components/PrivateRoute';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsOfService from './components/TermsOfService';
-import PreloaderDemo from './components/PreloaderDemo';
+
 import AppInitializer from './components/AppInitializer';
 import TokenManagerInitializer from './components/TokenManagerInitializer';
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext, useMemo } from 'react';
 // Import our new useMobileDetection hook
 import useMobileDetection from './hooks/useMobileDetection';
 import { ParticleField } from './components/ui/ParticleField';
@@ -25,9 +24,15 @@ import { ShareModal } from './components/ui/ShareModal';
 import { useShareModal } from './hooks/useShareModal';
 import { ConversionInsights } from './components/ConversionInsights';
 import { MobileContext } from './context/MobileContext';
-import { MobileFailedTracksDetails } from './components/visualization/MobileFailedTracksDetails';
 import networkResilience from './services/networkResilience';
 // Removed Firebase auth and getAuthRedirectResult imports, as RedirectHandler is removed
+import { SettingsPage, PreferencesPage, ThemeSettingsPage, NotificationSettingsPage, PrivacySettingsPage, DataExportPage } from './components/modals/SettingsModal';
+import { PremiumPage } from './components/modals/PremiumModal';
+import { HelpPage } from './components/modals/HelpModal';
+import { EditProfilePage } from './components/modals/EditProfileModal';
+import { EnhancedFailedTracksModal } from './components/EnhancedFailedTracksModal';
+import { MobileFailedTracksDetails } from './components/visualization/MobileFailedTracksDetails';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Declare global window interface for mobile debugging
 declare global {
@@ -149,11 +154,25 @@ function App() {
     }
   }, [isMobile, isPortrait, isIOS, isAndroid]);
   
-  // Mobile context value 
-  const mobileContextValue = {
+  // Fix the MobileContext value to include all required properties
+  const mobileContextValue = useMemo(() => ({
+    isMobile,
     isPortrait,
-    isMobile
-  };
+    isLandscape: !isPortrait,
+    isIOS,
+    isAndroid,
+    isTablet: isMobile && !isPortrait,
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio || 1
+    },
+    isSmallScreen: window.innerWidth < 640,
+    isMediumScreen: window.innerWidth >= 640 && window.innerWidth < 1024,
+    isLargeScreen: window.innerWidth >= 1024,
+    isMobileOrTablet: isMobile,
+    isStandalone: window.matchMedia('(display-mode: standalone)').matches
+  }), [isMobile, isPortrait, isIOS, isAndroid]);
 
   // Debug which layout is being rendered
   const shouldRenderMobile = isMobile || forceMobile;
@@ -182,6 +201,7 @@ function App() {
   if (shouldRenderMobile) {
     console.log('App.tsx: Rendering MOBILE layout');
     return (
+      <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
           <UserProvider>
@@ -204,10 +224,18 @@ function App() {
                         <Route path="/youtube-callback" element={<YouTubeCallback />} />
                         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                         <Route path="/terms-of-service" element={<TermsOfService />} />
-                        <Route path="/preloader-demo" element={<PreloaderDemo />} />
                         <Route path="/insights/:id" element={<PrivateRoute element={<ConversionInsights />} />} />
+                        <Route path="/preferences" element={<PrivateRoute element={<PreferencesPage />} />} />
+                        <Route path="/preferences/theme" element={<PrivateRoute element={<ThemeSettingsPage />} />} />
+                        <Route path="/preferences/notifications" element={<PrivateRoute element={<NotificationSettingsPage />} />} />
+                        <Route path="/preferences/privacy" element={<PrivateRoute element={<PrivacySettingsPage />} />} />
+                        <Route path="/preferences/export" element={<PrivateRoute element={<DataExportPage />} />} />
+                        <Route path="/settings" element={<Navigate to="/preferences" replace />} />
+                        <Route path="/premium" element={<PrivateRoute element={<PremiumPage />} />} />
+                        <Route path="/help" element={<PrivateRoute element={<HelpPage />} />} />
+                        <Route path="/profile/edit" element={<PrivateRoute element={<EditProfilePage />} />} />
                         <Route path="/failed-tracks" element={<PrivateRoute element={<MobileFailedTracksDetails />} />} />
-                        <Route path="*" element={<Navigate to="/" />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
                       </Routes>
                       <ShareModal
                         isOpen={isOpen}
@@ -224,12 +252,14 @@ function App() {
           </UserProvider>
         </AuthProvider>
       </ThemeProvider>
+      </ErrorBoundary>
     );
   }
 
   // Render desktop layout for desktop screens
   console.log('App.tsx: Rendering DESKTOP layout');
   return (
+    <ErrorBoundary>
     <ThemeProvider>
       <AuthProvider>
         <UserProvider>
@@ -252,10 +282,17 @@ function App() {
                       <Route path="/youtube-callback" element={<YouTubeCallback />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-of-service" element={<TermsOfService />} />
-                      <Route path="/preloader-demo" element={<PreloaderDemo />} />
                       <Route path="/insights/:id" element={<PrivateRoute element={<ConversionInsights />} />} />
-                      <Route path="/failed-tracks/:id" element={<PrivateRoute element={<MobileFailedTracksDetails />} />} />
-                      <Route path="*" element={<Navigate to="/" />} />
+                      <Route path="/preferences" element={<PrivateRoute element={<PreferencesPage />} />} />
+                      <Route path="/preferences/theme" element={<PrivateRoute element={<ThemeSettingsPage />} />} />
+                      <Route path="/preferences/notifications" element={<PrivateRoute element={<NotificationSettingsPage />} />} />
+                      <Route path="/preferences/privacy" element={<PrivateRoute element={<PrivacySettingsPage />} />} />
+                      <Route path="/preferences/export" element={<PrivateRoute element={<DataExportPage />} />} />
+                      <Route path="/settings" element={<Navigate to="/preferences" replace />} />
+                      <Route path="/premium" element={<PrivateRoute element={<PremiumPage />} />} />
+                      <Route path="/help" element={<PrivateRoute element={<HelpPage />} />} />
+                      <Route path="/profile/edit" element={<PrivateRoute element={<EditProfilePage />} />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                     <ShareModal
                       isOpen={isOpen}
@@ -272,6 +309,7 @@ function App() {
         </UserProvider>
       </AuthProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

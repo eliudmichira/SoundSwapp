@@ -1,5 +1,0 @@
-[33m7f7096e[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m fix: Remove hardcoded API secrets for security
-[33m407922a[m feat: Complete authentication system with real profile fetching
-[33m0e93cd4[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Update README.md
-[33m8b925e2[m chore: update gitignore and remove sensitive files
-[33m73f9893[m fix: improve platform selection UI visibility and navigation

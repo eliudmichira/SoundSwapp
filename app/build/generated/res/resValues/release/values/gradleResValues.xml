@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Automatically generated file. DO NOT MODIFY -->
+
+    <!-- Value from default config. -->
+    <bool name="enableNotification">true</bool>
+    <!-- Value from default config. -->
+    <bool name="enableSiteSettingsShortcut">true</bool>
+    <!-- Value from default config. -->
+    <color name="backgroundColor">#111827</color>
+    <!-- Value from default config. -->
+    <color name="colorPrimary">#7CC0FF</color>
+    <!-- Value from default config. -->
+    <color name="colorPrimaryDark">#000000</color>
+    <!-- Value from default config. -->
+    <color name="navigationColor">#000000</color>
+    <!-- Value from default config. -->
+    <color name="navigationColorDark">#000000</color>
+    <!-- Value from default config. -->
+    <color name="navigationDividerColor">#000000</color>
+    <!-- Value from default config. -->
+    <color name="navigationDividerColorDark">#000000</color>
+    <!-- Value from default config. -->
+    <integer name="splashScreenFadeOutDuration">300</integer>
+    <!-- Value from default config. -->
+    <string name="appName" translatable="false">SoundSwapp</string>
+    <!-- Value from default config. -->
+    <string name="fallbackType" translatable="false">customtabs</string>
+    <!-- Value from default config. -->
+    <string name="fullScopeUrl" translatable="false">https://soundswapp.web.app/</string>
+    <!-- Value from default config. -->
+    <string name="generatorApp" translatable="false">bubblewrap-cli</string>
+    <!-- Value from default config. -->
+    <string name="hostName" translatable="false">soundswapp.web.app</string>
+    <!-- Value from default config. -->
+    <string name="launchUrl" translatable="false">https://soundswapp.web.app/</string>
+    <!-- Value from default config. -->
+    <string name="launcherName" translatable="false">SoundSwapp</string>
+    <!-- Value from default config. -->
+    <string name="orientation" translatable="false">portrait-primary</string>
+    <!-- Value from default config. -->
+    <string name="providerAuthority" translatable="false">com.soundswapp.app.fileprovider</string>
+    <!-- Value from default config. -->
+    <string name="shareTarget" translatable="false">{\"action\":\"https://soundswapp.web.app/share\",\"method\":\"GET\",\"params\":{\"title\":\"title\",\"text\":\"text\",\"url\":\"url\"}}</string>
+    <!-- Value from default config. -->
+    <string name="shortcut_name_0" translatable="false">Convert Spotify to YouTube</string>
+    <!-- Value from default config. -->
+    <string name="shortcut_name_1" translatable="false">Convert YouTube to Spotify</string>
+    <!-- Value from default config. -->
+    <string name="shortcut_name_2" translatable="false">Conversion History</string>
+    <!-- Value from default config. -->
+    <string name="shortcut_short_name_0" translatable="false">Spotify → YouTube</string>
+    <!-- Value from default config. -->
+    <string name="shortcut_short_name_1" translatable="false">YouTube → Spotify</string>
+    <!-- Value from default config. -->
+    <string name="shortcut_short_name_2" translatable="false">History</string>
+    <!-- Value from default config. -->
+    <string name="webManifestUrl" translatable="false">https://soundswapp.web.app/manifest.json</string>
+
+</resources>

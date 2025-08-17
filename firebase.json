@@ -17,6 +17,26 @@
     ],
     "rewrites": [
       {
+        "source": "/manifest.json",
+        "destination": "/manifest.json"
+      },
+      {
+        "source": "/sw.js",
+        "destination": "/sw.js"
+      },
+      {
+        "source": "/favicon.svg",
+        "destination": "/favicon.svg"
+      },
+      {
+        "source": "/images/**",
+        "destination": "/images/**"
+      },
+      {
+        "source": "/assets/**",
+        "destination": "/assets/**"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -27,7 +47,55 @@
         "headers": [
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self' https:; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https:; script-src-elem 'self' 'unsafe-eval' 'unsafe-inline' blob: https:; connect-src 'self' https: wss:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https: data:; frame-src 'self' https:; worker-src 'self' blob:;"
+            "value": "default-src 'self' https:; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https: https://accounts.spotify.com https://accounts.scdn.co https://accounts.google.com https://firebaseapp.com; script-src-elem 'self' 'unsafe-eval' 'unsafe-inline' blob: https: https://accounts.spotify.com https://accounts.scdn.co https://accounts.google.com; connect-src 'self' https: wss: https://accounts.spotify.com https://accounts.scdn.co https://accounts.google.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https: data:; frame-src 'self' https: https://accounts.spotify.com https://accounts.google.com; worker-src 'self' blob:; object-src 'none';"
+          },
+          {
+            "key": "Cross-Origin-Opener-Policy",
+            "value": "same-origin-allow-popups"
+          },
+          {
+            "key": "Cross-Origin-Embedder-Policy",
+            "value": "unsafe-none"
+          }
+        ]
+      },
+      {
+        "source": "/manifest.json",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "**/*.json",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      {
+        "source": "**/*.js",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/javascript"
+          }
+        ]
+      },
+      {
+        "source": "**/*.css",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "text/css"
           }
         ]
       }

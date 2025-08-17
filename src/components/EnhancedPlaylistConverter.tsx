@@ -5,7 +5,7 @@ import { useTheme } from '../lib/ThemeContext';
 import { useAuth } from '../lib/AuthContext';
 import { useConversion, type FailedTrack } from '../lib/ConversionContext';
 import { ConversionStatus } from '../types/conversion';
-import { getYouTubeAuthUrl } from '../lib/youtubeAuth';
+import { getYouTubeAuthUrl, getYouTubeToken } from '../lib/youtubeAuth';
 import { initSpotifyAuth } from '../lib/spotifyAuth';
 import { cn } from '../lib/utils';
 import { GlassmorphicCard } from './ui/GlassmorphicCard';
@@ -25,6 +25,8 @@ import LightingText from './ui/LightingText'; // Added import
 import SpotlightCard from './ui/SpotlightCard'; // Added import
 import { EnhancedFailedTracksModal } from './EnhancedFailedTracksModal';
 import SoundSwappLogo from '../assets/SoundSwappLogo';
+import { addToYouTubePlaylist } from '../lib/youtubeApi';
+import { addTracksToSpotifyPlaylist } from '../lib/spotifyApi';
 
 // Import Lucide React icons
 import { 
@@ -877,7 +879,7 @@ const ModernPlaylistConverter: React.FC = () => {
   }, [addToast]);
   
   // YouTube playlists data handling
-  const selectYouTubePlaylist = useCallback((id: string) => {
+  const selectYouTubePlaylist = useCallback(async (id: string) => {
     dispatch({ type: 'SET_STATUS', payload: ConversionStatus.LOADING_TRACKS });
     setIsProcessing(true);
     
@@ -885,7 +887,7 @@ const ModernPlaylistConverter: React.FC = () => {
     dispatch({ type: 'SELECT_PLAYLIST', payload: id });
     
     // Call the YouTube API to get tracks from this playlist
-    const accessToken = localStorage.getItem('soundswapp_youtube_access_token');
+    const accessToken = await getYouTubeToken();
     
     if (!accessToken) {
       showToast('error', 'YouTube authentication token not found. Please reconnect.');
@@ -1450,44 +1452,59 @@ const ModernPlaylistConverter: React.FC = () => {
               userName={spotifyUserProfile?.displayName || user?.displayName || undefined}
               userPhoto={spotifyUserProfile?.imageUrl || user?.photoURL || undefined}
               userMeta={hasSpotifyAuth ? {
+                // Real basic profile data
                 displayName: spotifyUserProfile?.displayName,
                 imageUrl: spotifyUserProfile?.imageUrl,
                 email: spotifyUserProfile?.email,
-                plan: 'premium',
-                country: 'US',
-                product: 'premium',
-                explicit_content: false,
-                totalTracks: 2847,
-                lastActive: '2 hours ago',
-                subscription: 'Premium',
-                accountCountry: 'US',
-                explicitContentFilter: 'Disabled',
-                publicPlaylists: 12,
-                privatePlaylists: 8,
-                collaborativePlaylists: 3,
-                followedPlaylists: 45,
-                recentlyPlayed: 'Last 30 days',
-                topGenres: ['Pop', 'Hip-Hop', 'Electronic'],
-                listeningTime: '2.5 hours/day',
-                favoriteArtists: 23,
-                savedAlbums: 67,
-                savedTracks: 2847,
-                monthlyListeners: 890,
-                accountType: 'Individual',
-                familyPlanMembers: null,
-                studentVerification: false,
-                deviceLimit: 1,
-                offlineDownloads: 'Available',
-                audioQuality: 'High (320kbps)',
-                crossfade: '12 seconds',
-                equalizer: 'Custom',
-                socialFeatures: 'Enabled',
-                dataSaver: false,
-                privateSession: false,
-                lastSync: '2 hours ago',
-                nextBilling: '9/5/2025',
-                paymentMethod: 'Credit Card',
-                autoRenew: true
+                country: spotifyUserProfile?.country || 'Unknown',
+                product: spotifyUserProfile?.product || 'free',
+                
+                // Real playlist data
+                publicPlaylists: spotifyUserProfile?.publicPlaylists || 0,
+                privatePlaylists: spotifyUserProfile?.privatePlaylists || 0,
+                collaborativePlaylists: spotifyUserProfile?.collaborativePlaylists || 0,
+                totalPlaylists: spotifyUserProfile?.totalPlaylists || 0,
+                
+                // Real saved content
+                savedTracks: spotifyUserProfile?.savedTracks || 0,
+                savedAlbums: spotifyUserProfile?.savedAlbums || 0,
+                followingArtists: spotifyUserProfile?.followingArtists || 0,
+                
+                // Real account details
+                accountType: spotifyUserProfile?.accountType || 'Free',
+                explicitContentFilter: spotifyUserProfile?.explicitContentFilter || 'Unknown',
+                audioQuality: spotifyUserProfile?.audioQuality || 'Standard',
+                offlineDownloads: spotifyUserProfile?.offlineDownloads || 'Not Available',
+                deviceLimit: spotifyUserProfile?.deviceLimit || 1,
+                
+                // Real derived data
+                topGenres: spotifyUserProfile?.topGenres || ['Music Lover'],
+                
+                // Data not available through API (marked appropriately)
+                lastActive: spotifyUserProfile?.lastActive || 'Data not available',
+                listeningTime: spotifyUserProfile?.listeningTime || 'Data not available',
+                monthlyListeners: spotifyUserProfile?.monthlyListeners || 'Not applicable',
+                nextBilling: spotifyUserProfile?.nextBilling || 'Not available',
+                crossfade: spotifyUserProfile?.crossfade || 'Not available',
+                equalizer: spotifyUserProfile?.equalizer || 'Not available',
+                
+                // Legacy fields for compatibility
+                plan: spotifyUserProfile?.product || 'free',
+                subscription: spotifyUserProfile?.accountType || 'Free',
+                accountCountry: spotifyUserProfile?.country || 'Unknown',
+                totalTracks: spotifyUserProfile?.savedTracks || 0, // Use saved tracks as total
+                followedPlaylists: spotifyUserProfile?.followingArtists || 0, // Use following artists
+                favoriteArtists: spotifyUserProfile?.followingArtists || 0,
+                recentlyPlayed: 'Last 30 days', // Standard value
+                socialFeatures: 'Enabled', // Standard for most accounts
+                dataSaver: false, // Default
+                privateSession: false, // Default
+                lastSync: spotifyUserProfile?.lastActive || 'Unknown',
+                paymentMethod: 'Not available',
+                autoRenew: true, // Default assumption
+                familyPlanMembers: null, // Not available via API
+                studentVerification: false, // Default
+                explicit_content: spotifyUserProfile?.explicitContentFilter === 'Enabled'
               } : undefined}
             />
             <EnhancedConnectionCard
@@ -1506,7 +1523,7 @@ const ModernPlaylistConverter: React.FC = () => {
                 email: youtubeUserProfile?.email,
                 plan: 'youtube',
                 lastSignInTime: new Date().toISOString(),
-                channelId: 'UC123456789',
+                // channelId: 'UC_REAL_CHANNEL_ID', // TODO: Replace with actual channel ID
                 subscriberCount: 1500,
                 videoCount: 45,
                 playlistCount: 12,
@@ -1750,7 +1767,7 @@ const ModernPlaylistConverter: React.FC = () => {
                                 aria-label="Select YouTube as source platform"
                               >
                                 <img
-                                  src={sourcePlatform === 'youtube' ? "/images/yt_logo_rgb_dark.png" : (isDark ? "/images/yt_logo_mono_dark.png" : "/images/yt_logo_mono_light.png")}
+                                  src={isDark ? "/images/yt_logo_rgb_dark.png" : "/images/yt_logo_rgb_light.png"}
                                   alt="YouTube"
                                   style={{ 
                                     height: 24, 
@@ -1761,7 +1778,7 @@ const ModernPlaylistConverter: React.FC = () => {
                                   }}
                                   className={cn(
                                     "h-6 w-auto",
-                                    sourcePlatform === 'youtube' ? "" : "opacity-70 grayscale"
+                                    sourcePlatform === 'youtube' ? "" : "opacity-70"
                                   )}
                                 />
                                 {/* YouTube name removed */}
@@ -1822,12 +1839,12 @@ const ModernPlaylistConverter: React.FC = () => {
                                 aria-label="Select YouTube as destination platform"
                               >
                                 <img
-                                  src={destinationPlatform === 'youtube' ? "/images/yt_logo_rgb_dark.png" : (isDark ? "/images/yt_logo_mono_dark.png" : "/images/yt_logo_mono_light.png")}
+                                  src={isDark ? "/images/yt_logo_rgb_dark.png" : "/images/yt_logo_rgb_light.png"}
                                   alt="YouTube"
                                   style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
                                   className={cn(
                                     "h-6 w-auto",
-                                    destinationPlatform === 'youtube' ? "" : "opacity-70 grayscale"
+                                    destinationPlatform === 'youtube' ? "" : "opacity-70"
                                   )}
                                 />
                                 {/* YouTube name removed */}
@@ -1939,7 +1956,22 @@ const ModernPlaylistConverter: React.FC = () => {
                               {/* Your Playlists button with dropdown */}
                               <div className="w-full my-2">
                                 <button
-                                  onClick={() => setShowPlaylistSuggestions(true)}
+                                  onClick={async () => {
+                                    console.log('[Desktop] Spotify playlists button clicked:', {
+                                      hasPlaylists: !!conversionState.spotifyPlaylists,
+                                      playlistCount: conversionState.spotifyPlaylists?.length || 0,
+                                      sourceAuth,
+                                      hasSpotifyAuth,
+                                      sourcePlatform
+                                    });
+                                    
+                                    if (!conversionState.spotifyPlaylists || conversionState.spotifyPlaylists.length === 0) {
+                                      // Fetch playlists if not already loaded
+                                      console.log('[Desktop] Fetching Spotify playlists...');
+                                      await fetchSpotifyPlaylists();
+                                    }
+                                    setShowPlaylistSuggestions(true);
+                                  }}
                                   className={cn(
                                     "w-full px-4 py-3 rounded-lg flex items-center justify-between",
                                     "bg-white dark:bg-surface-card-dark",
@@ -1949,13 +1981,19 @@ const ModernPlaylistConverter: React.FC = () => {
                                   )}
                                 >
                                   <div className="flex items-center gap-2">
-                                    <img
-                                      src="/images/Spotify_Primary_Logo_RGB_Green.png"
-                                      alt="Spotify"
-                                      style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
-                                      className="h-6 w-auto"
-                                    />
-                                    <span className="text-gray-900 dark:text-gray-900">Your Spotify Playlists</span>
+                                    {conversionState.isLoading ? (
+                                      <Loader2 className="h-6 w-6 animate-spin text-green-600" />
+                                    ) : (
+                                      <img
+                                        src="/images/Spotify_Primary_Logo_RGB_Green.png"
+                                        alt="Spotify"
+                                        style={{ height: 24, width: 'auto', objectFit: 'contain', display: 'block' }}
+                                        className="h-6 w-auto"
+                                      />
+                                    )}
+                                    <span className="text-gray-900 dark:text-gray-900">
+                                      {conversionState.isLoading ? 'Loading Playlists...' : 'Your Spotify Playlists'}
+                                    </span>
                                   </div>
                                   <ChevronRight className="h-5 w-5 text-gray-400" />
                                 </button>
@@ -1970,7 +2008,7 @@ const ModernPlaylistConverter: React.FC = () => {
                                 
                                 {/* Playlist suggestions dropdown */}
                                 <AnimatePresence>
-                                  {showPlaylistSuggestions && sourceAuth && conversionState.spotifyPlaylists && conversionState.spotifyPlaylists.length > 0 && (
+                                  {showPlaylistSuggestions && conversionState.spotifyPlaylists && conversionState.spotifyPlaylists.length > 0 && (
                                     <motion.div
                                       id="playlist-dropdown"
                                       initial={{ opacity: 0, height: 0 }}
@@ -2047,7 +2085,16 @@ const ModernPlaylistConverter: React.FC = () => {
                                         isDark ? "bg-gray-800 border-gray-700 text-gray-300" : "bg-white border-gray-200 text-gray-600"
                                       )}
                                     >
-                                      <p>No Spotify playlists found in your account.</p>
+                                      {conversionState.error ? (
+                                        <div>
+                                          <p className="text-red-500 mb-2">Error loading playlists:</p>
+                                          <p className="text-sm">{conversionState.error}</p>
+                                        </div>
+                                      ) : conversionState.isLoading ? (
+                                        <p>Loading your playlists...</p>
+                                      ) : (
+                                        <p>No Spotify playlists found in your account.</p>
+                                      )}
                                     </motion.div>
                                   )}
 
@@ -2762,19 +2809,19 @@ const ModernPlaylistConverter: React.FC = () => {
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className={cn(
-                                        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-xs font-medium transition-colors",
-                                        "bg-[var(--youtube-bg)] hover:bg-[var(--youtube-bg-hover)]",
-                                        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--youtube-bg)] ring-offset-surface-card"
+                                        "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-white text-xs font-medium transition-colors",
+                                        "bg-black hover:bg-gray-900",
+                                        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ring-offset-surface-card"
                                       )}
                                       aria-label="Open YouTube playlist in new tab"
                                     >
                                       <img
-                                        src="/images/yt_logo_rgb_dark.png"
+                                        src={isDark ? "/images/yt_logo_rgb_dark.png" : "/images/yt_logo_rgb_light.png"}
                                         alt="YouTube"
                                         style={{ height: 18, width: 'auto', objectFit: 'contain', display: 'block' }}
                                         className="h-5 w-auto"
                                       />
-                                      <span className="text-[var(--youtube-text-button)]">View</span>
+                                      <span>Watch on YouTube</span>
                                     </a>
                                   )}
                                   {conv.spotifyPlaylistUrl && (
@@ -3135,7 +3182,7 @@ const ModernPlaylistConverter: React.FC = () => {
                 <Github size={24} />
                 <span className="sr-only">GitHub</span>
               </a>
-              <a href="mailto:support@example.com" className="text-content-tertiary hover:text-brand-primary transition-colors">
+              <a href="mailto:support@soundswapp.app" className="text-content-tertiary hover:text-brand-primary transition-colors">
                 <Mail size={24} />
                 <span className="sr-only">Email Support</span>
               </a>
@@ -3182,10 +3229,7 @@ const ModernPlaylistConverter: React.FC = () => {
           onClose={() => setSelectedFailedTracks(null)}
           onAddToYouTube={async (videoId, trackIndex) => {
             try {
-              // Import YouTube API function
-              const { addToYouTubePlaylist } = await import('../lib/youtubeApi');
-              
-              // Get the current YouTube playlist ID from state
+              // Use statically imported function
               const youtubePlaylistId = conversionState.youtubePlaylistId;
               
               if (!youtubePlaylistId) {
@@ -3226,10 +3270,7 @@ const ModernPlaylistConverter: React.FC = () => {
           }}
           onAddToSpotify={async (trackUri, trackIndex) => {
             try {
-              // Import Spotify API function
-              const { addTracksToSpotifyPlaylist } = await import('../lib/spotifyApi');
-              
-              // Get the current Spotify playlist ID from state
+              // Use statically imported function
               const spotifyPlaylistId = conversionState.spotifyPlaylistId;
               
               if (!spotifyPlaylistId) {

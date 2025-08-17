@@ -138,7 +138,13 @@ class NetworkResilienceService {
           message.includes('ERR_CONNECTION_ABORTED') ||
           message.includes('ERR_NETWORK_CHANGED') ||
           message.includes('firestore.googleapis.com') ||
-          message.includes('google-analytics.com')) {
+          message.includes('google-analytics.com') ||
+          message.includes('mp/collect?measurement_id=')) {
+        return;
+      }
+      
+      // Swallow noisy React element checks from third-party extensions
+      if (message.includes("Cannot read properties of undefined (reading 'isElement')")) {
         return;
       }
       
@@ -150,12 +156,33 @@ class NetworkResilienceService {
       
       // Suppress expected warnings
       if (message.includes('firestore.googleapis.com') ||
-          message.includes('google-analytics.com')) {
+          message.includes('google-analytics.com') ||
+          message.includes('mp/collect?measurement_id=')) {
         return;
       }
       
       originalConsoleWarn.apply(console, args);
     };
+
+    // Also attach a window-level error handler to prevent bubbling
+    window.addEventListener('error', (event) => {
+      const msg = String(event?.error?.message || event?.message || '');
+      if (msg.includes("Cannot read properties of undefined (reading 'isElement')")) {
+        event.preventDefault();
+      }
+      if (msg.includes('google-analytics.com') || msg.includes('mp/collect?measurement_id=')) {
+        event.preventDefault();
+      }
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = String((event as any)?.reason?.message || (event as any)?.reason || '');
+      if (reason.includes("Cannot read properties of undefined (reading 'isElement')") ||
+          reason.includes('google-analytics.com') ||
+          reason.includes('mp/collect?measurement_id=')) {
+        event.preventDefault();
+      }
+    });
   }
 
   /**

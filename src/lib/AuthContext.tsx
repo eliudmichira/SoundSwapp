@@ -1,901 +1,687 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  getAuth, 
-  onAuthStateChanged, 
   User as FirebaseUser,
-  setPersistence,
-  browserLocalPersistence,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  updateProfile,
-  signOut as firebaseSignOut
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  updateProfile
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from './firebase';
-import { signInWithGoogle as firebaseSignInWithGoogle } from './firebase';
-import TokenManager from './tokenManager';
-import { SimpleAuth } from './simpleAuth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db, googleProvider } from './firebase';
 
-// Constants for storage
-const AUTH_RECOVERY_KEY = 'auth_recovery_data';
-const YOUTUBE_AUTH_STATE_KEY = 'youtube_auth_state';
-const STORE_NAME = 'auth_store';
-
-// Helper function to save to IndexedDB
-const saveToIndexedDB = async (storeName: string, key: string, data: any) => {
-  // Simple implementation - in a real app, you'd want to handle errors better
-  return new Promise((resolve, reject) => {
-    try {
-      const request = indexedDB.open('app_db', 1);
-      
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName);
-        }
-      };
-      
-      request.onsuccess = () => {
-        const db = request.result;
-        const tx = db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-        store.put(data, key);
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = (e) => reject(e);
-      };
-      
-      request.onerror = (e) => reject(e);
-    } catch (e) {
-      reject(e);
-    }
-  });
-};
-
-// Helper function to read from IndexedDB
-const readFromIndexedDB = async (storeName: string, key: string) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const request = indexedDB.open('app_db', 1);
-      
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName);
-        }
-      };
-      
-      request.onsuccess = () => {
-        const db = request.result;
-        try {
-          const tx = db.transaction(storeName, 'readonly');
-          const store = tx.objectStore(storeName);
-          const getRequest = store.get(key);
-          
-          getRequest.onsuccess = () => resolve(getRequest.result);
-          getRequest.onerror = (e) => reject(e);
-        } catch (e) {
-          reject(e);
-        }
-      };
-      
-      request.onerror = (e) => reject(e);
-    } catch (e) {
-      reject(e);
-    }
-  });
-};
+interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL?: string;
+  isProvider: boolean;
+  phoneNumber?: string;
+  location?: string;
+  rating?: number;
+  completedTasks?: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 interface AuthContextType {
   user: FirebaseUser | null;
+  userProfile: UserProfile | null;
   loading: boolean;
+  isAuthenticated: boolean;
+  isProvider: boolean;
+  error: string | null;
+  
+  // Authentication functions
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, displayName: string, isProvider: boolean) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signOut: () => Promise<void>;
+  updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  
+  // Clear error
+  clearError: () => void;
+  
+  // Platform authentication properties
   hasSpotifyAuth: boolean;
   hasYouTubeAuth: boolean;
-  setHasSpotifyAuth: (value: boolean) => void;
-  setHasYouTubeAuth: (value: boolean) => void;
-  authRecoveryAttempted: boolean;
-  isAuthenticated: boolean;
-  // Authentication functions
-  signInWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
-  signIn: () => Promise<void>;
-  signOut: () => Promise<void>;
-  // Profile management
-  spotifyUserProfile: any;
-  youtubeUserProfile: any;
-  fetchSpotifyProfile: () => Promise<void>;
-  fetchYouTubeProfile: () => Promise<void>;
-  // Service connections
+  setHasSpotifyAuth: (hasAuth: boolean) => void;
+  setHasYouTubeAuth: (hasAuth: boolean) => void;
   disconnectFromSpotify: () => Promise<void>;
   disconnectFromYouTube: () => Promise<void>;
   isConnectingSpotify: boolean;
   isConnectingYouTube: boolean;
   spotifyError: string | null;
   youtubeError: string | null;
+  spotifyUserProfile: any | null;
+  youtubeUserProfile: any | null;
+  
+  // Platform profile fetching
+  fetchSpotifyProfile: () => Promise<void>;
+  fetchYouTubeProfile: () => Promise<void>;
   checkYouTubeAuth: () => Promise<boolean>;
-  // General error handling
-  error: string | null;
+  
+  // Generic sign in method
+  signIn: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Platform authentication state
   const [hasSpotifyAuth, setHasSpotifyAuth] = useState(false);
   const [hasYouTubeAuth, setHasYouTubeAuth] = useState(false);
-  const [authRecoveryAttempted, setAuthRecoveryAttempted] = useState(false);
-  const [spotifyUserProfile, setSpotifyUserProfile] = useState<any>(null);
-  const [youtubeUserProfile, setYoutubeUserProfile] = useState<any>(null);
   const [isConnectingSpotify, setIsConnectingSpotify] = useState(false);
   const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [spotifyUserProfile, setSpotifyUserProfile] = useState<any | null>(null);
+  const [youtubeUserProfile, setYoutubeUserProfile] = useState<any | null>(null);
 
-  // Save auth state for recovery
-  const saveAuthState = async (user: FirebaseUser | null) => {
-    if (user) {
-      const userData = {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        timestamp: Date.now()
+  // Fetch user profile from Firestore
+  const fetchUserProfile = async (uid: string): Promise<UserProfile | null> => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        return {
+          uid,
+          email: data.email,
+          displayName: data.displayName,
+          photoURL: data.photoURL,
+          isProvider: data.isProvider || false,
+          phoneNumber: data.phoneNumber,
+          location: data.location,
+          rating: data.rating,
+          completedTasks: data.completedTasks || 0,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error('Error fetching user profile:', err);
+      return null;
+    }
+  };
+
+  // Create or update user profile
+  const createUserProfile = async (user: FirebaseUser, isProvider: boolean = false): Promise<UserProfile> => {
+    const profile: UserProfile = {
+      uid: user.uid,
+      email: user.email || '',
+      displayName: user.displayName || '',
+      photoURL: user.photoURL || undefined,
+      isProvider,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    try {
+      await setDoc(doc(db, 'users', user.uid), profile);
+      return profile;
+    } catch (err) {
+      console.error('Error creating user profile:', err);
+      throw err;
+    }
+  };
+
+  // Update user profile
+  const updateUserProfile = async (updates: Partial<UserProfile>): Promise<void> => {
+    if (!user) throw new Error('No user logged in');
+
+    try {
+      const updatedProfile = {
+        ...userProfile,
+        ...updates,
+        updatedAt: new Date(),
       };
-      
-      // Save to localStorage as backup
-      localStorage.setItem(AUTH_RECOVERY_KEY, JSON.stringify(userData));
-      
-      // Save to IndexedDB
-      try {
-        await saveToIndexedDB(STORE_NAME, 'currentUser', userData);
-      } catch (error) {
-        console.error('IndexedDB save failed:', error);
-      }
-    }
-  };
 
-  // Implementation of signInWithEmail
-  const signInWithEmail = async (email: string, password: string, displayName?: string) => {
-    const auth = getAuth();
-    
-    try {
-      if (displayName) {
-        // This is a sign-up operation
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        // Update the user profile with the display name
-        await updateProfile(userCredential.user, { displayName });
-      } else {
-        // This is a sign-in operation
-        await signInWithEmailAndPassword(auth, email, password);
-      }
-    } catch (error) {
-      console.error('Authentication error:', error);
-      throw error;
-    }
-  };
-
-  // Implementation of signIn (Google sign-in)
-  const signIn = async () => {
-    try {
-      await firebaseSignInWithGoogle();
-    } catch (error) {
-      console.error('Google sign-in error:', error);
-      throw error;
-    }
-  };
-
-  // Implementation of signOut
-  const signOut = async () => {
-    const auth = getAuth();
-    await firebaseSignOut(auth);
-  };
-
-  // Stub implementations for service-related functions
-  const fetchSpotifyProfile = async () => {
-    try {
-      setIsConnectingSpotify(true);
-      setSpotifyError(null);
-      
-      console.log('Fetching Spotify profile...');
-      
-      // Get Spotify tokens
-      const tokens = await TokenManager.getTokens('spotify');
-      if (!tokens) {
-        console.log('No Spotify tokens available - user needs to authenticate');
-        setSpotifyUserProfile({ 
-          displayName: 'Connect Spotify', 
-          id: 'spotify_user_id' 
-        });
-        setHasSpotifyAuth(false);
-        return;
-      }
-      
-      // Fetch actual Spotify profile
-      const response = await fetch('https://api.spotify.com/v1/me', {
-        headers: {
-          'Authorization': `Bearer ${tokens.accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          console.log('Spotify token expired, attempting refresh...');
-          // Try to refresh the token and retry
-          const refreshedTokens = await TokenManager.refreshTokensPublic('spotify', tokens.refreshToken);
-          if (refreshedTokens) {
-            // Retry with refreshed token
-            const retryResponse = await fetch('https://api.spotify.com/v1/me', {
-              headers: {
-                'Authorization': `Bearer ${refreshedTokens.accessToken}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            
-            if (!retryResponse.ok) {
-              if (retryResponse.status === 401) {
-                // Refresh failed, clear tokens and prompt reconnection
-                console.log('Spotify token refresh failed, clearing tokens');
-                await TokenManager.removeTokens('spotify');
-                setHasSpotifyAuth(false);
-                setSpotifyUserProfile({ 
-                  displayName: 'Connect Spotify', 
-                  id: 'spotify_user_id' 
-                });
-                setSpotifyError('Your Spotify session has expired. Please reconnect your Spotify account.');
-                return;
-              } else {
-                throw new Error(`Spotify API error: ${retryResponse.status} ${retryResponse.statusText}`);
-              }
-            }
-            
-            const profile = await retryResponse.json();
-            console.log('Spotify profile fetched with refreshed token:', profile);
-            
-            // Set the actual profile data
-            setSpotifyUserProfile({
-              id: profile.id,
-              displayName: profile.display_name,
-              email: profile.email,
-              imageUrl: profile.images?.[0]?.url,
-              country: profile.country,
-              product: profile.product, // premium, free, etc.
-              followers: profile.followers?.total
-            });
-            setHasSpotifyAuth(true);
-            return;
-          } else {
-            // Refresh failed, clear tokens and prompt reconnection
-            console.log('Spotify token refresh failed, clearing tokens');
-            await TokenManager.removeTokens('spotify');
-            setHasSpotifyAuth(false);
-            setSpotifyUserProfile({ 
-              displayName: 'Connect Spotify', 
-              id: 'spotify_user_id' 
-            });
-            setSpotifyError('Your Spotify session has expired. Please reconnect your Spotify account.');
-            return;
-          }
-        } else {
-          throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
-        }
-      }
-      
-      const profile = await response.json();
-      console.log('Spotify profile fetched:', profile);
-      
-      // Set the actual profile data
-      setSpotifyUserProfile({
-        id: profile.id,
-        displayName: profile.display_name,
-        email: profile.email,
-        imageUrl: profile.images?.[0]?.url,
-        country: profile.country,
-        product: profile.product, // premium, free, etc.
-        followers: profile.followers?.total
-      });
-      setHasSpotifyAuth(true);
-      
+      await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
+      setUserProfile(updatedProfile as UserProfile);
     } catch (err) {
-      console.error('Error fetching Spotify profile:', err);
-      
-      if (err instanceof Error && err.message.includes('401')) {
-        setSpotifyError('Your Spotify session has expired. Please reconnect your Spotify account.');
-        setHasSpotifyAuth(false);
-        setSpotifyUserProfile({ 
-          displayName: 'Connect Spotify', 
-          id: 'spotify_user_id' 
-        });
-      } else {
-        setSpotifyError('Failed to fetch Spotify profile. Please try again.');
-        setSpotifyUserProfile({ 
-          displayName: 'Spotify User', 
-          id: 'spotify_user_id' 
-        });
-      }
-    } finally {
-      setIsConnectingSpotify(false);
+      console.error('Error updating user profile:', err);
+      throw err;
     }
   };
 
-  const fetchYouTubeProfile = async () => {
+  // Sign in with email and password
+  const signInWithEmail = async (email: string, password: string): Promise<void> => {
     try {
-      setIsConnectingYouTube(true);
-      setYoutubeError(null);
+      setError(null);
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      setUser(result.user);
       
-      console.log('Fetching YouTube profile...');
-      
-      // Get YouTube tokens
-      const tokens = await TokenManager.getTokens('youtube');
-      if (!tokens) {
-        console.log('No YouTube tokens available - user needs to authenticate');
-        setYoutubeUserProfile({ 
-          displayName: 'Connect YouTube', 
-          id: 'youtube_user_id' 
-        });
-        return;
-      }
-      
-      // Fetch actual YouTube profile
-      const response = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true`, {
-        headers: {
-          'Authorization': `Bearer ${tokens.accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          console.log('YouTube token expired, attempting refresh...');
-          // Try to refresh the token and retry
-          const refreshedTokens = await TokenManager.getTokens('youtube');
-          if (refreshedTokens) {
-            // Retry with refreshed token
-            const retryResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true`, {
-              headers: {
-                'Authorization': `Bearer ${refreshedTokens.accessToken}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            
-            if (!retryResponse.ok) {
-              if (retryResponse.status === 403) {
-                throw new Error('YouTube API quota exceeded or insufficient permissions. Please try again later.');
-              } else if (retryResponse.status === 401) {
-                // Clear invalid tokens and prompt reconnection
-                TokenManager.clearTokens('youtube');
-                setHasYouTubeAuth(false);
-                setYoutubeUserProfile({ 
-                  displayName: 'Connect YouTube', 
-                  id: 'youtube_user_id' 
-                });
-                setYoutubeError('YouTube authentication expired. Please reconnect your YouTube account.');
-                return;
-              } else {
-                throw new Error(`YouTube API error: ${retryResponse.status} ${retryResponse.statusText}`);
-              }
-            }
-            
-            const data = await retryResponse.json();
-            console.log('YouTube profile fetched (after refresh):', data);
-            
-            if (data.items && data.items.length > 0) {
-              const channel = data.items[0];
-              const snippet = channel.snippet;
-              const statistics = channel.statistics;
-              
-              // Set the actual profile data
-              setYoutubeUserProfile({
-                id: channel.id,
-                displayName: snippet.title,
-                imageUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
-                description: snippet.description,
-                subscriberCount: statistics?.subscriberCount,
-                videoCount: statistics?.videoCount,
-                viewCount: statistics?.viewCount,
-                customUrl: snippet.customUrl
-              });
-            } else {
-              throw new Error('No YouTube channel found');
-            }
-          } else {
-            throw new Error('Failed to refresh YouTube token');
-          }
-        } else if (response.status === 403) {
-          console.error('YouTube API 403 error - quota exceeded or insufficient permissions');
-          setYoutubeError('YouTube API quota exceeded. Please try again later or check your YouTube account permissions.');
-          setHasYouTubeAuth(false);
-          setYoutubeUserProfile({ 
-            displayName: 'Connect YouTube', 
-            id: 'youtube_user_id' 
-          });
-          return;
-        } else {
-          throw new Error(`YouTube API error: ${response.status} ${response.statusText}`);
-        }
-      } else {
-        const data = await response.json();
-        console.log('YouTube profile fetched:', data);
-        
-        if (data.items && data.items.length > 0) {
-          const channel = data.items[0];
-          const snippet = channel.snippet;
-          const statistics = channel.statistics;
-          
-          // Set the actual profile data
-          setYoutubeUserProfile({
-            id: channel.id,
-            displayName: snippet.title,
-            imageUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url,
-            description: snippet.description,
-            subscriberCount: statistics?.subscriberCount,
-            videoCount: statistics?.videoCount,
-            viewCount: statistics?.viewCount,
-            customUrl: snippet.customUrl
-          });
-        } else {
-          throw new Error('No YouTube channel found');
-        }
-      }
-      
-    } catch (err) {
-      console.error('Error fetching YouTube profile:', err);
-      
-      // Handle specific error types
-      if (err instanceof Error) {
-        if (err.message.includes('quota exceeded') || err.message.includes('403')) {
-          setYoutubeError('YouTube API quota exceeded. Please try again later.');
-          setHasYouTubeAuth(false);
-          setYoutubeUserProfile({ 
-            displayName: 'Connect YouTube', 
-            id: 'youtube_user_id' 
-          });
-        } else if (err.message.includes('401') || err.message.includes('expired')) {
-          setYoutubeError('YouTube authentication expired. Please reconnect your YouTube account.');
-          setHasYouTubeAuth(false);
-          setYoutubeUserProfile({ 
-            displayName: 'Connect YouTube', 
-            id: 'youtube_user_id' 
-          });
-          TokenManager.clearTokens('youtube');
-        } else {
-          setYoutubeError('Failed to fetch YouTube profile. Please try again.');
-          setHasYouTubeAuth(false);
-          setYoutubeUserProfile({ 
-            displayName: 'Connect YouTube', 
-            id: 'youtube_user_id' 
-          });
-        }
-      } else {
-        setYoutubeError('An unexpected error occurred while fetching YouTube profile.');
-        setHasYouTubeAuth(false);
-        setYoutubeUserProfile({ 
-          displayName: 'Connect YouTube', 
-          id: 'youtube_user_id' 
-        });
-      }
-    } finally {
-      setIsConnectingYouTube(false);
+      // Fetch user profile
+      const profile = await fetchUserProfile(result.user.uid);
+      setUserProfile(profile);
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in');
+      throw err;
     }
   };
 
-  const disconnectFromSpotify = async () => {
+  // Sign up with email and password
+  const signUpWithEmail = async (email: string, password: string, displayName: string, isProvider: boolean): Promise<void> => {
     try {
-      // Actual implementation would revoke Spotify access
-      console.log('Disconnecting from Spotify...');
+      setError(null);
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Update display name
+      await updateProfile(result.user, { displayName });
+      
+      // Create user profile
+      const profile = await createUserProfile(result.user, isProvider);
+      
+      setUser(result.user);
+      setUserProfile(profile);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create account');
+      throw err;
+    }
+  };
+
+  // Sign in with Google
+  const signInWithGoogle = async (): Promise<void> => {
+    try {
+      setError(null);
+      const result = await signInWithPopup(auth, googleProvider);
+      setUser(result.user);
+      
+      // Check if user profile exists, create if not
+      let profile = await fetchUserProfile(result.user.uid);
+      if (!profile) {
+        profile = await createUserProfile(result.user, false);
+      }
+      setUserProfile(profile);
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in with Google');
+      throw err;
+    }
+  };
+
+  // Sign out
+  const signOut = async (): Promise<void> => {
+    try {
+      await firebaseSignOut(auth);
+      setUser(null);
+      setUserProfile(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign out');
+      throw err;
+    }
+  };
+
+  // Clear error
+  const clearError = () => setError(null);
+  
+  // Platform authentication functions
+  const disconnectFromSpotify = async (): Promise<void> => {
+    try {
       setHasSpotifyAuth(false);
       setSpotifyUserProfile(null);
-      // Clear connection date
-      localStorage.removeItem('spotify_connection_date');
-    } catch (err) {
-      console.error('Error disconnecting from Spotify:', err);
-      setSpotifyError('Failed to disconnect from Spotify');
+      setSpotifyError(null);
+      // Additional cleanup logic can be added here
+    } catch (err: any) {
+      setSpotifyError(err.message || 'Failed to disconnect from Spotify');
+      throw err;
     }
   };
-
-  const disconnectFromYouTube = async () => {
+  
+  const disconnectFromYouTube = async (): Promise<void> => {
     try {
-      // Actual implementation would revoke YouTube access
-      console.log('Disconnecting from YouTube...');
       setHasYouTubeAuth(false);
       setYoutubeUserProfile(null);
-      // Clear connection date
-      localStorage.removeItem('youtube_connection_date');
-    } catch (err) {
-      console.error('Error disconnecting from YouTube:', err);
-      setYoutubeError('Failed to disconnect from YouTube');
+      setYoutubeError(null);
+      // Additional cleanup logic can be added here
+    } catch (err: any) {
+      setYoutubeError(err.message || 'Failed to disconnect from YouTube');
+      throw err;
     }
   };
 
-  const checkYouTubeAuth = async () => {
+  // Platform profile fetching methods
+  const fetchSpotifyProfile = async (): Promise<void> => {
     try {
-      // Actual implementation would check YouTube token validity
-      console.log('Checking YouTube auth...');
+      console.log('[AuthContext] 🎵 Fetching Spotify user profile...');
+      
+      // Import both profile functions
+      const { getDetailedSpotifyProfile, getSpotifyUserProfile, checkSpotifyScopeCompleteness } = await import('../lib/spotifyAuth');
+      
+      // Check if user needs to re-authenticate for additional scopes
+      const scopeCheck = await checkSpotifyScopeCompleteness();
+      if (scopeCheck.needsReauth && scopeCheck.missingScopes.length > 0) {
+        console.log('[AuthContext] User needs re-authentication for scopes:', scopeCheck.missingScopes);
+        // Store this info for later use, but don't force re-auth immediately
+        localStorage.setItem('spotify_needs_reauth', JSON.stringify({
+          missingScopes: scopeCheck.missingScopes,
+          timestamp: Date.now()
+        }));
+      }
+      
+      try {
+        // Try detailed profile first
+        const profileData = await getDetailedSpotifyProfile();
+        
+        if (profileData) {
+          console.log('[AuthContext] ✅ Detailed Spotify profile fetched:', {
+            displayName: profileData.displayName,
+            hasImage: !!profileData.imageUrl,
+            id: profileData.id,
+            savedTracks: profileData.savedTracks,
+            totalPlaylists: profileData.totalPlaylists,
+            product: profileData.product
+          });
+          
+          setSpotifyUserProfile({
+            // Basic profile (compatible with existing code)
+            displayName: profileData.displayName || 'Spotify User',
+            imageUrl: profileData.imageUrl,
+            images: profileData.imageUrl ? [{ url: profileData.imageUrl }] : [], // Add images array for compatibility
+            id: profileData.id,
+            email: profileData.email,
+            externalUrls: profileData.externalUrls,
+            
+            // Extended real data
+            country: profileData.country,
+            product: profileData.product,
+            followers: profileData.followers,
+            publicPlaylists: profileData.publicPlaylists,
+            privatePlaylists: profileData.privatePlaylists,
+            collaborativePlaylists: profileData.collaborativePlaylists,
+            totalPlaylists: profileData.totalPlaylists,
+            followingArtists: profileData.followingArtists,
+            savedTracks: profileData.savedTracks,
+            savedAlbums: profileData.savedAlbums,
+            topGenres: profileData.topGenres,
+            accountType: profileData.accountType,
+            explicitContentFilter: profileData.explicitContentFilter,
+            audioQuality: profileData.audioQuality,
+            offlineDownloads: profileData.offlineDownloads,
+            deviceLimit: profileData.deviceLimit,
+            lastActive: profileData.lastActive,
+            listeningTime: profileData.listeningTime,
+            monthlyListeners: profileData.monthlyListeners,
+            nextBilling: profileData.nextBilling,
+            crossfade: profileData.crossfade,
+            equalizer: profileData.equalizer
+          });
+          
+          setSpotifyError(null);
+          return; // Success with detailed profile
+        }
+      } catch (detailedError) {
+        console.warn('[AuthContext] ⚠️ Detailed profile failed, falling back to basic profile:', detailedError);
+      }
+      
+      // Fallback to basic profile if detailed fails
+      console.log('[AuthContext] 🔄 Falling back to basic Spotify profile...');
+      const basicProfileData = await getSpotifyUserProfile();
+      
+      if (basicProfileData) {
+        console.log('[AuthContext] ✅ Basic Spotify profile fetched:', {
+          displayName: basicProfileData.displayName,
+          hasImage: !!basicProfileData.imageUrl,
+          id: basicProfileData.id
+        });
+        
+        setSpotifyUserProfile({
+          // Basic profile data
+          displayName: basicProfileData.displayName || 'Spotify User',
+          imageUrl: basicProfileData.imageUrl,
+          images: basicProfileData.imageUrl ? [{ url: basicProfileData.imageUrl }] : [],
+          id: basicProfileData.id,
+          email: basicProfileData.email,
+          externalUrls: basicProfileData.externalUrls,
+          
+          // Default/unavailable values for restricted accounts
+          country: 'Not available',
+          product: 'Restricted account',
+          followers: 0,
+          publicPlaylists: 0,
+          privatePlaylists: 0,
+          collaborativePlaylists: 0,
+          totalPlaylists: 0,
+          followingArtists: 0,
+          savedTracks: 0,
+          savedAlbums: 0,
+          topGenres: ['Account restricted'],
+          accountType: 'Restricted',
+          explicitContentFilter: 'Not available',
+          audioQuality: 'Not available',
+          offlineDownloads: 'Not available',
+          deviceLimit: 1,
+          lastActive: 'Not available',
+          listeningTime: 'Not available',
+          monthlyListeners: 'Not available',
+          nextBilling: 'Not available',
+          crossfade: 'Not available',
+          equalizer: 'Not available'
+        });
+        
+        setSpotifyError('Limited profile data (account restrictions)');
+      } else {
+        console.warn('[AuthContext] ⚠️ No Spotify profile data available');
+        setSpotifyUserProfile(null);
+        setSpotifyError('Unable to fetch Spotify profile');
+      }
+    } catch (err: any) {
+      console.error('[AuthContext] ❌ Error fetching Spotify profile:', err);
+      setSpotifyError(err.message || 'Failed to fetch Spotify profile');
+      setSpotifyUserProfile(null);
+      throw err;
+    }
+  };
+
+  const fetchYouTubeProfile = async (): Promise<void> => {
+    try {
+      console.log('[AuthContext] 🎥 Fetching YouTube user profile...');
+      
+      // Import token manager to get YouTube token
+      const TokenManager = (await import('../lib/tokenManager')).default;
+      
+      // Get YouTube access token
+      const tokens = await TokenManager.getTokens('youtube');
+      if (!tokens?.accessToken) {
+        throw new Error('No YouTube access token available');
+      }
+      
+      // Fetch YouTube profile using Google People API
+      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: {
+          'Authorization': `Bearer ${tokens.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        console.warn(`[AuthContext] YouTube profile fetch failed: ${response.status} ${response.statusText}`);
+        
+        if (response.status === 401) {
+          // Token expired, try to refresh
+          console.log('[AuthContext] YouTube token expired, attempting refresh...');
+          try {
+            const refreshedTokens = await TokenManager.refreshTokensPublic('youtube', tokens.refreshToken);
+            if (refreshedTokens) {
+              // Retry with refreshed token
+              const retryResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: {
+                  'Authorization': `Bearer ${refreshedTokens.accessToken}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (!retryResponse.ok) {
+                console.warn(`[AuthContext] YouTube profile retry failed: ${retryResponse.status}`);
+                throw new Error(`YouTube profile fetch failed: ${retryResponse.status}`);
+              }
+              
+              const profileData = await retryResponse.json();
+              console.log('[AuthContext] ✅ YouTube profile fetched (after refresh):', {
+                name: profileData.name,
+                hasImage: !!profileData.picture,
+                id: profileData.id
+              });
+              
+              setYoutubeUserProfile({
+                displayName: profileData.name || 'YouTube User',
+                imageUrl: profileData.picture,
+                picture: profileData.picture, // Also store as 'picture' for compatibility
+                id: profileData.id,
+                email: profileData.email,
+                locale: profileData.locale
+              });
+              
+              setYoutubeError(null);
+              return;
+            } else {
+              console.warn('[AuthContext] Failed to refresh YouTube token');
+              throw new Error('Failed to refresh YouTube token');
+            }
+          } catch (refreshError) {
+            console.error('[AuthContext] Error refreshing YouTube token:', refreshError);
+            throw new Error('Failed to refresh YouTube token');
+          }
+        } else {
+          // For other errors, just log and continue
+          console.warn(`[AuthContext] YouTube profile fetch failed with status ${response.status}, but continuing...`);
+          // Don't throw error, just return null profile
+          setYoutubeUserProfile(null);
+          setYoutubeError(`YouTube profile unavailable (${response.status})`);
+          return;
+        }
+      }
+      
+      const profileData = await response.json();
+      console.log('[AuthContext] ✅ YouTube profile fetched:', {
+        name: profileData.name,
+        hasImage: !!profileData.picture,
+        id: profileData.id
+      });
+      
+      setYoutubeUserProfile({
+        displayName: profileData.name || 'YouTube User',
+        imageUrl: profileData.picture,
+        picture: profileData.picture, // Also store as 'picture' for compatibility
+        id: profileData.id,
+        email: profileData.email,
+        locale: profileData.locale
+      });
+      
+      setYoutubeError(null);
+      
+    } catch (err: any) {
+      console.error('[AuthContext] ❌ Error fetching YouTube profile:', err);
+      setYoutubeError(err.message || 'Failed to fetch YouTube profile');
+      setYoutubeUserProfile(null);
+      throw err;
+    }
+  };
+
+  const checkYouTubeAuth = async (): Promise<boolean> => {
+    try {
+      // This would typically check if YouTube auth token is valid
+      // For now, return the current state
       return hasYouTubeAuth;
-    } catch (err) {
-      console.error('Error checking YouTube auth:', err);
-      setYoutubeError('Failed to check YouTube authentication');
+    } catch (err: any) {
+      setYoutubeError(err.message || 'Failed to check YouTube auth');
       return false;
     }
   };
 
-  // Fallback authentication using Spotify-style pattern
-  const fallbackAuth = async (): Promise<{ success: boolean; error?: string }> => {
+  // Generic sign in method (defaults to Google sign in)
+  const signIn = async (): Promise<void> => {
+    return signInWithGoogle();
+  };
+
+  // Check platform authentication status on app load
+  const checkPlatformAuthStatus = async (firebaseUser: any) => {
     try {
-      console.log('[DEBUG] Attempting fallback authentication...');
+      // Dynamically import to avoid circular dependencies
+      const { isSpotifyAuthenticated } = await import('../lib/spotifyAuth');
+      const TokenManager = (await import('../lib/tokenManager')).default;
       
-      // First try SimpleAuth
-      if (SimpleAuth.isAuthenticated()) {
-        console.log('[DEBUG] SimpleAuth authentication found');
-        const simpleUser = SimpleAuth.getCurrentUser();
-        if (simpleUser) {
-          console.log('[DEBUG] SimpleAuth user:', simpleUser.email);
-          
-          // Dispatch a custom event to notify the app
-          window.dispatchEvent(new CustomEvent('fallback-auth-success', {
-            detail: { user: simpleUser, source: 'simpleAuth' }
-          }));
-          
-          return { success: true };
+      console.log('[AuthContext] Checking platform auth status...');
+      
+      // Check Spotify authentication
+      try {
+        const spotifyAuth = await isSpotifyAuthenticated();
+        console.log('[AuthContext] Spotify auth status:', spotifyAuth);
+        setHasSpotifyAuth(spotifyAuth);
+        
+        // Fetch Spotify profile if authenticated
+        if (spotifyAuth) {
+          try {
+            console.log('[AuthContext] 🎵 Fetching Spotify profile on app load...');
+            await fetchSpotifyProfile();
+          } catch (profileError) {
+            console.warn('[AuthContext] ⚠️ Failed to fetch Spotify profile on app load:', profileError);
+            // Don't fail the auth check if profile fetch fails
+          }
         }
+      } catch (error) {
+        console.warn('[AuthContext] Error checking Spotify auth:', error);
+        setHasSpotifyAuth(false);
       }
-      
-      // Fallback to original method
-      const savedData = JSON.parse(localStorage.getItem(AUTH_RECOVERY_KEY) || 'null');
-      
-      if (savedData && Date.now() - savedData.timestamp < 3600000) { // 1 hour
-        console.log('[DEBUG] Found valid saved auth data, attempting recovery...');
+
+      // Check YouTube authentication
+      try {
+        const youtubeTokens = await TokenManager.getTokens('youtube');
+        const hasYouTubeTokens = !!youtubeTokens?.accessToken;
+        console.log('[AuthContext] YouTube auth status:', hasYouTubeTokens);
+        setHasYouTubeAuth(hasYouTubeTokens);
         
-        // Try to restore the user session
-        const auth = getAuth();
-        
-        // Check if we're already authenticated
-        if (auth.currentUser) {
-          console.log('[DEBUG] User already authenticated, skipping fallback');
-          return { success: true };
+        // Fetch YouTube profile if authenticated
+        if (hasYouTubeTokens) {
+          try {
+            console.log('[AuthContext] 🎥 Fetching YouTube profile on app load...');
+            await fetchYouTubeProfile();
+          } catch (profileError) {
+            console.warn('[AuthContext] ⚠️ Failed to fetch YouTube profile on app load:', profileError);
+            // Don't fail the auth check if profile fetch fails
+          }
         }
-        
-        // For fallback, we'll use a simplified approach
-        // In a real implementation, you might want to verify the token with your backend
-        console.log('[DEBUG] Fallback auth successful for user:', savedData.email);
-        
-        // Dispatch a custom event to notify the app
-        window.dispatchEvent(new CustomEvent('fallback-auth-success', {
-          detail: { user: savedData, source: 'legacy' }
-        }));
-        
-        return { success: true };
+      } catch (error) {
+        console.warn('[AuthContext] Error checking YouTube auth:', error);
+        setHasYouTubeAuth(false);
       }
-      
-      return { 
-        success: false, 
-        error: 'No valid authentication data found for fallback' 
-      };
     } catch (error) {
-      console.error('[DEBUG] Fallback authentication failed:', error);
-      return { 
-        success: false, 
-        error: 'Fallback authentication failed' 
-      };
+      console.error('[AuthContext] Error in checkPlatformAuthStatus:', error);
     }
   };
 
-  // Initialize auth persistence
+  // Listen for auth state changes
   useEffect(() => {
-    const auth = getAuth();
-    setPersistence(auth, browserLocalPersistence).catch(console.error);
-
-    // Subscribe to auth state changes
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('[DEBUG] Auth state changed:', { 
-        hasUser: !!user, 
-        uid: user?.uid,
-        email: user?.email,
-        displayName: user?.displayName,
-        timestamp: new Date().toISOString()
-      });
-      setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
       
-      try {
-        await saveAuthState(user);
+      if (firebaseUser) {
+        // Fetch user profile
+        const profile = await fetchUserProfile(firebaseUser.uid);
+        setUserProfile(profile);
         
-        if (user) {
-          // Save YouTube auth state if we're in the callback
-          if (window.location.pathname.includes('youtube-callback')) {
-            const currentUrl = window.location.href;
-            sessionStorage.setItem(YOUTUBE_AUTH_STATE_KEY, currentUrl);
-          }
-          
-          // Check service connections with error handling and fallbacks
-          try {
-            console.log('[DEBUG] Checking service connections for user:', user.uid);
-            
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            const userData = userDoc.data();
-            
-            console.log('[DEBUG] Firestore user data:', userData);
-            
-            // Primary source: Firestore
-            let spotifyConnected = !!userData?.spotifyConnected;
-            let youtubeConnected = !!userData?.youtubeConnected;
-            
-            console.log('[DEBUG] Firestore connection status:', { spotifyConnected, youtubeConnected });
-            
-            // Fallback: Check token validity directly using TokenManager
-            if (!spotifyConnected) {
-              const hasSpotifyTokens = await TokenManager.hasValidTokens('spotify');
-              const hasYouTubeTokens = await TokenManager.hasValidTokens('youtube');
-              console.log('[DEBUG] TokenManager Spotify check:', hasSpotifyTokens);
-              spotifyConnected = hasSpotifyTokens;
-            }
-            
-            if (!youtubeConnected) {
-              const hasSpotifyTokens = await TokenManager.hasValidTokens('spotify');
-              const hasYouTubeTokens = await TokenManager.hasValidTokens('youtube');
-              console.log('[DEBUG] TokenManager YouTube check:', hasYouTubeTokens);
-              youtubeConnected = hasYouTubeTokens;
-            }
-            
-            // Additional fallback: Check SimpleAuth service connections
-            const simpleSpotifyConnected = SimpleAuth.isServiceConnected('spotify');
-            const simpleYouTubeConnected = SimpleAuth.isServiceConnected('youtube');
-            
-            console.log('[DEBUG] SimpleAuth service connections:', { simpleSpotifyConnected, simpleYouTubeConnected });
-            
-            console.log('[DEBUG] Final connection status:', { 
-              spotifyConnected: spotifyConnected || simpleSpotifyConnected, 
-              youtubeConnected: youtubeConnected || simpleYouTubeConnected 
-            });
-            
-            setHasSpotifyAuth(spotifyConnected || simpleSpotifyConnected);
-            setHasYouTubeAuth(youtubeConnected || simpleYouTubeConnected);
-            
-            // Auto-fetch profiles when services are connected
-            if (spotifyConnected || simpleSpotifyConnected) {
-              fetchSpotifyProfile();
-            }
-            if (youtubeConnected || simpleYouTubeConnected) {
-              fetchYouTubeProfile();
-            }
-          } catch (firestoreError) {
-            console.error('[DEBUG] Firestore error when checking service connections:', firestoreError);
-            
-            // Use token validation as complete fallback
-            const spotifyConnected = await TokenManager.hasValidTokens('spotify');
-            const youtubeConnected = await TokenManager.hasValidTokens('youtube');
-            
-            console.log('[DEBUG] TokenManager fallback check:', { spotifyConnected, youtubeConnected });
-            
-            // Additional fallback: Check SimpleAuth service connections
-            const simpleSpotifyConnected = SimpleAuth.isServiceConnected('spotify');
-            const simpleYouTubeConnected = SimpleAuth.isServiceConnected('youtube');
-            
-            console.log('[DEBUG] SimpleAuth fallback check:', { simpleSpotifyConnected, simpleYouTubeConnected });
-            
-            console.log('[DEBUG] Using token validation fallback:', { 
-              spotifyConnected: spotifyConnected || simpleSpotifyConnected, 
-              youtubeConnected: youtubeConnected || simpleYouTubeConnected 
-            });
-            setHasSpotifyAuth(spotifyConnected || simpleSpotifyConnected);
-            setHasYouTubeAuth(youtubeConnected || simpleYouTubeConnected);
-            
-            // Auto-fetch profiles when services are connected
-            if (spotifyConnected || simpleSpotifyConnected) {
-              fetchSpotifyProfile();
-            }
-            if (youtubeConnected || simpleYouTubeConnected) {
-              fetchYouTubeProfile();
-            }
-          }
-        } else {
-          // User is not authenticated, clear all service connections
-          console.log('[DEBUG] User not authenticated, clearing service connections');
-          setHasSpotifyAuth(false);
-          setHasYouTubeAuth(false);
-        }
-        
-        setLoading(false);
-      } catch (error) {
-        console.error('[DEBUG] Error in auth state change handler:', error);
-        setLoading(false);
-        setError('Authentication error. Please try again.');
+        // Check platform authentication status
+        await checkPlatformAuthStatus(firebaseUser);
+      } else {
+        setUserProfile(null);
+        // Clear platform auth states when user signs out
+        setHasSpotifyAuth(false);
+        setHasYouTubeAuth(false);
       }
+      
+      setLoading(false);
     });
 
-    // Listen for Spotify authentication changes
-    const handleSpotifyAuthChange = (event: CustomEvent) => {
-      console.log('Spotify auth change event received:', event.detail);
-      const isAuthenticated = event.detail?.authenticated || false;
-      setHasSpotifyAuth(isAuthenticated);
+    return unsubscribe;
+  }, []);
+
+  // Listen for platform authentication events
+  useEffect(() => {
+    const handleSpotifyAuthChange = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('[AuthContext] Spotify auth changed:', customEvent.detail);
+      setHasSpotifyAuth(customEvent.detail.authenticated);
+      setSpotifyError(null); // Clear any previous errors
       
-      if (isAuthenticated) {
-        setSpotifyError(null);
-        // Save connection date
-        localStorage.setItem('spotify_connection_date', new Date().toISOString());
+      // Fetch profile when authentication succeeds
+      if (customEvent.detail.authenticated) {
+        try {
+          console.log('[AuthContext] 🎵 Spotify authenticated, fetching profile...');
+          await fetchSpotifyProfile();
+        } catch (error) {
+          console.warn('[AuthContext] ⚠️ Failed to fetch Spotify profile after auth:', error);
+          // Don't fail the auth process if profile fetch fails
+        }
+      } else {
+        // Clear profile when disconnected
+        setSpotifyUserProfile(null);
       }
     };
 
-    // Listen for YouTube authentication changes
-    const handleYouTubeAuthChange = (event: CustomEvent) => {
-      console.log('YouTube auth change event received:', event.detail);
-      const isAuthenticated = event.detail?.authenticated || false;
-      setHasYouTubeAuth(isAuthenticated);
+    const handleYouTubeAuthChange = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('[AuthContext] YouTube auth changed:', customEvent.detail);
+      setHasYouTubeAuth(customEvent.detail.authenticated);
+      setYoutubeError(null); // Clear any previous errors
       
-      if (isAuthenticated) {
-        setYoutubeError(null);
-        // Save connection date
-        localStorage.setItem('youtube_connection_date', new Date().toISOString());
+      // Fetch profile when authentication succeeds
+      if (customEvent.detail.authenticated) {
+        try {
+          console.log('[AuthContext] 🎥 YouTube authenticated, fetching profile...');
+          await fetchYouTubeProfile();
+        } catch (error) {
+          console.warn('[AuthContext] ⚠️ Failed to fetch YouTube profile after auth:', error);
+          // Don't fail the auth process if profile fetch fails
+        }
+      } else {
+        // Clear profile when disconnected
+        setYoutubeUserProfile(null);
       }
-    };
-
-    // Listen for token updates
-    const handleSpotifyTokenUpdate = (event: CustomEvent) => {
-      console.log('Spotify token update event received:', event.detail);
-      const hasToken = event.detail?.hasToken || false;
-      setHasSpotifyAuth(hasToken);
-    };
-
-    const handleYouTubeTokenUpdate = (event: CustomEvent) => {
-      console.log('YouTube token update event received:', event.detail);
-      const hasToken = event.detail?.hasToken || false;
-      setHasYouTubeAuth(hasToken);
-    };
-
-    // Listen for fallback auth success
-    const handleFallbackAuthSuccess = (event: CustomEvent) => {
-      console.log('[DEBUG] Fallback auth success event received:', event.detail);
-      // The user data will be handled by the main auth state change handler
     };
 
     // Add event listeners
-    window.addEventListener('spotify-auth-changed', handleSpotifyAuthChange as EventListener);
-    window.addEventListener('youtube-auth-changed', handleYouTubeAuthChange as EventListener);
-    window.addEventListener('spotify-token-updated', handleSpotifyTokenUpdate as EventListener);
-    window.addEventListener('youtube-token-updated', handleYouTubeTokenUpdate as EventListener);
-    window.addEventListener('fallback-auth-success', handleFallbackAuthSuccess as EventListener);
+    window.addEventListener('spotify-auth-changed', handleSpotifyAuthChange);
+    window.addEventListener('youtube-auth-changed', handleYouTubeAuthChange);
 
-    // Attempt auth recovery if needed
-    const attemptAuthRecovery = async () => {
-      // Don't attempt recovery if we're already on the login page with recovery=true
-      if (window.location.pathname === '/login' && window.location.search.includes('recovery=true')) {
-        console.log('[DEBUG] Already on recovery login page, skipping auth recovery attempt');
-        setAuthRecoveryAttempted(true);
-        return;
-      }
-      
-      if (!auth.currentUser && !authRecoveryAttempted) {
-        try {
-          console.log('[DEBUG] No current user, attempting auth recovery...');
-          
-          // First try the fallback authentication
-          const fallbackResult = await fallbackAuth();
-          if (fallbackResult.success) {
-            console.log('[DEBUG] Fallback authentication successful');
-            setAuthRecoveryAttempted(true);
-            return;
-          }
-          
-          // If fallback fails, try the original recovery method
-          console.log('[DEBUG] Fallback auth failed, trying original recovery method...');
-          
-          // Check IndexedDB first
-          const idbData = await readFromIndexedDB(STORE_NAME, 'currentUser');
+    console.log('[AuthContext] Added platform auth event listeners');
 
-          // Fall back to localStorage if IndexedDB fails
-          const savedData = idbData || JSON.parse(localStorage.getItem(AUTH_RECOVERY_KEY) || 'null');
-          
-          if (savedData && Date.now() - savedData.timestamp < 3600000) { // 1 hour
-            console.log('[DEBUG] Found valid saved auth data for uid:', savedData.uid);
-            
-            // Only redirect to recovery login if we're on a callback page
-            if (window.location.pathname.includes('callback')) {
-              console.log('[DEBUG] On callback page, redirecting to recovery login');
-              localStorage.setItem('post_auth_redirect', window.location.href);
-              window.location.href = '/login?recovery=true';
-            } else {
-              console.log('[DEBUG] Not on callback page, clearing stale auth data');
-              // Clear stale auth data if we're not on a callback page
-              localStorage.removeItem(AUTH_RECOVERY_KEY);
-              try {
-                await saveToIndexedDB(STORE_NAME, 'currentUser', null);
-              } catch (e) {
-                console.warn('Failed to clear IndexedDB auth data:', e);
-              }
-            }
-          } else {
-            console.log('[DEBUG] No valid saved auth data found');
-            // Clear any stale data
-            localStorage.removeItem(AUTH_RECOVERY_KEY);
-          }
-        } catch (error) {
-          console.error('[DEBUG] Auth recovery failed:', error);
-          // Clear any corrupted data
-          localStorage.removeItem(AUTH_RECOVERY_KEY);
-        }
-        setAuthRecoveryAttempted(true);
-      } else if (auth.currentUser) {
-        console.log('[DEBUG] User is already authenticated, skipping recovery');
-        setAuthRecoveryAttempted(true);
-      }
-    };
-
-    attemptAuthRecovery();
-
+    // Cleanup event listeners
     return () => {
-      unsubscribe();
-      window.removeEventListener('spotify-auth-changed', handleSpotifyAuthChange as EventListener);
-      window.removeEventListener('youtube-auth-changed', handleYouTubeAuthChange as EventListener);
-      window.removeEventListener('spotify-token-updated', handleSpotifyTokenUpdate as EventListener);
-      window.removeEventListener('youtube-token-updated', handleYouTubeTokenUpdate as EventListener);
-      window.removeEventListener('fallback-auth-success', handleFallbackAuthSuccess as EventListener);
+      window.removeEventListener('spotify-auth-changed', handleSpotifyAuthChange);
+      window.removeEventListener('youtube-auth-changed', handleYouTubeAuthChange);
+      console.log('[AuthContext] Removed platform auth event listeners');
     };
-  }, [authRecoveryAttempted]);
-
-  // Clear expired tokens on app initialization
-  useEffect(() => {
-    const clearExpiredTokens = () => {
-      console.log('[DEBUG] Clearing expired tokens on app initialization');
-      
-      // Check Spotify tokens
-      const spotifyExpires = localStorage.getItem('soundswapp_spotify_expires_at');
-      if (spotifyExpires && parseInt(spotifyExpires) < Date.now()) {
-        console.log('[DEBUG] Clearing expired Spotify tokens');
-        localStorage.removeItem('soundswapp_spotify_access_token');
-        localStorage.removeItem('soundswapp_spotify_expires_at');
-        localStorage.removeItem('soundswapp_spotify_refresh_token');
-        setHasSpotifyAuth(false);
-      }
-      
-      // Check YouTube tokens
-      const youtubeExpires = localStorage.getItem('soundswapp_youtube_expires_at');
-      if (youtubeExpires && parseInt(youtubeExpires) < Date.now()) {
-        console.log('[DEBUG] Clearing expired YouTube tokens');
-        localStorage.removeItem('soundswapp_youtube_access_token');
-        localStorage.removeItem('soundswapp_youtube_expires_at');
-        localStorage.removeItem('soundswapp_youtube_refresh_token');
-        setHasYouTubeAuth(false);
-      }
-    };
-    
-    clearExpiredTokens();
   }, []);
 
-  return (
-    <AuthContext.Provider value={{
+  const value: AuthContextType = {
       user,
+    userProfile,
       loading,
-      hasSpotifyAuth,
-      hasYouTubeAuth,
-      setHasSpotifyAuth,
-      setHasYouTubeAuth,
-      authRecoveryAttempted,
       isAuthenticated: !!user,
-      // Authentication functions
+    isProvider: userProfile?.isProvider || false,
+    error,
       signInWithEmail,
-      signIn,
+    signUpWithEmail,
+    signInWithGoogle,
       signOut,
-      // Profile management
-      spotifyUserProfile,
-      youtubeUserProfile,
-      fetchSpotifyProfile,
-      fetchYouTubeProfile,
-      // Service connections
-      disconnectFromSpotify,
-      disconnectFromYouTube,
-      isConnectingSpotify,
-      isConnectingYouTube,
-      spotifyError,
-      youtubeError,
-      checkYouTubeAuth,
-      // Error handling
-      error
-    }}>
+    updateUserProfile,
+    clearError,
+    hasSpotifyAuth,
+    hasYouTubeAuth,
+    setHasSpotifyAuth,
+    setHasYouTubeAuth,
+    disconnectFromSpotify,
+    disconnectFromYouTube,
+    isConnectingSpotify,
+    isConnectingYouTube,
+    spotifyError,
+    youtubeError,
+    spotifyUserProfile,
+    youtubeUserProfile,
+    
+    // Platform profile fetching
+    fetchSpotifyProfile,
+    fetchYouTubeProfile,
+    checkYouTubeAuth,
+    
+    // Generic sign in method
+    signIn,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');

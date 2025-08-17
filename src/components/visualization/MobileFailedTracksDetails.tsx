@@ -22,6 +22,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { FailedTrack, useConversion } from '../../lib/ConversionContext';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { addToYouTubePlaylist } from '../../lib/youtubeApi';
+import { addTracksToSpotifyPlaylist } from '../../lib/spotifyApi';
 
 interface MobileFailedTracksDetailsProps {
   failedTracks?: FailedTrack[];
@@ -159,8 +161,6 @@ export const MobileFailedTracksDetails: React.FC<MobileFailedTracksDetailsProps>
     }
 
     try {
-      // Import YouTube API function
-      const { addToYouTubePlaylist } = await import('../../lib/youtubeApi');
       
       // Get the current YouTube playlist ID from state
       const youtubePlaylistId = state.youtubePlaylistId;
@@ -198,8 +198,6 @@ export const MobileFailedTracksDetails: React.FC<MobileFailedTracksDetailsProps>
     }
 
     try {
-      // Import Spotify API function
-      const { addTracksToSpotifyPlaylist } = await import('../../lib/spotifyApi');
       
       // Get the current Spotify playlist ID from state
       const spotifyPlaylistId = state.spotifyPlaylistId;

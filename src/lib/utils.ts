@@ -283,3 +283,120 @@ export const isTouchDevice = () => {
 export const isScrollable = (element: HTMLElement) => {
   return element.scrollHeight > element.clientHeight;
 }; 
+
+/**
+ * Safely filters out props that shouldn't be passed to DOM elements
+ * This prevents warnings like "React does not recognize the `asChild` prop"
+ */
+export const filterDOMProps = (props: Record<string, any>): Record<string, any> => {
+  const domProps = { ...props };
+  
+  // Remove Radix UI specific props that shouldn't be on DOM elements
+  const radixProps = ['asChild', 'data-radix-collection-item'];
+  radixProps.forEach(prop => {
+    delete domProps[prop];
+  });
+  
+  return domProps;
+};
+
+/**
+ * Safe array operations to prevent "includes is not a function" errors
+ */
+export const safeArrayIncludes = (array: any, item: any): boolean => {
+  return Array.isArray(array) && array.includes(item);
+};
+
+export const safeArrayMap = <T, R>(array: any, mapper: (item: T, index: number) => R): R[] => {
+  return Array.isArray(array) ? array.map(mapper) : [];
+};
+
+export const safeArrayFilter = <T>(array: any, predicate: (item: T, index: number) => boolean): T[] => {
+  return Array.isArray(array) ? array.filter(predicate) : [];
+}; 
+
+/**
+ * Safe Set operations to prevent "has is not a function" errors
+ */
+export const safeSetOperations = {
+  has: (set: any, item: any): boolean => {
+    return set instanceof Set && set.has(item);
+  },
+  
+  add: (set: any, item: any): Set<any> => {
+    if (set instanceof Set) {
+      set.add(item);
+      return set;
+    }
+    return new Set([item]);
+  },
+  
+  delete: (set: any, item: any): boolean => {
+    return set instanceof Set ? set.delete(item) : false;
+  },
+  
+  size: (set: any): number => {
+    return set instanceof Set ? set.size : 0;
+  },
+  
+  forEach: (set: any, callback: (item: any, index: number) => void): void => {
+    if (set instanceof Set) {
+      set.forEach(callback);
+    }
+  },
+  
+  toArray: (set: any): any[] => {
+    return set instanceof Set ? Array.from(set) : [];
+  },
+  
+  fromArray: (array: any): Set<any> => {
+    return Array.isArray(array) ? new Set(array) : new Set();
+  }
+};
+
+/**
+ * Universal safe collection operations that work with both Arrays and Sets
+ */
+export const safeCollectionOperations = {
+  has: (collection: any, item: any): boolean => {
+    if (collection instanceof Set) {
+      return collection.has(item);
+    }
+    if (Array.isArray(collection)) {
+      return collection.includes(item);
+    }
+    return false;
+  },
+  
+  add: (collection: any, item: any): any => {
+    if (collection instanceof Set) {
+      collection.add(item);
+      return collection;
+    }
+    if (Array.isArray(collection)) {
+      return [...collection, item];
+    }
+    return [item];
+  },
+  
+  remove: (collection: any, item: any): any => {
+    if (collection instanceof Set) {
+      collection.delete(item);
+      return collection;
+    }
+    if (Array.isArray(collection)) {
+      return collection.filter(i => i !== item);
+    }
+    return [];
+  },
+  
+  size: (collection: any): number => {
+    if (collection instanceof Set) {
+      return collection.size;
+    }
+    if (Array.isArray(collection)) {
+      return collection.length;
+    }
+    return 0;
+  }
+}; 

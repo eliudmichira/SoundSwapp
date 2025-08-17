@@ -290,3 +290,85 @@ Best regards,
     </AnimatePresence>
   );
 }; 
+
+export const HelpPage: React.FC<{ onShowToast?: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void }> = ({ onShowToast }) => {
+  const [activeCategory, setActiveCategory] = useState<'all' | 'general' | 'conversion' | 'technical' | 'account'>('all');
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+  const toggleExpanded = (index: number) => {
+    const newExpanded = new Set(expandedItems);
+    newExpanded.has(index) ? newExpanded.delete(index) : newExpanded.add(index);
+    setExpandedItems(newExpanded);
+  };
+  const filteredFAQ = activeCategory === 'all' ? faqData : faqData.filter(item => item.category === activeCategory);
+  const categories = [
+    { key: 'all', label: 'All Questions', icon: HelpCircle },
+    { key: 'general', label: 'Getting Started', icon: BookOpen },
+    { key: 'conversion', label: 'Conversion Process', icon: Play },
+    { key: 'technical', label: 'Technical Issues', icon: AlertCircle },
+    { key: 'account', label: 'Account & Limits', icon: Info }
+  ];
+  return (
+    <div className="min-h-screen px-4 sm:px-6 py-6 space-y-8">
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => window.history.back()} aria-label="Go back" className="p-2 rounded-full hover:bg-accent">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <h1 className="text-2xl font-bold">Help & Support</h1>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1">
+          <h3 className="text-lg font-semibold mb-4">Categories</h3>
+          <div className="space-y-2">
+            {categories.map((category) => {
+              const Icon = category.icon;
+              return (
+                <button key={category.key} onClick={() => setActiveCategory(category.key as any)} className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${activeCategory===category.key ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'hover:bg-accent text-foreground'}`}>
+                  <Icon className="w-5 h-5" />
+                  <span className="font-medium">{category.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="lg:col-span-2">
+          <h3 className="text-lg font-semibold mb-4">{activeCategory==='all' ? 'Frequently Asked Questions' : categories.find(c => c.key===activeCategory)?.label}</h3>
+          <div className="space-y-4">
+            {filteredFAQ.map((item, index) => (
+              <div key={index} className="border rounded-lg overflow-hidden">
+                <button onClick={() => toggleExpanded(index)} className="w-full p-4 text-left hover:bg-accent/40 transition-colors flex items-center justify-between">
+                  <span className="font-medium">{item.question}</span>
+                  {expandedItems.has(index) ? (
+                    <ChevronDown className="w-5 h-5" />
+                  ) : (
+                    <ChevronRight className="w-5 h-5" />
+                  )}
+                </button>
+                {expandedItems.has(index) && (
+                  <div className="px-4 pb-4 text-muted-foreground whitespace-pre-line">{item.answer}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <section className="p-6 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border">
+        <h4 className="font-semibold mb-4 flex items-center"><Play className="w-5 h-5 mr-2"/>Quick Start Guide</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <h5 className="font-medium flex items-center"><FaSpotify className="w-4 h-4 mr-2"/>Spotify to YouTube</h5>
+            <ol className="space-y-1 mt-2"><li>1. Connect both accounts</li><li>2. Select Spotify playlist</li><li>3. Choose YouTube destination</li><li>4. Start conversion</li></ol>
+          </div>
+          <div>
+            <h5 className="font-medium flex items-center"><Youtube className="w-4 h-4 mr-2"/>YouTube to Spotify</h5>
+            <ol className="space-y-1 mt-2"><li>1. Connect both accounts</li><li>2. Select YouTube playlist</li><li>3. Choose Spotify destination</li><li>4. Start conversion</li></ol>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}; 

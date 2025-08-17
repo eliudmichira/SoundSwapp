@@ -208,26 +208,7 @@ const EnhancedConnectionSection = () => {
     }
   };
 
-  // Debug section to show authentication state
-  const renderDebugInfo = () => {
-    if (process.env.NODE_ENV === 'development') {
-      return (
-        <div className="mb-4 p-4 bg-gray-800/50 rounded-lg text-xs text-gray-300">
-          <h4 className="font-semibold mb-2">Debug Info:</h4>
-          <div className="space-y-1">
-            <div>User: {user ? `${user.email} (${user.uid})` : 'Not authenticated'}</div>
-            <div>Spotify Auth: {hasSpotifyAuth ? 'Connected' : 'Not connected'}</div>
-            <div>YouTube Auth: {hasYouTubeAuth ? 'Connected' : 'Not connected'}</div>
-            <div>Loading: {loading ? 'Yes' : 'No'}</div>
-            <div className="mt-2 p-2 bg-yellow-500/20 border border-yellow-500/30 rounded">
-              <strong>Development Mode:</strong> Connection buttons will work even without authentication for testing purposes.
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
+
 
   // Authentication status indicator
   const renderAuthStatus = () => {
@@ -258,8 +239,7 @@ const EnhancedConnectionSection = () => {
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 ${isDarkMode ? 'bg-transparent' : 'bg-gray-50'}`}>
-      {/* Debug info */}
-      {renderDebugInfo()}
+      
       
       {/* Auth status */}
       {renderAuthStatus()}

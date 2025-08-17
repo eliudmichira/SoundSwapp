@@ -38,7 +38,7 @@ export const ConnectionsTab: React.FC = () => {
       exit="exit"
       className="h-full"
     >
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 pb-[calc(5rem+env(safe-area-inset-bottom))]">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white mb-2">
             Platform Connections

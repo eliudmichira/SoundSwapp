@@ -1,14 +1,32 @@
 import React, { createContext, useContext } from 'react';
 
-// Create orientation context for mobile devices
 interface MobileContextType {
-  isPortrait: boolean;
   isMobile: boolean;
+  isPortrait: boolean;
+  isLandscape: boolean;
+  isIOS: boolean;
+  isAndroid: boolean;
+  isTablet: boolean;
+  viewport: {
+    width: number;
+    height: number;
+    devicePixelRatio: number;
+  };
+  isSmallScreen: boolean;
+  isMediumScreen: boolean;
+  isLargeScreen: boolean;
+  isMobileOrTablet: boolean;
+  isStandalone: boolean;
 }
 
-export const MobileContext = createContext<MobileContextType>({
-  isPortrait: true,
-  isMobile: false
-});
+const MobileContext = createContext<MobileContextType | undefined>(undefined);
 
-export const useMobile = () => useContext(MobileContext); 
+export const useMobileContext = (): MobileContextType => {
+  const context = useContext(MobileContext);
+  if (context === undefined) {
+    throw new Error('useMobileContext must be used within a MobileProvider');
+  }
+  return context;
+};
+
+export { MobileContext }; 

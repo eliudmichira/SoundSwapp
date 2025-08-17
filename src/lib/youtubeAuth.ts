@@ -8,10 +8,32 @@ import { db } from './firebase';
 const YOUTUBE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const YOUTUBE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
-// YouTube API credentials
-const YOUTUBE_CLIENT_ID = youtubeConfig.clientId;
-const YOUTUBE_CLIENT_SECRET = youtubeConfig.clientSecret; // Required for code flow
-const YOUTUBE_REDIRECT_URI = youtubeConfig.redirectUri;
+// Fallback configuration if environment variables fail to load
+const FALLBACK_CONFIG = {
+  clientId: '968024909043-qv0sceqajnebc6m3088eoq519n3epbua.apps.googleusercontent.com',
+  clientSecret: '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',
+  redirectUri: 'https://soundswapp.firebaseapp.com/youtube-callback'
+};
+
+// YouTube API credentials with fallback
+const YOUTUBE_CLIENT_ID = youtubeConfig.clientId || FALLBACK_CONFIG.clientId;
+const YOUTUBE_CLIENT_SECRET = youtubeConfig.clientSecret || FALLBACK_CONFIG.clientSecret;
+const YOUTUBE_REDIRECT_URI = youtubeConfig.redirectUri || FALLBACK_CONFIG.redirectUri;
+
+// Debug YouTube configuration
+console.log('[YouTube Auth] Configuration loaded:', {
+  clientId: YOUTUBE_CLIENT_ID ? `${YOUTUBE_CLIENT_ID.substring(0, 10)}...` : 'MISSING',
+  redirectUri: YOUTUBE_REDIRECT_URI,
+  hasClientSecret: !!YOUTUBE_CLIENT_SECRET,
+  usingFallback: !youtubeConfig.clientId
+});
+
+// Log environment variables for debugging
+console.log('[YouTube Auth] Environment variables:', {
+  VITE_YOUTUBE_CLIENT_ID: import.meta.env.VITE_YOUTUBE_CLIENT_ID ? `${import.meta.env.VITE_YOUTUBE_CLIENT_ID.substring(0, 10)}...` : 'MISSING',
+  VITE_GOOGLE_CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID ? `${import.meta.env.VITE_GOOGLE_CLIENT_ID.substring(0, 10)}...` : 'MISSING',
+  VITE_YOUTUBE_REDIRECT_URI: import.meta.env.VITE_YOUTUBE_REDIRECT_URI || 'MISSING'
+});
 
 // YouTube API scopes
 const YOUTUBE_SCOPES = [
@@ -56,6 +78,24 @@ const generateStateParam = (): string => {
 export const getYouTubeAuthUrl = (): string => {
   const state = generateStateParam();
   
+  console.log('[YouTube Auth] Building auth URL with params:', {
+    client_id: YOUTUBE_CLIENT_ID ? `${YOUTUBE_CLIENT_ID.substring(0, 10)}...` : 'MISSING',
+    redirect_uri: YOUTUBE_REDIRECT_URI,
+    state: state ? `${state.substring(0, 5)}...` : 'MISSING',
+    scope: YOUTUBE_SCOPES.join(' ')
+  });
+  
+  // Validate required parameters before creating URL
+  if (!YOUTUBE_CLIENT_ID) {
+    console.error('[YouTube Auth] CRITICAL ERROR: client_id is missing!');
+    throw new Error('YouTube client_id is not configured. Please check your environment variables.');
+  }
+  
+  if (!YOUTUBE_REDIRECT_URI) {
+    console.error('[YouTube Auth] CRITICAL ERROR: redirect_uri is missing!');
+    throw new Error('YouTube redirect_uri is not configured. Please check your environment variables.');
+  }
+  
   const params = new URLSearchParams({
     client_id: YOUTUBE_CLIENT_ID,
     redirect_uri: YOUTUBE_REDIRECT_URI,
@@ -67,7 +107,10 @@ export const getYouTubeAuthUrl = (): string => {
     prompt: 'consent'
   }).toString();
 
-  return `${YOUTUBE_AUTH_ENDPOINT}?${params}`;
+  const authUrl = `${YOUTUBE_AUTH_ENDPOINT}?${params}`;
+  console.log('[YouTube Auth] Generated auth URL:', authUrl.substring(0, 100) + '...');
+  
+  return authUrl;
 };
 
 /**
@@ -231,34 +274,55 @@ export const handleYouTubeCallback = async (): Promise<void> => {
     
     console.log("Saving tokens to TokenManager");
     
-    // Save tokens using the TokenManager
-    TokenManager.storeTokens('youtube', {
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token || '',
-      expiresAt: Date.now() + (tokenData.expires_in * 1000)
-    });
-    console.log("Token should now be in localStorage:", localStorage.getItem('soundswapp_youtube_access_token'));
+    // Save tokens using the TokenManager with Firestore resilience
+    try {
+      await TokenManager.storeTokens('youtube', {
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token || '',
+        expiresAt: Date.now() + (tokenData.expires_in * 1000)
+      });
+      console.log("✅ YouTube tokens saved successfully");
+    } catch (error) {
+      console.error("⚠️ Failed to save YouTube tokens, but localStorage fallback should work:", error);
+      // Continue execution - the TokenManager has localStorage fallback
+    }
     
-    // Update Firestore to mark YouTube as connected
+    // Backward compatibility: keep legacy key for any consumers still reading it
+    localStorage.setItem('soundswapp_youtube_access_token', tokenData.access_token);
+    console.log("YouTube authentication completed with token storage");
+    
+    // Update Firestore to mark YouTube as connected (with resilience)
     try {
       const auth = getAuth();
       const userId = auth.currentUser?.uid;
       
       if (userId) {
-        // Update the user document to indicate YouTube is connected
+        console.log("Attempting to update Firestore user document...");
+        
+        // Try to update the user document to indicate YouTube is connected
         const userRef = doc(db, 'users', userId);
         await setDoc(userRef, {
           youtubeConnected: true,
           lastUpdated: new Date()
         }, { merge: true });
         
-        console.log("Updated Firestore with YouTube connection status");
+        console.log("✅ Successfully updated Firestore with YouTube connection status");
       } else {
         console.warn("No user ID available to update Firestore");
       }
-    } catch (firestoreError) {
-      console.error("Failed to update Firestore:", firestoreError);
-      // Continue execution - TokenManager backup is still available
+    } catch (firestoreError: any) {
+      console.warn("⚠️ Failed to update Firestore user document (service may be down):", firestoreError);
+      
+      // Store connection status in localStorage as fallback
+      try {
+        localStorage.setItem('soundswapp_youtube_connected', 'true');
+        localStorage.setItem('soundswapp_youtube_connected_at', new Date().toISOString());
+        console.log("✅ Stored YouTube connection status in localStorage as fallback");
+      } catch (localError) {
+        console.error("Failed to store connection status in localStorage:", localError);
+      }
+      
+      // Don't throw - authentication is still successful
     }
     
     // Dispatch event to notify about authentication success
@@ -328,6 +392,8 @@ export const refreshYouTubeToken = async (): Promise<boolean> => {
       refreshToken: refreshToken, // Keep the existing refresh token
       expiresAt: Date.now() + (data.expires_in * 1000)
     });
+    // Backward compatibility: keep legacy localStorage key in sync
+    localStorage.setItem('soundswapp_youtube_access_token', data.access_token);
     
     return true;
   } catch (error) {
@@ -389,4 +455,5 @@ export const clearYouTubeAuth = (): void => {
   localStorage.removeItem(STORAGE_KEYS.AUTH_STATE);
   localStorage.removeItem(STORAGE_KEYS.RETURN_PATH);
   localStorage.removeItem(STORAGE_KEYS.CALLBACK_URL);
+  localStorage.removeItem('soundswapp_youtube_access_token');
 }; 

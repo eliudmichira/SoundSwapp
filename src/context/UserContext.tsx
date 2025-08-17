@@ -46,7 +46,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUpWithEmail = async (email: string, password: string, displayName: string) => {
     try {
       setError(null);
-      await auth.signInWithEmail(email, password, displayName);
+      await auth.signUpWithEmail(email, password, displayName, false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed');
       throw err;

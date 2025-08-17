@@ -14,30 +14,7 @@ export const PlaylistSelector: React.FC<PlaylistSelectorProps> = ({
   const [isValid, setIsValid] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Mock playlists - replace with real data
-  const mockPlaylists = [
-    {
-      id: '1',
-      name: 'My Favorite Songs',
-      description: 'A collection of my favorite tracks',
-      trackCount: 50,
-      image: 'https://via.placeholder.com/60x60'
-    },
-    {
-      id: '2',
-      name: 'Chill Vibes',
-      description: 'Relaxing music for study time',
-      trackCount: 30,
-      image: 'https://via.placeholder.com/60x60'
-    },
-    {
-      id: '3',
-      name: 'Workout Mix',
-      description: 'High energy tracks for workouts',
-      trackCount: 25,
-      image: 'https://via.placeholder.com/60x60'
-    }
-  ];
+  // Use real playlists from the conversion context
 
   const handleUrlChange = (url: string) => {
     setPlaylistUrl(url);
@@ -127,32 +104,9 @@ export const PlaylistSelector: React.FC<PlaylistSelectorProps> = ({
 
       {/* Playlist List */}
       <div className="space-y-3">
-        {mockPlaylists.map((playlist) => (
-          <motion.div
-            key={playlist.id}
-            variants={ANIMATION_VARIANTS.scaleIn}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-colors"
-            onClick={() => onPlaylistSelect(playlist)}
-          >
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <Music className="w-6 h-6 text-white" />
-              </div>
-              
-              <div className="flex-1">
-                <h4 className="text-white font-semibold">{playlist.name}</h4>
-                <p className="text-gray-300 text-sm">{playlist.description}</p>
-                <p className="text-gray-400 text-xs">{playlist.trackCount} tracks</p>
-              </div>
-              
-              <div className="text-gray-400">
-                <ArrowLeft className="w-5 h-5 rotate-180" />
-              </div>
-            </div>
-          </motion.div>
-        ))}
+        <div className="text-center py-8">
+          <p className="text-gray-400">No playlists available. Use the URL input above to convert a playlist.</p>
+        </div>
       </div>
     </div>
   );

@@ -1,60 +1,84 @@
+# Build outputs
+dist/
+build/
+.gradle/
+
+# APK files
+*.apk
+*.aab
+*.idsig
+
+# Debug files
+debug.log
+debug-*.js
+debug-*.html
+temp_*.txt
+
+# Keystores
+*.keystore
+local.properties
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+*.temp
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
+# Flutter project
+playlistbridge/
+
+# Documentation (keep only README.md)
+BLOG_POST_*.md
+*_GUIDE.md
+*_CHECKLIST.md
+*_ANALYSIS.md
+*_PLAN.md
+
+# Node modules
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
 # Logs
-logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-# Dependencies
-node_modules
-.pnp
-.pnp.js
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
 
-# Build files
-dist
-dist-ssr
-*.local
-build/
-out/
-.next/
-.firebase/
-.vercel
-.output
-
-# Environment variables
-.env
-.env.*
-!.env.example
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Cache and temporary files
-.cache/
-.eslintcache
-.stylelintcache
-*.tmp
-*.temp
-.DS_Store
-Thumbs.db
-tsconfig.tsbuildinfo
-
-# Test coverage
+# Coverage directory used by tools like istanbul
 coverage/
 
 # Firebase
 .firebase/
 firebase-debug.log
+firestore-debug.log
 ui-debug.log
-.runtimeconfig.json
-*.cache 
+
+# Temporary files
+*.tmp
+*.temp
+temp_* 

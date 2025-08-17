@@ -1,7 +1,8 @@
 import { PlatformKey } from '../components/MobileConverter';
-import { db } from '../lib/firebase';
+import { db, storage, auth } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
 import { getAuth, updateProfile } from 'firebase/auth';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import networkResilience from './networkResilience';
 
 export interface UserProfile {
@@ -65,14 +66,14 @@ export class ProfileService {
   // Get user stats from Firestore or calculate from real data
   async getUserStats(userId: string): Promise<UserStats> {
     try {
-      console.log('[ProfileService] Getting user stats for:', userId);
+      console.log('Fetching user stats for:', userId);
       
       // First, try to calculate real stats from conversion history
       const realStats = await this.calculateRealStats(userId);
       
       // If we have real conversion data, use it
       if (realStats.conversions > 0) {
-        console.log('[ProfileService] Using real stats from conversion history:', realStats);
+        console.log('Using real stats from conversion history:', realStats);
         return realStats;
       }
       
@@ -81,6 +82,8 @@ export class ProfileService {
       
       if (userDoc.exists()) {
         const userData = userDoc.data();
+        console.log('User data from Firestore:', userData);
+        
         const stats = userData.stats || {
           conversions: 0,
           tracks: 0,
@@ -95,11 +98,11 @@ export class ProfileService {
           totalPlaylists: 0
         };
         
-        console.log('[ProfileService] Using stored stats:', stats);
+        console.log('Processed stats:', stats);
         return stats;
       }
       
-      console.log('[ProfileService] No user document found, returning default stats');
+      console.log('No user document found, returning default stats');
       // Return default stats for users without documents
       return {
         conversions: 0,
@@ -115,7 +118,7 @@ export class ProfileService {
         totalPlaylists: 0
       };
     } catch (error) {
-      console.error('[ProfileService] Error getting user stats:', error);
+      console.error('Error getting user stats:', error);
       // Return default stats on error
       return {
         conversions: 0,
@@ -216,9 +219,6 @@ export class ProfileService {
   // Upload profile image to Firebase Storage
   async uploadProfileImage(userId: string, file: File): Promise<string> {
     try {
-      // Import Firebase Storage functions
-      const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-      const { storage, auth } = await import('../lib/firebase');
       
       // Check if user is authenticated
       const currentUser = auth.currentUser;
@@ -244,18 +244,31 @@ export class ProfileService {
       
       // Create a unique filename
       const timestamp = Date.now();
-      const fileExtension = file.name.split('.').pop() || 'jpg';
-      const fileName = `profile-images/${userId}/${timestamp}.${fileExtension}`;
+      const fileExtension = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const fileName = `profile-images/${userId}/${timestamp}-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}.${fileExtension}`;
       
       // Create storage reference
       const storageRef = ref(storage, fileName);
       
-      // Upload file
+      // Upload file resumably with metadata
       console.log(`[ProfileService] Uploading profile image for user ${userId}`);
-      const snapshot = await uploadBytes(storageRef, file);
+      const metadata = { contentType: file.type, cacheControl: 'public,max-age=31536000' } as const;
+      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on('state_changed', undefined, (err) => {
+          try {
+            console.error('[ProfileService] Upload error payload:', {
+              code: (err as any)?.code,
+              serverResponse: (err as any)?.serverResponse,
+              message: (err as any)?.message,
+            });
+          } catch {}
+          reject(err);
+        }, () => resolve());
+      });
       
       // Get download URL
-      const downloadURL = await getDownloadURL(snapshot.ref);
+      const downloadURL = await getDownloadURL(storageRef);
       
       console.log(`[ProfileService] Profile image uploaded successfully: ${downloadURL}`);
       return downloadURL;
@@ -264,13 +277,19 @@ export class ProfileService {
       console.error('[ProfileService] Error uploading profile image:', error);
       
       if (error instanceof Error) {
-        if (error.message.includes('unauthorized') || error.message.includes('permission')) {
+        if ((error as any)?.code === 'storage/unauthorized') {
           throw new Error('You do not have permission to upload images. Please sign in again.');
-        } else if (error.message.includes('network') || error.message.includes('connection')) {
-          throw new Error('Network error. Please check your internet connection and try again.');
-        } else {
-          throw new Error(`Upload failed: ${error.message}`);
         }
+        if ((error as any)?.code === 'storage/canceled') {
+          throw new Error('Upload canceled. Please try again.');
+        }
+        if ((error as any)?.code === 'storage/retry-limit-exceeded' || (error as any)?.code === 'storage/cannot-slice-blob') {
+          throw new Error('Upload failed due to connection issues. Please try again.');
+        }
+        if ((error as any)?.serverResponse && String((error as any).serverResponse).includes('PreconditionFailed')) {
+          throw new Error('Upload failed due to a precondition error. Please retry.');
+        }
+        throw new Error(`Upload failed: ${error.message}`);
       }
       
       throw new Error('Failed to upload profile image. Please try again.');
@@ -492,9 +511,8 @@ export class ProfileService {
     try {
       const stats = await this.getUserStats(userId);
       
-      // Calculate new success rate based on total conversions and tracks
-      const newTotalTracks = stats.tracks + tracksConverted;
-      const newSuccessRate = newTotalTracks > 0 ? ((stats.conversions * 100) / newTotalTracks) : 0;
+      // Note: We don't calculate success rate here anymore since it's calculated from real conversion data
+      // The success rate will be recalculated when getUserStats is called next time
       
       // Update platform usage based on conversion direction
       const platformUsage = { ...stats.platformUsage };
@@ -506,13 +524,13 @@ export class ProfileService {
       
       await this.updateUserStats(userId, {
         conversions: stats.conversions + 1,
-        tracks: newTotalTracks,
+        tracks: stats.tracks + tracksConverted,
         monthlyUsage: stats.monthlyUsage + 1,
-        successRate: Math.round(newSuccessRate),
+        successRate: stats.successRate, // Keep existing success rate, will be recalculated from real data
         platformUsage: platformUsage
       });
       
-      console.log(`Updated user stats: +1 conversion, +${tracksConverted} tracks, success rate: ${Math.round(newSuccessRate)}%, platform usage updated`);
+      console.log(`Updated user stats: +1 conversion, +${tracksConverted} tracks, platform usage updated`);
     } catch (error) {
       console.error('Error adding conversion:', error);
     }
@@ -532,16 +550,30 @@ export class ProfileService {
   // Calculate real stats from conversion history
   async calculateRealStats(userId: string): Promise<UserStats> {
     try {
+      console.log('[ProfileService] Calculating real stats for user:', userId);
+      
       const { collection, query, where, getDocs, orderBy } = await import('firebase/firestore');
       const { db } = await import('../lib/firebase');
       
       // Get conversion history from Firestore
       const conversionsRef = collection(db, 'users', userId, 'conversions');
-      const q = query(conversionsRef, orderBy('convertedAt', 'desc'));
+      
+      // Try without orderBy first to avoid index issues
+      let q;
+      try {
+        q = query(conversionsRef, orderBy('convertedAt', 'desc'));
+      } catch (indexError) {
+        console.warn('[ProfileService] OrderBy failed, trying without ordering:', indexError);
+        q = query(conversionsRef);
+      }
+      
       const querySnapshot = await getDocs(q);
+      console.log('[ProfileService] Found', querySnapshot.size, 'conversions in Firestore');
       
       let totalConversions = 0;
       let totalTracks = 0;
+      let totalTracksAttempted = 0;
+      let totalTracksSuccessfullyConverted = 0;
       let spotifyConversions = 0;
       let youtubeConversions = 0;
       let currentMonthUsage = 0;
@@ -550,13 +582,31 @@ export class ProfileService {
       
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+        console.log('[ProfileService] Processing conversion:', {
+          id: doc.id,
+          tracksMatched: data.tracksMatched,
+          totalTracks: data.totalTracks,
+          tracksFailed: data.tracksFailed,
+          spotifyPlaylistId: data.spotifyPlaylistId,
+          youtubePlaylistId: data.youtubePlaylistId,
+          convertedAt: data.convertedAt
+        });
+        
         const convertedAt = data.convertedAt?.toDate ? data.convertedAt.toDate() : new Date(data.convertedAt);
         
         // Count conversions
         totalConversions++;
         
-        // Count tracks
-        totalTracks += data.tracksMatched || 0;
+        // Count tracks for success rate calculation
+        const tracksAttempted = data.totalTracks || 0;
+        const tracksSuccessfullyConverted = data.tracksMatched || 0;
+        
+        totalTracksAttempted += tracksAttempted;
+        totalTracksSuccessfullyConverted += tracksSuccessfullyConverted;
+        
+        // Count total tracks (for backward compatibility)
+        const tracksCount = data.tracksMatched || data.totalTracks || 0;
+        totalTracks += tracksCount;
         
         // Count platform usage based on conversion type
         if (data.spotifyPlaylistId && data.youtubePlaylistId) {
@@ -564,10 +614,16 @@ export class ProfileService {
           if (data.spotifyPlaylistName) {
             // Spotify to YouTube conversion
             spotifyConversions++;
-          } else {
+          } else if (data.youtubePlaylistId) {
             // YouTube to Spotify conversion
             youtubeConversions++;
           }
+        } else if (data.spotifyPlaylistId) {
+          // Spotify conversion
+          spotifyConversions++;
+        } else if (data.youtubePlaylistId) {
+          // YouTube conversion
+          youtubeConversions++;
         }
         
         // Count monthly usage
@@ -576,10 +632,17 @@ export class ProfileService {
         }
       });
       
-      // Calculate success rate
-      const successRate = totalConversions > 0 ? Math.round((totalTracks / totalConversions) * 100) : 0;
+      // Calculate success rate: (successfully converted tracks / total tracks attempted) * 100
+      const successRate = totalTracksAttempted > 0 ? Math.round((totalTracksSuccessfullyConverted / totalTracksAttempted) * 100) : 0;
       
-      return {
+      console.log('[ProfileService] Success rate calculation:', {
+        totalTracksAttempted,
+        totalTracksSuccessfullyConverted,
+        successRate: `${successRate}%`,
+        formula: `${totalTracksSuccessfullyConverted} / ${totalTracksAttempted} * 100`
+      });
+      
+      const calculatedStats = {
         conversions: totalConversions,
         tracks: totalTracks,
         monthlyUsage: currentMonthUsage,
@@ -593,8 +656,11 @@ export class ProfileService {
         totalPlaylists: totalConversions // Each conversion represents a playlist
       };
       
+      console.log('[ProfileService] Calculated stats:', calculatedStats);
+      return calculatedStats;
+      
     } catch (error) {
-      console.error('Error calculating real stats:', error);
+      console.error('[ProfileService] Error calculating real stats:', error);
       // Return default stats if calculation fails
       return {
         conversions: 0,

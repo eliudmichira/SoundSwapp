@@ -516,7 +516,7 @@ const MobileMenuItem = ({
 export const MobileBottomNav: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <nav className="fixed bottom-0 left-0 right-0 z-50">
     <div className="bg-surface-card/98 backdrop-blur-2xl border-t border-border-default/40 shadow-sm">
-      <div className="flex justify-between items-center h-20 px-6">
+      <div className="flex justify-between items-center h-20 px-6 pb-[env(safe-area-inset-bottom)]">
         {children}
       </div>
     </div>
@@ -557,12 +557,12 @@ export const MobileNavItem: React.FC<MobileNavItemProps> = ({
         <div className={cn(
           "relative w-12 h-12 rounded-full transition-all duration-300",
           active 
-            ? "bg-gradient-to-br from-[#34A89B] to-[#2D6F6B] shadow-lg shadow-[#34A89B]/20" 
+            ? "bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] shadow-lg shadow-[#FF007A]/20" 
             : "bg-gradient-to-br from-gray-100/80 to-gray-200/80 dark:from-gray-800/80 dark:to-gray-700/80 hover:shadow-md hover:scale-105"
         )}>
           {/* Inner Circle for Active State */}
           {active && (
-            <div className="absolute inset-2 bg-[#34A89B] rounded-full"></div>
+            <div className="absolute inset-2 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full"></div>
           )}
           
           {/* Icon */}

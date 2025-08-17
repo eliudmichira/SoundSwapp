@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { useUIState } from '../../contexts/UIStateContext';
 import { useNotification } from '../../contexts/NotificationContext';
+import { useConversion } from '../../lib/ConversionContext';
 import { ANIMATION_VARIANTS } from '../../config/animations';
 import { formatDate } from '../../utils/dataTransformers';
 
@@ -20,29 +21,9 @@ export const HistoryTab: React.FC = () => {
   const { activeTab } = useUIState();
   const { showInfo } = useNotification();
   
-  // Mock history data - replace with real data from context
-  const mockHistory: ConversionHistory[] = [
-    {
-      id: '1',
-      sourcePlatform: 'spotify',
-      destinationPlatform: 'youtube',
-      playlistName: 'My Favorite Songs',
-      totalTracks: 50,
-      successRate: 95,
-      completedAt: new Date('2024-01-15'),
-      status: 'completed'
-    },
-    {
-      id: '2',
-      sourcePlatform: 'youtube',
-      destinationPlatform: 'spotify',
-      playlistName: 'Chill Vibes',
-      totalTracks: 30,
-      successRate: 87,
-      completedAt: new Date('2024-01-10'),
-      status: 'completed'
-    }
-  ];
+  // Use real conversion history from context
+  const { state } = useConversion();
+  const conversionHistory = state.conversionHistory;
 
   if (activeTab !== 'history') {
     return null;
@@ -82,7 +63,7 @@ export const HistoryTab: React.FC = () => {
       exit="exit"
       className="h-full"
     >
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 pb-[calc(5rem+env(safe-area-inset-bottom))]">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white mb-2">
             Conversion History
@@ -92,7 +73,7 @@ export const HistoryTab: React.FC = () => {
           </p>
         </div>
         
-        {mockHistory.length === 0 ? (
+        {conversionHistory.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-gray-400">No conversion history yet</p>
             <button
@@ -104,7 +85,7 @@ export const HistoryTab: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {mockHistory.map((item) => (
+            {conversionHistory.map((item) => (
               <motion.div
                 key={item.id}
                 variants={ANIMATION_VARIANTS.scaleIn}
@@ -112,16 +93,16 @@ export const HistoryTab: React.FC = () => {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <h3 className="text-white font-semibold">{item.playlistName}</h3>
+                    <h3 className="text-white font-semibold">{item.spotifyPlaylistName}</h3>
                     <p className="text-gray-300 text-sm">
-                      {item.sourcePlatform} → {item.destinationPlatform}
+                      Spotify → YouTube
                     </p>
                     <p className="text-gray-400 text-xs">
-                      {item.totalTracks} tracks • {item.successRate}% success • {formatDate(item.completedAt)}
+                      {item.totalTracks} tracks • {Math.round((item.tracksMatched / item.totalTracks) * 100)}% success • {formatDate(item.convertedAt)}
                     </p>
                   </div>
-                  <div className={`text-2xl ${getStatusColor(item.status)}`}>
-                    {getStatusIcon(item.status)}
+                  <div className={`text-2xl ${getStatusColor('completed')}`}>
+                    {getStatusIcon('completed')}
                   </div>
                 </div>
               </motion.div>

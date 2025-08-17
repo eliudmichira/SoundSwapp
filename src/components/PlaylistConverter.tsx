@@ -189,26 +189,7 @@ interface Playlist {
   tracks: Track[];
 }
 
-// Mock data
-const mockPlaylist: Playlist = {
-  name: "Chill Vibes 2025",
-  owner: "MusicFan365",
-  image: "https://i.scdn.co/image/ab67706c0000bebb0f4b16c1a1a9e0a1c8a0f3e2",
-  tracks: [
-    { id: 1, name: "Sunflower", artist: "Post Malone, Swae Lee" },
-    { id: 2, name: "Blinding Lights", artist: "The Weeknd" },
-    { id: 3, name: "Watermelon Sugar", artist: "Harry Styles" },
-    { id: 4, name: "Don't Start Now", artist: "Dua Lipa" },
-    { id: 5, name: "Circles", artist: "Post Malone" },
-    { id: 6, name: "Adore You", artist: "Harry Styles" },
-    { id: 7, name: "Say So", artist: "Doja Cat" },
-    { id: 8, name: "Dance Monkey", artist: "Tones And I" },
-    { id: 9, name: "Roxanne", artist: "Arizona Zervas" },
-    { id: 10, name: "Memories", artist: "Maroon 5" },
-    { id: 11, name: "Good Days", artist: "SZA" },
-    { id: 12, name: "Heat Waves", artist: "Glass Animals" },
-  ]
-};
+
 
 // Toast type
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -256,9 +237,8 @@ export default function PlaylistConverter() {
     // Simulate API call
     setTimeout(() => {
       setIsFetching(false);
-      setPlaylist(mockPlaylist);
-      setYoutubeName(mockPlaylist.name);
-      setYoutubeDesc(`Converted from Spotify playlist "${mockPlaylist.name}" by ${mockPlaylist.owner}`);
+          // Note: This component should use real playlist data from the conversion context
+    // For now, we'll let the user manually input the playlist details
       showToast('Playlist fetched successfully!', 'success');
     }, 1500);
   };
@@ -728,14 +708,15 @@ export default function PlaylistConverter() {
                         <div className="mt-2 text-sm text-green-700">
                           <p>Your YouTube playlist has been created successfully.</p>
                             <motion.a 
-                            href="https://www.youtube.com/playlist?list=mockplaylistid123" 
+                            href="#" 
                             target="_blank" 
                             rel="noopener noreferrer"
-                              className="mt-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-md text-white bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
+                              className="mt-3 inline-flex items-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-md text-white bg-black hover:bg-gray-900"
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                           >
-                            View on YouTube <FontAwesomeIcon icon={faExternalLinkAlt} className="ml-2" />
+                            <img src={document.documentElement.classList.contains('dark') ? "/images/yt_logo_rgb_dark.png" : "/images/yt_logo_rgb_light.png"} alt="YouTube" className="h-4 w-auto" />
+                            <span>Watch on YouTube</span>
                             </motion.a>
                             <motion.div 
                               className="w-full h-1.5 bg-gray-100 rounded-full mt-4 overflow-hidden"

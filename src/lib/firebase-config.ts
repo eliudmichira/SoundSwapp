@@ -7,7 +7,10 @@ const getFirebaseConfig = () => {
     storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
-    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+    // Only include measurementId if it's properly configured
+    ...(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID && {
+      measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+    })
   };
 
   // Validate required fields
@@ -17,6 +20,14 @@ const getFirebaseConfig = () => {
   if (missingFields.length > 0) {
     console.error('Missing Firebase configuration fields:', missingFields);
     throw new Error(`Missing Firebase configuration: ${missingFields.join(', ')}`);
+  }
+
+  // Fix misconfigured storageBucket values
+  const expectedBucket = `${config.projectId}.appspot.com`;
+  const bucket = String(config.storageBucket || '').trim();
+  if (!bucket || /\.firebasestorage\.app$/i.test(bucket)) {
+    console.warn('Correcting Firebase storageBucket from', bucket || '(empty)', 'to', expectedBucket);
+    (config as any).storageBucket = expectedBucket;
   }
 
   // Log configuration for debugging (without sensitive data)

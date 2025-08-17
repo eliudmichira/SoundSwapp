@@ -1,7 +1,7 @@
 import { db as firebaseDb } from './firebase';
 import { doc, setDoc, getDoc, Firestore } from 'firebase/firestore';
 import { spotifyConfig } from './env';
-import { getSpotifyToken, getSpotifyTokenSync } from './spotifyAuth';
+// import { getSpotifyToken, getSpotifyTokenSync } from './spotifyAuth';
 import TokenManager from './tokenManager';
 
 // Type assertion for Firestore db
@@ -172,6 +172,21 @@ class CacheManager {
  */
 class SpotifyApiClient {
   private static readonly MAX_RETRIES = 2;
+  private static readonly REQUEST_TIMEOUT_MS = 15000;
+  private static inFlight = 0;
+  private static readonly MAX_CONCURRENT = 4;
+  private static async acquireSlot() {
+    while (SpotifyApiClient.inFlight >= SpotifyApiClient.MAX_CONCURRENT) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    SpotifyApiClient.inFlight++;
+  }
+  private static releaseSlot() {
+    SpotifyApiClient.inFlight = Math.max(0, SpotifyApiClient.inFlight - 1);
+  }
+  private static backoffDelay(attempt: number) {
+    return Math.min(2000 * Math.pow(2, attempt), 8000);
+  }
   public static artistCache: Record<string, any> = {};
 
   static async request<T>(
@@ -180,23 +195,24 @@ class SpotifyApiClient {
     retryCount = 0
   ): Promise<T> {
     console.log(`[DEBUG] SpotifyApiClient.request(${url}) called, retry: ${retryCount}`);
+    await this.acquireSlot();
     
     // Try both ways to get a token
-    let accessToken: string | undefined = (await getSpotifyTokenSync()) || undefined;
-    console.log(`[DEBUG] Token from getSpotifyTokenSync():`, accessToken ? 'Found' : 'Not found');
+    let accessToken: string | undefined = (await (await import('./spotifyAuth')).getSpotifyTokenSync()) || undefined;
+    if (import.meta.env.DEV) console.log(`[DEBUG] Token from getSpotifyTokenSync():`, accessToken ? 'Found' : 'Not found');
     
     if (!accessToken) {
-      console.log(`[DEBUG] Trying async getSpotifyToken()...`);
-      accessToken = (await getSpotifyToken()) || undefined;
-      console.log(`[DEBUG] Token from getSpotifyToken():`, accessToken ? 'Found' : 'Not found');
+      if (import.meta.env.DEV) console.log(`[DEBUG] Trying async getSpotifyToken()...`);
+      accessToken = (await (await import('./spotifyAuth')).getSpotifyToken()) || undefined;
+      if (import.meta.env.DEV) console.log(`[DEBUG] Token from getSpotifyToken():`, accessToken ? 'Found' : 'Not found');
     }
     
     if (!accessToken) {
       console.error(`[DEBUG] No valid Spotify access token available`);
+      this.releaseSlot();
       throw new Error('No valid Spotify access token available. Please reconnect.');
     }
-
-    console.log(`[DEBUG] Using token: ${accessToken.substring(0, 20)}...`);
+    if (import.meta.env.DEV) console.log(`[DEBUG] Using token: ${accessToken.substring(0, 8)}...`);
 
     // Ensure headers exist and convert to plain object if it's Headers instance
     const headers: Record<string, string> = {};
@@ -222,12 +238,16 @@ class SpotifyApiClient {
     
     try {
       console.log(`[DEBUG] Making request to: ${url}`);
-      const response = await fetch(url, options);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timeout);
       console.log(`[DEBUG] Response status: ${response.status} ${response.statusText}`);
       
       // Handle successful response
       if (response.ok) {
         console.log(`[DEBUG] Request successful`);
+        this.releaseSlot();
         return await response.json();
       }
       
@@ -242,42 +262,40 @@ class SpotifyApiClient {
             // Try to refresh using TokenManager
             const refreshedTokens = await TokenManager.refreshTokensPublic('spotify', currentTokens.refreshToken);
             if (refreshedTokens) {
-              console.log(`[DEBUG] Token refresh successful, retrying request...`);
-              // Update the authorization header with the new token
-              Object.assign(options.headers, { 'Authorization': `Bearer ${refreshedTokens.accessToken}` });
-              
-              // Retry the request with the new token
-              return this.request<T>(url, options, retryCount + 1);
+              console.log(`[DEBUG] Retrying request after token refresh`);
+              // Retry the original request with updated token
+              const result = await SpotifyApiClient.request<T>(url, options, retryCount + 1);
+              this.releaseSlot();
+              return result;
             }
           }
         } catch (refreshError) {
           console.error(`[DEBUG] Token refresh failed:`, refreshError);
         }
-        
-        // If refresh failed, throw a specific error for auth issues
-        throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
       }
       
-      // Extract error details from response
-      const errorDetails = await this.parseErrorResponse(response);
-      console.error(`[DEBUG] API request failed:`, errorDetails);
+      // If we get a 429 rate limit or 5xx, retry with backoff
+      if ((response.status === 429 || (response.status >= 500 && response.status < 600)) && retryCount < this.MAX_RETRIES) {
+        const delay = this.backoffDelay(retryCount);
+        console.log(`[DEBUG] Rate limited or server error, retrying in ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        const result = await SpotifyApiClient.request<T>(url, options, retryCount + 1);
+        this.releaseSlot();
+        return result;
+      }
       
-      throw new Error(errorDetails);
+      // For other error statuses, throw with detailed message
+      const errorText = await response.text();
+      console.error(`[DEBUG] Request failed: ${response.status} ${response.statusText} - ${errorText}`);
+      this.releaseSlot();
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     } catch (error) {
-      console.error(`[DEBUG] Request error:`, error);
-      
-      // If not our custom error from above, rethrow with better context
-      if (!(error instanceof Error)) {
-        throw new Error(`Unexpected error calling ${url}: ${error}`);
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.error(`[DEBUG] Request timed out after ${this.REQUEST_TIMEOUT_MS}ms`);
+        this.releaseSlot();
+        throw new Error('Request timed out. Please try again.');
       }
-      
-      // Retry network errors
-      if (error.message.includes('network') && retryCount < this.MAX_RETRIES) {
-        console.log(`[DEBUG] Network error, retrying (${retryCount + 1}/${this.MAX_RETRIES})...`);
-        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-        return this.request<T>(url, options, retryCount + 1);
-      }
-      
+      this.releaseSlot();
       throw error;
     }
   }
@@ -578,9 +596,16 @@ export class SpotifyAuth {
  * Spotify API service for user data and playlists
  */
 export class SpotifyService {
-/**
- * Get user's Spotify profile
- */
+  private static searchCache: Map<string, any> = new Map();
+  private static SEARCH_CACHE_MAX = 200;
+  private static lastSearchAt = 0;
+  private static MIN_SEARCH_INTERVAL_MS = 150;
+  private static getSearchCacheKey(query: string, limit: number) {
+    return `${query.trim().toLowerCase()}::${limit}`;
+  }
+  /**
+   * Get user's Spotify profile
+   */
   static async getProfile(): Promise<any> {
     return SpotifyApiClient.request(`${ENDPOINTS.BASE}/me`);
   }
@@ -800,6 +825,18 @@ export class SpotifyService {
    * Search for tracks on Spotify
    */
   static async searchTracks(query: string, limit: number = 5): Promise<any> {
+    const cacheKey = SpotifyService.getSearchCacheKey(query, limit);
+    if (SpotifyService.searchCache.has(cacheKey)) {
+      return SpotifyService.searchCache.get(cacheKey);
+    }
+
+    // Throttle rapid searches to avoid 429
+    const now = Date.now();
+    const elapsed = now - SpotifyService.lastSearchAt;
+    if (elapsed < SpotifyService.MIN_SEARCH_INTERVAL_MS) {
+      await new Promise(r => setTimeout(r, SpotifyService.MIN_SEARCH_INTERVAL_MS - elapsed));
+    }
+
     const params = new URLSearchParams({
       q: query,
       type: 'track',
@@ -807,10 +844,33 @@ export class SpotifyService {
       market: 'US' // You might want to make this configurable
     });
     
-    const response = await SpotifyApiClient.request<any>(
-      `${ENDPOINTS.BASE}/search?${params.toString()}`
-    );
+    let response: any;
+    try {
+      response = await SpotifyApiClient.request<any>(
+        `${ENDPOINTS.BASE}/search?${params.toString()}`
+      );
+    } catch (err: any) {
+      // Simple backoff on 429/rate errors
+      const msg = String(err?.message || err);
+      if (msg.includes('429') || msg.toLowerCase().includes('rate')) {
+        await new Promise(r => setTimeout(r, 500));
+        response = await SpotifyApiClient.request<any>(
+          `${ENDPOINTS.BASE}/search?${params.toString()}`
+        );
+      } else {
+        throw err;
+      }
+    }
+    SpotifyService.lastSearchAt = Date.now();
     
+    // cache result
+    SpotifyService.searchCache.set(cacheKey, response);
+    if (SpotifyService.searchCache.size > SpotifyService.SEARCH_CACHE_MAX) {
+      const iterator = SpotifyService.searchCache.keys().next();
+      if (!iterator.done && iterator.value) {
+        SpotifyService.searchCache.delete(iterator.value as string);
+      }
+    }
     return response;
   }
 
@@ -882,6 +942,95 @@ export class SpotifyService {
     
     console.log('Spotify caches cleared');
   }
+
+  /**
+   * Generate a unique playlist name to avoid duplicates
+   */
+  static async generateUniquePlaylistName(baseName: string): Promise<string> {
+    try {
+      const data = await SpotifyApiClient.request<any>(`${ENDPOINTS.BASE}/me/playlists?limit=50`);
+      const playlists = data.items || [];
+      const existingNames = playlists.map((p: any) => (p?.name || '').toLowerCase());
+      
+      // Check if base name exists
+      if (!existingNames.includes(baseName.toLowerCase())) {
+        return baseName;
+      }
+      
+      // Try with different suffixes
+      for (let i = 1; i <= 10; i++) {
+        const newName = `${baseName} (Converted) (${i})`;
+        if (!existingNames.includes(newName.toLowerCase())) {
+          console.log(`[Spotify API] Generated unique playlist name: "${newName}"`);
+          return newName;
+        }
+      }
+      
+      // If all attempts fail, add timestamp
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const uniqueName = `${baseName} (Converted) ${timestamp}`;
+      console.log(`[Spotify API] Generated unique playlist name with timestamp: "${uniqueName}"`);
+      return uniqueName;
+    } catch (error) {
+      console.error('[Spotify API] Error generating unique playlist name:', error);
+      // Fallback to timestamp-based name
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      return `${baseName} (Converted) ${timestamp}`;
+    }
+  }
+
+  /**
+   * Find an existing user playlist by exact name or variations
+   */
+  static async findUserPlaylistByName(name: string): Promise<SpotifyPlaylist | null> {
+    try {
+      const data = await SpotifyApiClient.request<any>(`${ENDPOINTS.BASE}/me/playlists?limit=50`);
+      const playlists = data.items || [];
+      
+      // Look for exact match or variations with "(Converted)" suffix
+      const existingPlaylist = playlists.find((p: any) => {
+        const playlistName = (p?.name || '').trim();
+        const searchName = name.trim();
+        
+        // Check for exact match
+        if (playlistName.toLowerCase() === searchName.toLowerCase()) {
+          return true;
+        }
+        
+        // Check for variations with "(Converted)" suffix
+        const convertedVariations = [
+          `${searchName} (Converted)`,
+          `${searchName} (Converted) (1)`,
+          `${searchName} (Converted) (2)`,
+          `${searchName} (Converted) (3)`,
+          `${searchName} (Converted) (4)`,
+          `${searchName} (Converted) (5)`
+        ];
+        
+        return convertedVariations.some(variation => 
+          playlistName.toLowerCase() === variation.toLowerCase()
+        );
+      });
+      
+      if (existingPlaylist) {
+        console.log(`[Spotify API] Found existing playlist: "${existingPlaylist.name}" (ID: ${existingPlaylist.id})`);
+        return {
+          id: existingPlaylist.id,
+          name: existingPlaylist.name,
+          description: existingPlaylist.description || '',
+          imageUrl: existingPlaylist.images && existingPlaylist.images[0] ? existingPlaylist.images[0].url : '',
+          trackCount: existingPlaylist.tracks ? existingPlaylist.tracks.total : 0,
+          owner: existingPlaylist.owner ? existingPlaylist.owner.display_name : ''
+        } as SpotifyPlaylist;
+      }
+      
+      console.log(`[Spotify API] No existing playlist found for: "${name}"`);
+      return null;
+    } catch (error) {
+      console.error('[Spotify API] Error finding playlist by name:', error);
+      return null;
+    }
+  }
 }
 
 // Backward compatibility exports
@@ -923,7 +1072,7 @@ export const getSpotifyPlaylists = async (accessToken: string): Promise<SpotifyP
             if (!retryResponse.ok) {
               if (retryResponse.status === 401) {
                 // Refresh failed, clear tokens
-                await TokenManager.removeTokens('spotify');
+                await TokenManager.deleteTokens('spotify');
                 throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
               } else if (retryResponse.status === 403) {
                 throw new Error('You do not have permission to access Spotify playlists. Please check your account settings and try reconnecting.');
@@ -933,10 +1082,10 @@ export const getSpotifyPlaylists = async (accessToken: string): Promise<SpotifyP
             }
             
             const data = await retryResponse.json();
-            return data.items || [];
+            return transformSpotifyPlaylists(data.items || []);
           } else {
             // Refresh failed, clear tokens
-            await TokenManager.removeTokens('spotify');
+            await TokenManager.deleteTokens('spotify');
             throw new Error('Your Spotify session has expired. Please reconnect your Spotify account.');
           }
         } else {
@@ -950,11 +1099,24 @@ export const getSpotifyPlaylists = async (accessToken: string): Promise<SpotifyP
     }
 
     const data = await response.json();
-    return data.items || [];
+    return transformSpotifyPlaylists(data.items || []);
   } catch (error) {
     console.error('Error fetching Spotify playlists:', error);
     throw error;
   }
+};
+
+// Helper function to transform Spotify API response to our format
+const transformSpotifyPlaylists = (rawPlaylists: any[]): SpotifyPlaylist[] => {
+  return rawPlaylists.map(playlist => ({
+    id: playlist.id,
+    name: playlist.name,
+    description: playlist.description || '',
+    imageUrl: playlist.images && playlist.images.length > 0 ? playlist.images[0].url : '',
+    trackCount: playlist.tracks?.total || 0,
+    owner: playlist.owner?.display_name || playlist.owner?.id || 'Unknown',
+    url: playlist.external_urls?.spotify || ''
+  }));
 };
 export const getSpotifyPlaylistTracks = SpotifyService.getPlaylistTracks;
 export const extractTrackData = SpotifyService.extractTrackData;
@@ -962,6 +1124,7 @@ export const createSpotifyPlaylist = SpotifyService.createPlaylist;
 export const addTracksToSpotifyPlaylist = SpotifyService.addTracksToPlaylist;
 export const getSpotifyPlaylistById = SpotifyService.getPlaylistById;
 export const searchSpotifyTracks = SpotifyService.searchTracks;
+export const findUserPlaylistByName = SpotifyService.findUserPlaylistByName;
 export const generateCodeVerifier = CryptoHelper.generateCodeVerifier.bind(CryptoHelper);
 export const generateCodeChallenge = CryptoHelper.generateCodeChallenge.bind(CryptoHelper);
 export const saveCodeVerifier = (codeVerifier: string): void => {
@@ -969,4 +1132,14 @@ export const saveCodeVerifier = (codeVerifier: string): void => {
 };
 export const getCodeVerifier = (): string | null => {
   return localStorage.getItem(CACHE.KEYS.CODE_VERIFIER);
+}; 
+
+export const ensureSpotifyToken = async (): Promise<string | null> => {
+  const { getSpotifyToken } = await import('./spotifyAuth');
+  return getSpotifyToken();
+};
+
+export const ensureSpotifyTokenSync = async (): Promise<string | null> => {
+  const { getSpotifyTokenSync } = await import('./spotifyAuth');
+  return getSpotifyTokenSync();
 }; 

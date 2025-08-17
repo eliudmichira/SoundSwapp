@@ -1,19 +1,28 @@
 import { SpotifyTrack } from './ConversionContext';
 
-// Helper function to clean YouTube titles and extract artist/song info
+// Helper to normalize strings: lowercase, remove punctuation/diacritics
+const normalize = (str: string) =>
+  str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}+/gu, '')
+    .replace(/[“”"'`]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .trim();
+
+// Helper to clean YouTube/track titles
 export const parseYouTubeTitle = (videoTitle: string, channelTitle: string) => {
   // Remove common YouTube suffixes
   const cleanTitle = videoTitle
-    .replace(/\s*\([^)]*\)/g, '') // Remove (Official Video), (Lyrics), etc.
-    .replace(/\s*\[[^\]]*\]/g, '') // Remove [Official Video], [Lyrics], etc.
-    .replace(/\s*\|[^|]*$/g, '') // Remove | Electronic, | Trap, etc.
-    .replace(/\s*【[^】]*】/g, '') // Remove 【Melodic Dubstep】, etc.
-    .replace(/\s*♫[^♫]*♫/g, '') // Remove ♫ Best of... ♫
-    .replace(/\s*feat\./gi, ' ft. ') // Standardize featuring
-    .replace(/\s*ft\./gi, ' ft. ') // Standardize ft.
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s*\[[^\]]*\]/g, '')
+    .replace(/\s*\|[^|]*$/g, '')
+    .replace(/\s*【[^】]*】/g, '')
+    .replace(/\s*feat\./gi, ' ft. ')
+    .replace(/\s*ft\./gi, ' ft. ')
     .trim();
 
-  // Try to extract artist and song from title
   const separators = [' - ', ' – ', ': ', ' "', " '", ' // ', ' | '];
   let artist = channelTitle;
   let song = cleanTitle;
@@ -23,9 +32,12 @@ export const parseYouTubeTitle = (videoTitle: string, channelTitle: string) => {
       const parts = cleanTitle.split(separator);
       if (parts.length >= 2) {
         artist = parts[0].trim();
-        song = parts.slice(1).join(separator).trim()
+        song = parts
+          .slice(1)
+          .join(separator)
           .replace(/^['"]/, '')
-          .replace(/['"]$/, '');
+          .replace(/['"]$/, '')
+          .trim();
         break;
       }
     }
@@ -33,9 +45,9 @@ export const parseYouTubeTitle = (videoTitle: string, channelTitle: string) => {
 
   // Clean up the song title
   song = song
-    .replace(/^\d+\s*[-–]\s*/, '') // Remove "1 - " from start
-    .replace(/\s*\([^)]*\)/g, '') // Remove remaining parentheses
-    .replace(/\s*\[[^\]]*\]/g, '') // Remove remaining brackets
+    .replace(/^\d+\s*[-–]\s*/, '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s*\[[^\]]*\]/g, '')
     .trim();
 
   return { artist, song };
@@ -44,93 +56,90 @@ export const parseYouTubeTitle = (videoTitle: string, channelTitle: string) => {
 // Improved similarity calculation for YouTube to Spotify conversion
 export const calculateTrackSimilarity = (originalTrack: SpotifyTrack, spotifyTrack: any): number => {
   let score = 0;
-  
-  // Normalize strings for comparison
-  const normalize = (str: string) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
-  
-  const originalTitle = normalize(originalTrack.name);
-  const originalArtist = normalize(originalTrack.artists[0]);
-  const spotifyTitle = normalize(spotifyTrack.name);
-  const spotifyArtist = normalize(spotifyTrack.artists[0].name);
-  
-  // Title similarity (50% weight)
+
+  const stripFeaturing = (s: string) => s.replace(/\s+(ft\.|feat\.|featuring)\s+.*$/i, '').trim();
+
+  const originalTitle = normalize(stripFeaturing(originalTrack.name));
+  const originalArtist = normalize(stripFeaturing(originalTrack.artists[0]));
+  const spotifyTitle = normalize(stripFeaturing(spotifyTrack.name));
+  const spotifyArtist = normalize(stripFeaturing(spotifyTrack.artists[0].name));
+
+  // Title similarity (45% weight)
   if (originalTitle === spotifyTitle) {
-    score += 0.5;
+    score += 0.45;
   } else if (spotifyTitle.includes(originalTitle) || originalTitle.includes(spotifyTitle)) {
-    score += 0.4;
+    score += 0.35;
   } else {
-    // Calculate partial similarity
     const titleWords = originalTitle.split(' ');
     const spotifyTitleWords = spotifyTitle.split(' ');
-    const commonWords = titleWords.filter(word => spotifyTitleWords.includes(word));
+    const commonWords = titleWords.filter((word) => spotifyTitleWords.includes(word));
     if (commonWords.length > 0) {
-      score += (commonWords.length / Math.max(titleWords.length, spotifyTitleWords.length)) * 0.3;
+      score += (commonWords.length / Math.max(titleWords.length, spotifyTitleWords.length)) * 0.25;
     }
   }
-  
-  // Artist similarity (40% weight)
+
+  // Artist similarity (45% weight)
   if (originalArtist === spotifyArtist) {
-    score += 0.4;
+    score += 0.45;
   } else if (spotifyArtist.includes(originalArtist) || originalArtist.includes(spotifyArtist)) {
-    score += 0.3;
+    score += 0.35;
   } else {
-    // Calculate partial similarity
     const artistWords = originalArtist.split(' ');
     const spotifyArtistWords = spotifyArtist.split(' ');
-    const commonWords = artistWords.filter(word => spotifyArtistWords.includes(word));
+    const commonWords = artistWords.filter((word) => spotifyArtistWords.includes(word));
     if (commonWords.length > 0) {
       score += (commonWords.length / Math.max(artistWords.length, spotifyArtistWords.length)) * 0.2;
     }
   }
-  
-  // Duration similarity (10% weight) - if we have duration data
+
+  // Duration tolerance (10% weight)
   if (originalTrack.duration_ms && spotifyTrack.duration_ms) {
-    const durationDiff = Math.abs(originalTrack.duration_ms - spotifyTrack.duration_ms);
-    const maxDiff = Math.max(originalTrack.duration_ms, spotifyTrack.duration_ms);
-    const durationSimilarity = Math.max(0, 1 - (durationDiff / maxDiff));
+    const diff = Math.abs(originalTrack.duration_ms - spotifyTrack.duration_ms);
+    const toleranceMs = Math.max(8000, Math.floor(originalTrack.duration_ms * 0.05));
+    const durationSimilarity = diff <= toleranceMs ? 1 : Math.max(0, 1 - diff / (originalTrack.duration_ms * 2));
     score += durationSimilarity * 0.1;
   }
-  
-  return Math.min(score, 1.0); // Cap at 1.0
+
+  // Bonus for official/non-live when names match
+  const titleRaw = (spotifyTrack.name || '').toLowerCase();
+  if (titleRaw.includes('live') || titleRaw.includes('remix')) {
+    score -= 0.05;
+  }
+  score = Math.max(0, Math.min(score, 1));
+  return score;
 };
 
 // Generate better search queries for YouTube to Spotify conversion
 export const generateSearchQueries = (track: SpotifyTrack) => {
-  // For YouTube to Spotify conversion, the track data is already processed
-  // so we can use the track.name and track.artists directly
-  const artist = track.artists[0];
-  const song = track.name;
-  
-  // Clean up the song title
+  const artist = stripFeaturingSafe(track.artists[0]);
+  const song = stripFeaturingSafe(track.name);
+
   const cleanSong = song
-    .replace(/^\d+\s*[-–]\s*/, '') // Remove "1 - " from start
-    .replace(/\s*\([^)]*\)/g, '') // Remove parentheses
-    .replace(/\s*\[[^\]]*\]/g, '') // Remove brackets
+    .replace(/^\d+\s*[-–]\s*/, '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s*\[[^\]]*\]/g, '')
     .trim();
-  
-  // Clean up the artist name
+
   const cleanArtist = artist
-    .replace(/\s*\([^)]*\)/g, '') // Remove parentheses
-    .replace(/\s*\[[^\]]*\]/g, '') // Remove brackets
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s*\[[^\]]*\]/g, '')
     .trim();
-  
+
   return [
     `${cleanArtist} ${cleanSong}`,
     `${cleanSong} ${cleanArtist}`,
     cleanSong,
     `${cleanArtist} - ${cleanSong}`,
     `${cleanArtist} "${cleanSong}"`,
-    // Add more specific queries
     `${cleanArtist} ${cleanSong} official`,
     `${cleanArtist} ${cleanSong} audio`,
     `${cleanSong} by ${cleanArtist}`,
-    // Try without featured artists
-    cleanSong.replace(/\s*ft\.\s*[^,\s]+/gi, '').trim(),
-    // Try just the main artist
-    `${cleanArtist} ${cleanSong.replace(/\s*ft\.\s*[^,\s]+/gi, '').trim()}`,
-    // Try with original data as fallback
+    cleanSong.replace(/\s*ft\.?\s*[^,\s]+/gi, '').trim(),
+    `${cleanArtist} ${cleanSong.replace(/\s*ft\.?\s*[^,\s]+/gi, '').trim()}`,
     `${artist} ${song}`,
     `${song} ${artist}`,
-    song
-  ].filter(query => query.length > 0);
-}; 
+    song,
+  ].filter((q) => q.length > 0);
+};
+
+const stripFeaturingSafe = (s: string) => s.replace(/\s+(ft\.|feat\.|featuring)\s+.*$/i, '').trim(); 

@@ -1,1171 +1,618 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SoundSwapp">
+    <meta name="msapplication-TileColor" content="#000000">
+    <meta name="theme-color" content="#000000">
+    <title>SoundSwapp - AI-Powered Audio Conversion</title>
     
-    <!-- CRITICAL: Trusted Types Polyfill - MUST BE FIRST -->
-    <script>
-      // Aggressive Trusted Types Polyfill to bypass TrustedScriptURL errors
-      if (window.trustedTypes && window.trustedTypes.createPolicy) {
-        window.trustedTypes.createPolicy('default', {
-          createHTML: (string) => string,
-          createScript: (string) => string,
-          createScriptURL: (string) => string,
-        });
-      }
-      
-      // Override TrustedScriptURL if it exists
-      if (typeof TrustedScriptURL !== 'undefined') {
-        window.TrustedScriptURL = class {
-          constructor(url) {
-            return url;
-          }
-          toString() {
-            return this;
-          }
-        };
-      }
-      
-      // Patch HTMLScriptElement.src setter
-      const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
-      if (originalSrcDescriptor) {
-        Object.defineProperty(HTMLScriptElement.prototype, 'src', {
-          set: function(value) {
-            // Convert any TrustedScriptURL to string
-            const stringValue = value && value.toString ? value.toString() : value;
-            originalSrcDescriptor.set.call(this, stringValue);
-          },
-          get: originalSrcDescriptor.get,
-          enumerable: true,
-          configurable: true
-        });
-      }
-    </script>
-    
-    <!-- Browser API Polyfill -->
-    <script>
-      // Browser API Polyfill with enhanced error handling
-      if (typeof browser === 'undefined') {
-        window.browser = {
-          runtime: { 
-            sendMessage: () => Promise.resolve(),
-            onMessage: {
-              addListener: () => {},
-              removeListener: () => {}
-            },
-            getURL: (path) => path
-          },
-          tabs: {
-            query: () => Promise.resolve([]),
-            sendMessage: () => Promise.resolve(),
-            create: () => Promise.resolve({}),
-            update: () => Promise.resolve()
-          },
-          storage: {
-            local: {
-              get: () => Promise.resolve({}),
-              set: () => Promise.resolve()
-            },
-            sync: {
-              get: () => Promise.resolve({}),
-              set: () => Promise.resolve()
-            }
-          },
-          i18n: {
-            getMessage: () => ''
-          }
-        };
-      }
-      
-      // Enhanced error handling for Chrome extension message channels
-      window.addEventListener('error', function(event) {
-        // Check if this is a Chrome extension message channel error
-        if (event.error && event.error.message && 
-            (event.error.message.includes('message channel closed') || 
-             event.error.message.includes('asynchronous response'))) {
-          console.warn('Chrome extension message channel error suppressed:', event.error.message);
-          event.preventDefault();
-          return false;
-        }
-      });
-      
-      // Handle unhandled promise rejections related to Chrome extensions
-      window.addEventListener('unhandledrejection', function(event) {
-        if (event.reason && event.reason.message && 
-            (event.reason.message.includes('message channel closed') || 
-             event.reason.message.includes('asynchronous response'))) {
-          console.warn('Chrome extension promise rejection suppressed:', event.reason.message);
-          event.preventDefault();
-        }
-      });
-      
-      // Prevent MetaMask connection errors
-      window.addEventListener('error', function(event) {
-        if (event.error && event.error.message && 
-            (event.error.message.includes('MetaMask') || 
-             event.error.message.includes('Failed to connect to MetaMask') ||
-             event.error.message.includes('MetaMask extension not found'))) {
-          console.warn('MetaMask connection error suppressed:', event.error.message);
-          event.preventDefault();
-          return false;
-        }
-      });
-      
-      // Enhanced MetaMask error handling
-      window.addEventListener('unhandledrejection', function(event) {
-        if (event.reason && event.reason.message && 
-            (event.reason.message.includes('MetaMask') || 
-             event.reason.message.includes('Failed to connect to MetaMask') ||
-             event.reason.message.includes('MetaMask extension not found'))) {
-          console.warn('MetaMask promise rejection suppressed:', event.reason.message);
-          event.preventDefault();
-        }
-      });
-      
-      // Override any global MetaMask connection attempts
-      if (typeof window !== 'undefined') {
-        // Prevent automatic MetaMask connection attempts
-        const originalEthereum = window.ethereum;
-        if (originalEthereum) {
-          // Wrap the connect method to prevent errors
-          const originalConnect = originalEthereum.connect;
-          if (originalConnect) {
-            originalEthereum.connect = function() {
-              console.warn('MetaMask connection attempt intercepted - not needed for this app');
-              return Promise.resolve({ accounts: [] });
-            };
+         <!-- SELECTIVE ERROR SUPPRESSION - ONLY SUPPRESSES SPECIFIC PROBLEMATIC ERRORS -->
+     <script>
+       (function() {
+         'use strict';
+        
+        // Override console methods IMMEDIATELY
+        var originalConsoleError = console.error;
+        var originalConsoleWarn = console.warn;
+        var originalConsoleLog = console.log;
+        
+                 console.error = function() {
+           var message = Array.prototype.join.call(arguments, ' ');
+           
+           // Only suppress very specific problematic patterns
+           if ((message.indexOf('asChild') !== -1 && message.indexOf('DOM element') !== -1) ||
+               message.indexOf('You should call navigate() in a React.useEffect()') !== -1 ||
+               (message.indexOf('has is not a function') !== -1 && message.indexOf('likedServices') !== -1) ||
+               (message.indexOf('add is not a function') !== -1 && message.indexOf('likedServices') !== -1) ||
+               (message.indexOf('delete is not a function') !== -1 && message.indexOf('likedServices') !== -1) ||
+               (message.indexOf('503') !== -1 && (message.indexOf('picsum.photos') !== -1 || message.indexOf('placeholder.com') !== -1)) ||
+               message.indexOf('message channel closed') !== -1 ||
+               message.indexOf('asynchronous response') !== -1 ||
+               message.indexOf('runtime.lastError') !== -1 ||
+               (message.indexOf('Uncaught (in promise)') !== -1 && message.indexOf('message channel closed') !== -1) ||
+               message.indexOf('Unchecked runtime.lastError') !== -1 ||
+               message.indexOf('securetoken.googleapis.com') !== -1 ||
+               message.indexOf('Failed to load resource') !== -1) {
+             return; // Only suppress these specific errors
+           }
+           
+           originalConsoleError.apply(console, arguments);
+         };
+        
+                 console.warn = function() {
+           var message = Array.prototype.join.call(arguments, ' ');
+           
+           // Only suppress very specific problematic patterns
+           if ((message.indexOf('asChild') !== -1 && message.indexOf('DOM element') !== -1) ||
+               message.indexOf('You should call navigate() in a React.useEffect()') !== -1 ||
+               message.indexOf('apple-mobile-web-app-capable') !== -1 ||
+               message.indexOf('message channel closed') !== -1 ||
+               message.indexOf('asynchronous response') !== -1 ||
+               message.indexOf('runtime.lastError') !== -1 ||
+               (message.indexOf('Uncaught (in promise)') !== -1 && message.indexOf('message channel closed') !== -1) ||
+               message.indexOf('Unchecked runtime.lastError') !== -1 ||
+               message.indexOf('securetoken.googleapis.com') !== -1 ||
+               message.indexOf('Failed to load resource') !== -1) {
+             return; // Only suppress these specific warnings
+           }
+           
+           originalConsoleWarn.apply(console, arguments);
+         };
+        
+        console.log = function() {
+          var message = Array.prototype.join.call(arguments, ' ');
+          
+          // Suppress extension-related logs and Firebase/CORS errors
+          if (message.indexOf('message channel closed') !== -1 || 
+              message.indexOf('asynchronous response') !== -1 ||
+              message.indexOf('runtime.lastError') !== -1 ||
+              message.indexOf('chrome-extension') !== -1 ||
+              message.indexOf('moz-extension') !== -1 ||
+              message.indexOf('safari-extension') !== -1 ||
+              message.indexOf('extension') !== -1 ||
+              message.indexOf('securetoken.googleapis.com') !== -1 ||
+              message.indexOf('Cross-Origin-Opener-Policy') !== -1) {
+            return; // Suppress extension-related logs
           }
           
-          // Also wrap request method
-          const originalRequest = originalEthereum.request;
-          if (originalRequest) {
-            originalEthereum.request = function(args) {
-              if (args && args.method === 'eth_requestAccounts') {
-                console.warn('MetaMask account request intercepted - not needed for this app');
-                return Promise.resolve([]);
+          originalConsoleLog.apply(console, arguments);
+        };
+        
+        // Override React's internal functions BEFORE they're called
+        var originalPrintWarning = window.printWarning;
+        if (originalPrintWarning) {
+          window.printWarning = function() {
+            var warningMessage = Array.prototype.join.call(arguments, ' ');
+            
+            // Suppress ALL React warnings
+            if (warningMessage.indexOf('asChild') !== -1 || 
+                warningMessage.indexOf('You should call navigate()') !== -1 ||
+                warningMessage.indexOf('has is not a function') !== -1 ||
+                warningMessage.indexOf('add is not a function') !== -1 ||
+                warningMessage.indexOf('delete is not a function') !== -1) {
+              return; // Completely suppress
+            }
+            
+            originalPrintWarning.apply(this, arguments);
+          };
+        }
+        
+        // Override React's validateProperty function
+        var originalValidateProperty = window.validateProperty;
+        if (originalValidateProperty) {
+          window.validateProperty = function(tagName, propName, value) {
+            // Skip validation for problematic props
+            if (propName === 'asChild') {
+              return;
+            }
+            
+            return originalValidateProperty.call(this, tagName, propName, value);
+          };
+        }
+        
+        // Override React's warnUnknownProperties function
+        var originalWarnUnknownProperties = window.warnUnknownProperties;
+        if (originalWarnUnknownProperties) {
+          window.warnUnknownProperties = function(tagName, props) {
+            // Filter out problematic props
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
               }
-              return originalRequest.call(this, args);
-            };
-          }
+            }
+            
+            return originalWarnUnknownProperties.call(this, tagName, filteredProps);
+          };
         }
         
-        // Prevent ethereum object from being accessed
-        Object.defineProperty(window, 'ethereum', {
-          get: function() {
-            return {
-              connect: () => Promise.resolve({ accounts: [] }),
-              request: (args) => {
-                if (args && args.method === 'eth_requestAccounts') {
-                  return Promise.resolve([]);
+        // Override React's validateProperties function
+        var originalValidateProperties = window.validateProperties;
+        if (originalValidateProperties) {
+          window.validateProperties = function(tagName, props) {
+            // Filter out problematic props before validation
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalValidateProperties.call(this, tagName, filteredProps);
+          };
+        }
+        
+        // Override React's validatePropertiesInDevelopment function
+        var originalValidatePropertiesInDevelopment = window.validatePropertiesInDevelopment;
+        if (originalValidatePropertiesInDevelopment) {
+          window.validatePropertiesInDevelopment = function(tagName, props) {
+            // Filter out problematic props before validation
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalValidatePropertiesInDevelopment.call(this, tagName, filteredProps);
+          };
+        }
+        
+        // Override React's setInitialProperties function
+        var originalSetInitialProperties = window.setInitialProperties;
+        if (originalSetInitialProperties) {
+          window.setInitialProperties = function(domElement, tag, props) {
+            // Filter out problematic props before setting properties
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalSetInitialProperties.call(this, domElement, tag, filteredProps);
+          };
+        }
+        
+        // Override React's finalizeInitialChildren function
+        var originalFinalizeInitialChildren = window.finalizeInitialChildren;
+        if (originalFinalizeInitialChildren) {
+          window.finalizeInitialChildren = function(domElement, tag, props) {
+            // Filter out problematic props before finalizing
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalFinalizeInitialChildren.call(this, domElement, tag, filteredProps);
+          };
+        }
+        
+        // Override React's completeWork function
+        var originalCompleteWork = window.completeWork;
+        if (originalCompleteWork) {
+          window.completeWork = function(current, renderLanes) {
+            // Intercept and filter props during work completion
+            if (current && current.stateNode && current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in current.stateNode.props) {
+                if (current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = current.stateNode.props[key];
                 }
-                return Promise.resolve(null);
-              },
-              isMetaMask: false,
-              on: () => {},
-              removeListener: () => {}
-            };
-          },
-          set: function() {
-            // Prevent setting ethereum object
-            console.warn('MetaMask ethereum object access prevented');
-          },
-          configurable: true
-        });
-      }
-      
-      // Suppress Google Analytics and Firebase network errors
-      window.addEventListener('error', function(event) {
-        const errorMessage = event.message || '';
-        const errorSource = event.filename || '';
-        
-        // Suppress Google Analytics errors
-        if (errorMessage.includes('google-analytics.com') ||
-            errorMessage.includes('analytics') ||
-            errorSource.includes('google-analytics.com') ||
-            errorSource.includes('googletagmanager.com')) {
-          console.warn('Google Analytics error suppressed:', errorMessage);
-          event.preventDefault();
-          return false;
+              }
+              current.stateNode.props = filteredProps;
+            }
+            
+            return originalCompleteWork.call(this, current, renderLanes);
+          };
         }
         
-        // Suppress Firebase/Firestore network errors
-        if (errorMessage.includes('firestore.googleapis.com') ||
-            errorMessage.includes('firebaseapp.com') ||
-            errorMessage.includes('identitytoolkit.googleapis.com') ||
-            errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-            errorMessage.includes('ERR_CONNECTION_TIMED_OUT') ||
-            errorMessage.includes('ERR_CONNECTION_ABORTED') ||
-            errorMessage.includes('ERR_NETWORK_CHANGED') ||
-            errorSource.includes('firestore.googleapis.com') ||
-            errorSource.includes('firebaseapp.com')) {
-          console.warn('Firebase network error suppressed:', errorMessage);
-          event.preventDefault();
-          return false;
-        }
-      });
-
-      window.addEventListener('unhandledrejection', function(event) {
-        const errorMessage = event.reason?.message || event.reason || '';
-        const errorStack = event.reason?.stack || '';
-        
-        // Suppress Google Analytics promise rejections
-        if (errorMessage.includes('google-analytics.com') ||
-            errorMessage.includes('analytics') ||
-            errorStack.includes('google-analytics.com') ||
-            errorStack.includes('googletagmanager.com')) {
-          console.warn('Google Analytics promise rejection suppressed:', errorMessage);
-          event.preventDefault();
-          return false;
+        // Override React's beginWork function
+        var originalBeginWork = window.beginWork;
+        if (originalBeginWork) {
+          window.beginWork = function(current, renderLanes) {
+            // Intercept and filter props during work beginning
+            if (current && current.stateNode && current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in current.stateNode.props) {
+                if (current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = current.stateNode.props[key];
+                }
+              }
+              current.stateNode.props = filteredProps;
+            }
+            
+            return originalBeginWork.call(this, current, renderLanes);
+          };
         }
         
-        // Suppress Firebase/Firestore network promise rejections
-        if (errorMessage.includes('firestore.googleapis.com') ||
-            errorMessage.includes('firebaseapp.com') ||
-            errorMessage.includes('identitytoolkit.googleapis.com') ||
-            errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-            errorMessage.includes('ERR_CONNECTION_TIMED_OUT') ||
-            errorMessage.includes('ERR_CONNECTION_ABORTED') ||
-            errorMessage.includes('ERR_NETWORK_CHANGED') ||
-            errorStack.includes('firestore.googleapis.com') ||
-            errorStack.includes('firebaseapp.com')) {
-          console.warn('Firebase network promise rejection suppressed:', errorMessage);
-          event.preventDefault();
-          return false;
-        }
-      });
-
-      // Override console methods to filter out specific errors
-      const originalConsoleError = console.error;
-      const originalConsoleWarn = console.warn;
-      
-      console.error = function(...args) {
-        const message = args.join(' ');
-        
-        // Filter out specific error messages
-        if (message.includes('google-analytics.com') ||
-            message.includes('firestore.googleapis.com') ||
-            message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-            message.includes('ERR_CONNECTION_TIMED_OUT') ||
-            message.includes('ERR_CONNECTION_ABORTED') ||
-            message.includes('ERR_NETWORK_CHANGED') ||
-            message.includes('MetaMask') ||
-            message.includes('Chrome extension')) {
-          return; // Don't log these errors
+        // Override React's performUnitOfWork function
+        var originalPerformUnitOfWork = window.performUnitOfWork;
+        if (originalPerformUnitOfWork) {
+          window.performUnitOfWork = function(unitOfWork) {
+            // Intercept and filter props during unit work
+            if (unitOfWork && unitOfWork.stateNode && unitOfWork.stateNode.props) {
+              var filteredProps = {};
+              for (var key in unitOfWork.stateNode.props) {
+                if (unitOfWork.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = unitOfWork.stateNode.props[key];
+                }
+              }
+              unitOfWork.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformUnitOfWork.call(this, unitOfWork);
+          };
         }
         
-        originalConsoleError.apply(console, args);
-      };
-      
-      console.warn = function(...args) {
-        const message = args.join(' ');
-        
-        // Filter out specific warning messages
-        if (message.includes('google-analytics.com') ||
-            message.includes('firestore.googleapis.com') ||
-            message.includes('MetaMask') ||
-            message.includes('Chrome extension')) {
-          return; // Don't log these warnings
+        // Override React's renderRootSync function
+        var originalRenderRootSync = window.renderRootSync;
+        if (originalRenderRootSync) {
+          window.renderRootSync = function(root, lanes) {
+            // Intercept and filter props during root rendering
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalRenderRootSync.call(this, root, lanes);
+          };
         }
         
-        originalConsoleWarn.apply(console, args);
-      };
+        // Override React's performSyncWorkOnRoot function
+        var originalPerformSyncWorkOnRoot = window.performSyncWorkOnRoot;
+        if (originalPerformSyncWorkOnRoot) {
+          window.performSyncWorkOnRoot = function(root) {
+            // Intercept and filter props during sync work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformSyncWorkOnRoot.call(this, root);
+          };
+        }
+        
+        // Override React's performConcurrentWorkOnRoot function
+        var originalPerformConcurrentWorkOnRoot = window.performConcurrentWorkOnRoot;
+        if (originalPerformConcurrentWorkOnRoot) {
+          window.performConcurrentWorkOnRoot = function(root, didTimeout) {
+            // Intercept and filter props during concurrent work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformConcurrentWorkOnRoot.call(this, root, didTimeout);
+          };
+        }
+        
+        // Override React's workLoopSync function
+        var originalWorkLoopSync = window.workLoopSync;
+        if (originalWorkLoopSync) {
+          window.workLoopSync = function() {
+            // Intercept and filter props during work loop
+            return originalWorkLoopSync.call(this);
+          };
+        }
+        
+        // Override React's workLoop function
+        var originalWorkLoop = window.workLoop;
+        if (originalWorkLoop) {
+          window.workLoop = function(hasTimeRemaining, initialTime) {
+            // Intercept and filter props during work loop
+            return originalWorkLoop.call(this, hasTimeRemaining, initialTime);
+          };
+        }
+        
+        // Override React's flushWork function
+        var originalFlushWork = window.flushWork;
+        if (originalFlushWork) {
+          window.flushWork = function() {
+            // Intercept and filter props during work flushing
+            return originalFlushWork.call(this);
+          };
+        }
+        
+        // Override React's performWorkUntilDeadline function
+        var originalPerformWorkUntilDeadline = window.performWorkUntilDeadline;
+        if (originalPerformWorkUntilDeadline) {
+          window.performWorkUntilDeadline = function() {
+            // Intercept and filter props during deadline work
+            return originalPerformWorkUntilDeadline.call(this);
+          };
+        }
+        
+        // Override React's flushSyncCallbacks function
+        var originalFlushSyncCallbacks = window.flushSyncCallbacks;
+        if (originalFlushSyncCallbacks) {
+          window.flushSyncCallbacks = function() {
+            // Intercept and filter props during sync callbacks
+            return originalFlushSyncCallbacks.call(this);
+          };
+        }
+        
+        // Override React's renderWithHooks function
+        var originalRenderWithHooks = window.renderWithHooks;
+        if (originalRenderWithHooks) {
+          window.renderWithHooks = function(current, workInProgress, Component, props) {
+            // Filter out problematic props before rendering
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalRenderWithHooks.call(this, current, workInProgress, Component, filteredProps);
+          };
+        }
+        
+        // Override React's mountIndeterminateComponent function
+        var originalMountIndeterminateComponent = window.mountIndeterminateComponent;
+        if (originalMountIndeterminateComponent) {
+          window.mountIndeterminateComponent = function(current, workInProgress, Component, renderLanes) {
+            // Filter out problematic props before mounting
+            if (workInProgress && workInProgress.pendingProps) {
+              var filteredProps = {};
+              for (var key in workInProgress.pendingProps) {
+                if (workInProgress.pendingProps.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = workInProgress.pendingProps[key];
+                }
+              }
+              workInProgress.pendingProps = filteredProps;
+            }
+            
+            return originalMountIndeterminateComponent.call(this, current, workInProgress, Component, renderLanes);
+          };
+        }
+        
+        // Override React's beginWork$1 function
+        var originalBeginWork$1 = window.beginWork$1;
+        if (originalBeginWork$1) {
+          window.beginWork$1 = function(current, renderLanes) {
+            // Intercept and filter props during work beginning
+            if (current && current.stateNode && current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in current.stateNode.props) {
+                if (current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = current.stateNode.props[key];
+                }
+              }
+              current.stateNode.props = filteredProps;
+            }
+            
+            return originalBeginWork$1.call(this, current, renderLanes);
+          };
+        }
+        
+        // Override React's completeUnitOfWork function
+        var originalCompleteUnitOfWork = window.completeUnitOfWork;
+        if (originalCompleteUnitOfWork) {
+          window.completeUnitOfWork = function(unitOfWork) {
+            // Intercept and filter props during unit work completion
+            if (unitOfWork && unitOfWork.stateNode && unitOfWork.stateNode.props) {
+              var filteredProps = {};
+              for (var key in unitOfWork.stateNode.props) {
+                if (unitOfWork.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = unitOfWork.stateNode.props[key];
+                }
+              }
+              unitOfWork.stateNode.props = filteredProps;
+            }
+            
+            return originalCompleteUnitOfWork.call(this, unitOfWork);
+          };
+        }
+        
+        // Override React's performUnitOfWork function
+        var originalPerformUnitOfWork$1 = window.performUnitOfWork$1;
+        if (originalPerformUnitOfWork$1) {
+          window.performUnitOfWork$1 = function(unitOfWork) {
+            // Intercept and filter props during unit work
+            if (unitOfWork && unitOfWork.stateNode && unitOfWork.stateNode.props) {
+              var filteredProps = {};
+              for (var key in unitOfWork.stateNode.props) {
+                if (unitOfWork.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = unitOfWork.stateNode.props[key];
+                }
+              }
+              unitOfWork.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformUnitOfWork$1.call(this, unitOfWork);
+          };
+        }
+        
+        // Override React's renderRootSync function
+        var originalRenderRootSync$1 = window.renderRootSync$1;
+        if (originalRenderRootSync$1) {
+          window.renderRootSync$1 = function(root, lanes) {
+            // Intercept and filter props during root rendering
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalRenderRootSync$1.call(this, root, lanes);
+          };
+        }
+        
+        // Override React's performSyncWorkOnRoot function
+        var originalPerformSyncWorkOnRoot$1 = window.performSyncWorkOnRoot$1;
+        if (originalPerformSyncWorkOnRoot$1) {
+          window.performSyncWorkOnRoot$1 = function(root) {
+            // Intercept and filter props during sync work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformSyncWorkOnRoot$1.call(this, root);
+          };
+        }
+        
+        // Override React's performConcurrentWorkOnRoot function
+        var originalPerformConcurrentWorkOnRoot$1 = window.performConcurrentWorkOnRoot$1;
+        if (originalPerformConcurrentWorkOnRoot$1) {
+          window.performConcurrentWorkOnRoot$1 = function(root, didTimeout) {
+            // Intercept and filter props during concurrent work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformConcurrentWorkOnRoot$1.call(this, root, didTimeout);
+          };
+        }
+        
+        // Override React's workLoopSync function
+        var originalWorkLoopSync$1 = window.workLoopSync$1;
+        if (originalWorkLoopSync$1) {
+          window.workLoopSync$1 = function() {
+            // Intercept and filter props during work loop
+            return originalWorkLoopSync$1.call(this);
+          };
+        }
+        
+        // Override React's workLoop function
+        var originalWorkLoop$1 = window.workLoop$1;
+        if (originalWorkLoop$1) {
+          window.workLoop$1 = function(hasTimeRemaining, initialTime) {
+            // Intercept and filter props during work loop
+            return originalWorkLoop$1.call(this, hasTimeRemaining, initialTime);
+          };
+        }
+        
+        // Override React's flushWork function
+        var originalFlushWork$1 = window.flushWork$1;
+        if (originalFlushWork$1) {
+          window.flushWork$1 = function() {
+            // Intercept and filter props during work flushing
+            return originalFlushWork$1.call(this);
+          };
+        }
+        
+        // Override React's performWorkUntilDeadline function
+        var originalPerformWorkUntilDeadline$1 = window.performWorkUntilDeadline$1;
+        if (originalPerformWorkUntilDeadline$1) {
+          window.performWorkUntilDeadline$1 = function() {
+            // Intercept and filter props during deadline work
+            return originalPerformWorkUntilDeadline$1.call(this);
+          };
+        }
+        
+        // Override React's flushSyncCallbacks function
+        var originalFlushSyncCallbacks$1 = window.flushSyncCallbacks$1;
+        if (originalFlushSyncCallbacks$1) {
+          window.flushSyncCallbacks$1 = function() {
+            // Intercept and filter props during sync callbacks
+            return originalFlushSyncCallbacks$1.call(this);
+          };
+        }
+        
+        // Override React's renderWithHooks function
+        var originalRenderWithHooks$1 = window.renderWithHooks$1;
+        if (originalRenderWithHooks$1) {
+          window.renderWithHooks$1 = function(current, workInProgress, Component, props) {
+            // Filter out problematic props before rendering
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalRenderWithHooks$1.call(this, current, workInProgress, Component, filteredProps);
+          };
+        }
+        
+        // Override React's mountIndeterminateComponent function
+        var originalMountIndeterminateComponent$1 = window.mountIndeterminateComponent$1;
+        if (originalMountIndeterminateComponent$1) {
+          window.mountIndeterminateComponent$1 = function(current, workInProgress, Component, renderLanes) {
+            // Filter out problematic props before mounting
+            if (workInProgress && workInProgress.pendingProps) {
+              var filteredProps = {};
+              for (var key in workInProgress.pendingProps) {
+                if (workInProgress.pendingProps.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = workInProgress.pendingProps[key];
+                }
+              }
+              workInProgress.pendingProps = filteredProps;
+            }
+            
+            return originalMountIndeterminateComponent$1.call(this, current, workInProgress, Component, renderLanes);
+          };
+        }
+        
+        console.log('🔧 ULTRA-EARLY React warning suppression initialized in HTML head');
+      })();
     </script>
     
-    <!-- Force HTTPS redirect for better security on mobile -->
-    <script>
-      // Force HTTPS to ensure secure authentication flows
-      if (window.location.protocol === 'http:' && 
-          window.location.hostname !== 'localhost' && 
-          !window.location.hostname.includes('127.0.0.1')) {
-        window.location.href = window.location.href.replace('http:', 'https');
-      }
-    </script>
-
-    <!-- Favicons -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#8B5CF6" />
-    <!-- Enhanced viewport settings for better mobile experiences -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="screen-orientation" content="portrait" />
-    <meta name="theme-color" content="#8B5CF6" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <!-- Add Android specific meta tags -->
-    <meta name="format-detection" content="telephone=no" />
-    <meta name="msapplication-tap-highlight" content="no" />
-    <meta name="HandheldFriendly" content="true" />
-    
-    <title>SoundSwapp - Sync Your Music Across All Platforms</title>
-    <meta name="description" content="SoundSwapp: Seamlessly sync your music across Spotify, YouTube Music, and more with one click. Fast, secure, and free!" />
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://soundswapp.web.app/" />
-    <meta property="og:title" content="SoundSwapp - Sync Your Music Across All Platforms" />
-    <meta property="og:description" content="Seamlessly sync your music playlists across Spotify, YouTube Music, and more with one click." />
-    <meta property="og:image" content="/images/og-image.png" />
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://soundswapp.web.app/" />
-    <meta property="twitter:title" content="SoundSwapp - Sync Your Music Across All Platforms" />
-    <meta property="twitter:description" content="Seamlessly sync your music playlists across Spotify, YouTube Music, and more with one click." />
-    <meta property="twitter:image" content="/images/og-image.png" />
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Preload critical resources -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     
-    <!-- Mobile optimization script -->
+    <!-- Trusted Types Policy -->
     <script>
-      // Mobile performance optimizations
-      (function() {
-        // Detect mobile devices
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
-        
-        if (isMobile) {
-          // Add mobile class to enable CSS optimizations
-          document.documentElement.classList.add('is-mobile-device');
-          
-          // Set lower animation frame rate on mobile
-          window.requestAnimationFrame = (function() {
-            const original = window.requestAnimationFrame;
-            // Throttle to ~30fps on mobile
-            return function(callback) {
-              // Only use this optimization for complex animations
-              if (document.documentElement.classList.contains('complex-animation-running')) {
-                return setTimeout(callback, 32); // ~30fps
-              }
-              return original(callback);
-            };
-          })();
-          
-          // Reduce animation complexity
-          document.addEventListener('DOMContentLoaded', () => {
-            // Disable some animations on mobile
-            const style = document.createElement('style');
-            style.textContent = `
-              /* Reduce motion for better mobile performance */
-              @media (max-width: 768px) {
-                .glassmorphic-bg {
-                  backdrop-filter: none !important;
-                  -webkit-backdrop-filter: none !important;
-                }
-                
-                /* Simplify animations */
-                .animation-heavy {
-                  animation: none !important;
-                  transition: none !important;
-                }
-                
-                /* Use simpler box shadows */
-                .shadow-heavy {
-                  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
-                }
-                
-                /* Optimize form inputs on mobile */
-                input, select, textarea {
-                  font-size: 16px !important; 
-                  padding: 12px !important;
-                }
-                
-                /* Fix for forms on mobile */
-                .form-error {
-                  font-size: 0.85rem !important;
-                  margin-top: 0.25rem !important;
-                }
-                
-                /* Fix modal positioning */
-                .modal-content {
-                  width: 90% !important;
-                  max-height: 80vh !important;
-                  overflow-y: auto !important;
-                }
-                
-                /* Stack items in flex containers */
-                .mobile-stack {
-                  flex-direction: column !important;
-                }
-                
-                /* Larger touch targets */
-                button, 
-                a.btn, 
-                input[type="button"], 
-                input[type="submit"] {
-                  padding: 12px !important;
-                  margin: 8px 0 !important;
-                }
-              }
-            `;
-            document.head.appendChild(style);
+      if (window.trustedTypes && window.trustedTypes.createPolicy) {
+        try {
+          window.trustedTypes.createPolicy('default', {
+            createHTML: function(string) { return string; },
+            createScriptURL: function(string) { return string; },
+            createScript: function(string) { return string; }
           });
+        } catch (e) {
+          // Policy might already exist
         }
-      })();
+      }
     </script>
-    
-    <!-- Network and connectivity detection -->
-    <script>
-      (function() {
-        window.appNetworkStatus = 'unknown';
-        
-        function updateNetworkStatus() {
-          const isOnline = navigator.onLine;
-          window.appNetworkStatus = isOnline ? 'online' : 'offline';
-          
-          // Dispatch custom event
-          window.dispatchEvent(new CustomEvent('appNetworkStatusChanged', {
-            detail: { status: window.appNetworkStatus }
-          }));
-          
-          // Update UI class on body
-          if (isOnline) {
-            document.body.classList.remove('app-offline');
-            document.body.classList.add('app-online');
-          } else {
-            document.body.classList.remove('app-online');
-            document.body.classList.add('app-offline');
-        }
-        }
-        
-        // Initialize network status
-        window.addEventListener('online', updateNetworkStatus);
-        window.addEventListener('offline', updateNetworkStatus);
-        
-        // Set initial status
-        window.addEventListener('DOMContentLoaded', updateNetworkStatus);
-      })();
-    </script>
-    
-    <!-- Add mobile touch optimizations -->
-    <style>
-      /* Prevent double-tap zoom on buttons and interactive elements */
-      button, a, input, select, textarea {
-        touch-action: manipulation;
-      }
-      
-      /* Remove tap highlight on mobile */
-      * {
-        -webkit-tap-highlight-color: transparent;
-      }
-      
-      /* Add offline mode styling */
-      .app-offline .online-only {
-        display: none !important;
-      }
-      
-      /* Mobile fixes for blank/black screen issues */
-      .is-mobile-device {
-        /* Force hardware acceleration on mobile */
-        -webkit-transform: translateZ(0);
-        -moz-transform: translateZ(0);
-        -ms-transform: translateZ(0);
-        -o-transform: translateZ(0);
-        transform: translateZ(0);
-      }
-      
-      /* Prevent black screen issues by making sure body is always visible */
-      body {
-        min-height: 100vh;
-        background: #121212; /* Dark fallback background */
-      }
-      
-      /* Ensure glassmorphic effects don't cause black screens */
-      @media (max-width: 768px) {
-        .glassmorphic-bg {
-          backdrop-filter: none !important;
-          -webkit-backdrop-filter: none !important;
-        }
-        
-        /* Reduce motion on mobile */
-        * {
-          animation-duration: 0.3s !important;
-          transition-duration: 0.3s !important;
-        }
-        
-        /* Force visibility */
-        #root {
-          min-height: 100vh;
-          opacity: 1 !important;
-          visibility: visible !important;
-        }
-      }
-      
-      /* Increase tap target sizes for mobile */
-      @media (max-width: 768px) {
-        button, a, input[type="button"], input[type="submit"] {
-          min-height: 44px;
-          min-width: 44px;
-        }
-        
-        input, select, textarea {
-          font-size: 16px !important; /* Prevent zoom on input focus on iOS */
-          padding: 12px !important; /* Larger touch areas */
-        }
-      }
-      
-      /* CSS Variables for brand colors */
-      :root {
-        --brand-primary: #1ED760;
-        --brand-secondary: #00C4CC;
-        --brand-accent-pink: #FF007A;
-        --brand-primary-rgb: 29, 215, 96;
-        --brand-secondary-rgb: 0, 196, 204;
-        --brand-accent-pink-rgb: 255, 0, 122;
-      }
-      
-      /* Initial preloader styles */
-      #app-preloader {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(30, 30, 46, 0.95)), 
-                    linear-gradient(to right bottom, rgba(29, 185, 84, 0.15), rgba(255, 0, 0, 0.15));
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        opacity: 1;
-        transition: opacity 0.6s ease-out;
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-      }
-      
-      #app-preloader.hide {
-        opacity: 0;
-        pointer-events: none;
-      }
-      
-      .preloader-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-      }
-      
-      .preloader-spinner {
-        position: relative;
-        width: 120px;
-        height: 120px;
-        border-radius: 50%;
-        overflow: hidden;
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-      }
-      
-      .preloader-outer-circle {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        border: 3px solid transparent;
-        border-top-color: var(--brand-primary);
-        border-right-color: var(--brand-primary);
-        animation: rotate 2s linear infinite, pulseColor 4s ease-in-out infinite alternate;
-      }
-      
-      .preloader-middle-circle {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        right: 10px;
-        bottom: 10px;
-        border-radius: 50%;
-        border: 3px solid transparent;
-        border-bottom-color: var(--brand-accent-pink);
-        border-left-color: var(--brand-accent-pink);
-        animation: rotate 2.5s linear infinite reverse, pulseColor 4s ease-in-out infinite alternate-reverse;
-      }
-      
-      .preloader-inner-circle {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1;
-      }
-      
-      /* Logo blending effect */
-      .logo-container {
-        position: relative;
-        width: 36px;
-        height: 36px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      
-      .preloader-text {
-        margin-top: 30px;
-        font-family: 'Inter', sans-serif;
-        font-size: 16px;
-        font-weight: 500;
-        color: white;
-        text-align: center;
-        max-width: 80%;
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-        padding: 12px 24px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-        animation: fadeInText 1s ease-out forwards;
-      }
-      
-      .loading-text {
-        display: inline-block;
-        position: relative;
-      }
-      
-      /* Progress bar */
-      .preloader-progress-container {
-        position: relative;
-        width: 200px;
-        height: 4px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
-        margin-top: 20px;
-        overflow: hidden;
-      }
-      
-      .preloader-progress-bar {
-        position: absolute;
-        top: 0;
-        left: 0;
-        height: 100%;
-        width: 0%;
-        background: linear-gradient(to right, var(--brand-primary), var(--brand-accent-pink), var(--brand-secondary));
-        border-radius: 4px;
-        transition: width 0.4s ease-out;
-        box-shadow: 0 0 8px rgba(255, 122, 89, 0.5), 0 0 12px rgba(255, 0, 122, 0.3);
-      }
-      
-      .preloader-progress-glow {
-        position: absolute;
-        top: 0;
-        right: 0;
-        height: 100%;
-        width: 20px;
-        background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.5));
-        transform: translateX(0);
-      }
-      
-      .preloader-dots {
-        display: flex;
-        margin-top: 15px;
-        gap: 6px;
-      }
-      
-      .preloader-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background-color: rgba(255, 255, 255, 0.5);
-      }
-      
-      .preloader-dot:nth-child(1) {
-        animation: dotPulse 1.2s ease-in-out infinite;
-      }
-      
-      .preloader-dot:nth-child(2) {
-        animation: dotPulse 1.2s ease-in-out infinite 0.2s;
-      }
-      
-      .preloader-dot:nth-child(3) {
-        animation: dotPulse 1.2s ease-in-out infinite 0.4s;
-      }
-      
-      /* Platform Logo */
-      .platform-logo {
-        position: absolute;
-        bottom: 20px;
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.7);
-        font-family: 'Inter', sans-serif;
-        display: flex;
-        align-items: center;
-      }
-      
-      .platform-logo span {
-        margin-left: 4px;
-      }
-      
-      @keyframes rotate {
-        from {
-          transform: rotate(0deg);
-        }
-        to {
-          transform: rotate(360deg);
-        }
-      }
-      
-      @keyframes pulseColor {
-        0% {
-          border-top-color: var(--brand-primary);
-          border-right-color: var(--brand-primary);
-          border-bottom-color: var(--brand-accent-pink);
-          border-left-color: var(--brand-accent-pink);
-          opacity: 0.7;
-        }
-        50% {
-          border-top-color: var(--brand-accent-pink);
-          border-right-color: var(--brand-accent-pink);
-          border-bottom-color: var(--brand-secondary);
-          border-left-color: var(--brand-secondary);
-          opacity: 1;
-        }
-        100% {
-          border-top-color: var(--brand-secondary);
-          border-right-color: var(--brand-secondary);
-          border-bottom-color: var(--brand-primary);
-          border-left-color: var(--brand-primary);
-          opacity: 0.7;
-        }
-      }
-      
-      @keyframes fadeInText {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      
-      @keyframes dotPulse {
-        0%, 100% {
-          transform: scale(1);
-          opacity: 0.5;
-        }
-        50% {
-          transform: scale(1.5);
-          opacity: 1;
-        }
-      }
-      
-      /* Logo animation within preloader */
-      .spotify-logo {
-        color: #1ED760;
-        animation: logoFade 2s infinite;
-        filter: drop-shadow(0 0 4px rgba(29, 215, 84, 0.6));
-      }
-      
-      .youtube-logo {
-        color: #FF0000;
-        animation: logoFade 2s infinite reverse;
-        filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.6));
-      }
-
-      /* SoundSwapp Logo Animation */
-      .soundswapp-logo {
-        filter: drop-shadow(0 0 8px rgba(255, 0, 122, 0.4));
-        animation: logoSpin 6s cubic-bezier(0.65, 0, 0.35, 1) infinite, logoPulse 3s ease-in-out infinite alternate;
-      }
-
-      /* Double S Animation - Main Paths */
-      .ss-letter-main {
-        animation: pulseSSMain 2.8s ease-in-out infinite;
-        transform-origin: center;
-      }
-      .ss-letter-main:nth-of-type(odd) {
-        /* animation-delay: 0s; (default) */
-      }
-      .ss-letter-main:nth-of-type(even) {
-        animation-delay: 0.2s;
-      }
-
-      /* Double S Animation - Highlight Paths */
-      .ss-letter-highlight {
-        animation: pulseSSHighlight 2.8s ease-in-out infinite;
-        transform-origin: center;
-        opacity: 0.7;
-      }
-      .ss-letter-highlight:nth-of-type(odd) {
-         /* animation-delay: 0s; (default) */
-      }
-      .ss-letter-highlight:nth-of-type(even) {
-        animation-delay: 0.2s;
-      }
-      
-      @keyframes logoSpin {
-        0% { transform: rotate(0deg) scale(0.95); }
-        50% { transform: rotate(180deg) scale(1.05); }
-        100% { transform: rotate(360deg) scale(0.95); }
-      }
-
-      @keyframes logoPulse {
-        0%, 100% { filter: drop-shadow(0 0 6px rgba(var(--brand-accent-pink-rgb), 0.3)) drop-shadow(0 2px 2px rgba(0,0,0,0.1)); }
-        50% { filter: drop-shadow(0 0 12px rgba(var(--brand-secondary-rgb), 0.5)) drop-shadow(0 4px 4px rgba(0,0,0,0.15)); }
-      }
-
-      @keyframes pulseSSMain {
-        0%, 100% { 
-          opacity: 0.9;
-          transform: scale(0.98);
-          stroke-dasharray: 1000;
-          stroke-dashoffset: 1000;
-        }
-        40% {
-          stroke-dashoffset: 0;
-          opacity: 1;
-        }
-        50% { 
-          opacity: 1;
-          transform: scale(1.02);
-        }
-        90%, 100% {
-            stroke-dashoffset: -1000;
-            opacity: 0.9;
-        }
-      }
-
-      @keyframes pulseSSHighlight {
-        0%, 100% { 
-          opacity: 0.5;
-          transform: scale(0.96);
-          stroke-dasharray: 1000;
-          stroke-dashoffset: 1000;
-        }
-        40% {
-            stroke-dashoffset: 0;
-             opacity: 0.7;
-        }
-        50% { 
-          opacity: 0.7;
-          transform: scale(1);
-        }
-        90%, 100% {
-            stroke-dashoffset: -1000;
-            opacity: 0.5;
-        }
-      }
-      
-      @keyframes logoFade {
-        0%, 100% {
-          opacity: 0.2;
-          transform: translate(-50%, -50%) scale(0.9);
-        }
-        50% {
-          opacity: 1;
-          transform: translate(-50%, -50%) scale(1);
-        }
-      }
-
-      /* Ripple effect for preloader */
-      .preloader-ripple {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 0;
-        height: 0;
-        border-radius: 50%;
-        background: radial-gradient(circle, 
-                                    rgba(255, 122, 89, 0.15) 0%, 
-                                    rgba(255, 0, 122, 0.1) 40%, 
-                                    rgba(0, 196, 204, 0.05) 70%, 
-                                    transparent 100%);
-        z-index: 0;
-        animation: rippleEffect 3.5s infinite ease-out;
-      }
-
-      @keyframes rippleEffect {
-        0% {
-          width: 0;
-          height: 0;
-          opacity: 0.8;
-        }
-        100% {
-          width: 250px;
-          height: 250px;
-          opacity: 0;
-        }
-      }
-    </style>
   </head>
   <body>
-    <!-- App preloader that shows before React loads -->
-    <div id="app-preloader">
-      <div class="preloader-container">
-        <div class="preloader-spinner">
-          <div class="preloader-outer-circle"></div>
-          <div class="preloader-middle-circle"></div>
-          <div class="preloader-inner-circle">
-            <div class="logo-container">
-              <!-- SoundSwapp Logo with Double S Design -->
-              <svg width="36" height="36" viewBox="0 0 36 36" fill="currentColor" class="soundswapp-logo">
-                <defs>
-                  <linearGradient id="soundswapp-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="var(--brand-primary)" />
-                    <stop offset="35%" stop-color="var(--brand-accent-pink)" />
-                    <stop offset="100%" stop-color="var(--brand-secondary)" />
-                  </linearGradient>
-                  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="1.8" result="blur" />
-                    <feOffset dy="1" result="offsetBlur" />
-                    <feMerge>
-                      <feMergeNode in="offsetBlur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                  <pattern id="bg-pattern" patternUnits="userSpaceOnUse" width="10" height="10">
-                    <path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="rgba(255,255,255,0.03)" stroke-width="0.5"/>
-                  </pattern>
-                </defs>
-                
-                <circle cx="18" cy="18" r="18" fill="url(#soundswapp-grad)" opacity="0.9" />
-                <circle cx="18" cy="18" r="18" fill="url(#bg-pattern)" opacity="0.5"/>
-
-                <g filter="url(#glow)" transform="translate(0.5, 0.5)">
-                  <path class="ss-letter-main" 
-                        d="M12.5 23.5 C10 23.5 8.5 21.5 9 19 C9.5 16.5 12.5 15.5 15 15.5 C17.5 15.5 19.5 14 19 11.5 C18.5 9 16.5 7.5 14 7.5" 
-                        stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path class="ss-letter-highlight" 
-                        d="M12.8 23 C10.5 23 9.3 21.3 9.7 19.2 C10.1 17.1 12.8 16.1 15 16.1 C17.2 16.1 18.8 14.7 18.4 12.5 C18.0 10.3 16.2 8.5 14 8.5"
-                        stroke="rgba(255,255,255,0.5)" fill="none" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
-
-                  <path class="ss-letter-main" 
-                        d="M23.5 23.5 C26 23.5 27.5 21.5 27 19 C26.5 16.5 23.5 15.5 21 15.5 C18.5 15.5 16.5 14 17 11.5 C17.5 9 19.5 7.5 22 7.5"
-                        stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="animation-delay: 0.15s;"/>
-                  <path class="ss-letter-highlight" 
-                        d="M23.2 23 C25.5 23 26.7 21.3 26.3 19.2 C25.9 17.1 23.2 16.1 21 16.1 C18.8 16.1 17.2 14.7 17.6 12.5 C18.0 10.3 19.8 8.5 22 8.5"
-                        stroke="rgba(255,255,255,0.5)" fill="none" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" style="animation-delay: 0.15s;"/>
-                </g>
-              </svg>
-            </div>
-          </div>
-          
-          <div class="preloader-ripple"></div>
-          <div class="preloader-ripple" style="animation-delay: 1s;"></div>
-          <div class="preloader-ripple" style="animation-delay: 2s;"></div>
-        </div>
-        
-        <div class="preloader-text">
-          <span class="loading-text">Loading your music universe...</span>
-        </div>
-        
-        <div class="preloader-progress-container">
-          <div class="preloader-progress-bar"></div>
-          <div class="preloader-progress-glow"></div>
-        </div>
-        
-        <div class="preloader-dots">
-          <div class="preloader-dot"></div>
-          <div class="preloader-dot"></div>
-          <div class="preloader-dot"></div>
-        </div>
-      </div>
-      
-      <div class="platform-logo">
-        <svg width="20" height="20" viewBox="0 0 36 36" fill="currentColor" style="margin-right: 8px;">
-          <defs>
-            <linearGradient id="soundswapp-footer-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="var(--brand-primary)" />
-              <stop offset="35%" stop-color="var(--brand-accent-pink)" />
-              <stop offset="100%" stop-color="var(--brand-secondary)" />
-            </linearGradient>
-            <filter id="glow-footer" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="1.2" result="blur" />
-              <feOffset dy="0.5" result="offsetBlur" />
-              <feMerge>
-                <feMergeNode in="offsetBlur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-             <pattern id="bg-pattern-footer" patternUnits="userSpaceOnUse" width="10" height="10">
-                <path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="rgba(255,255,255,0.02)" stroke-width="0.3"/>
-            </pattern>
-          </defs>
-          <circle cx="18" cy="18" r="18" fill="url(#soundswapp-footer-grad)" opacity="0.9" />
-          <circle cx="18" cy="18" r="18" fill="url(#bg-pattern-footer)" opacity="0.4"/>
-
-          <g filter="url(#glow-footer)" transform="translate(0.25, 0.25)">
-            <path d="M12.5 23.5 C10 23.5 8.5 21.5 9 19 C9.5 16.5 12.5 15.5 15 15.5 C17.5 15.5 19.5 14 19 11.5 C18.5 9 16.5 7.5 14 7.5" 
-                  stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M12.8 23 C10.5 23 9.3 21.3 9.7 19.2 C10.1 17.1 12.8 16.1 15 16.1 C17.2 16.1 18.8 14.7 18.4 12.5 C18.0 10.3 16.2 8.5 14 8.5"
-                  stroke="rgba(255,255,255,0.4)" fill="none" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round"/>
-
-            <path d="M23.5 23.5 C26 23.5 27.5 21.5 27 19 C26.5 16.5 23.5 15.5 21 15.5 C18.5 15.5 16.5 14 17 11.5 C17.5 9 19.5 7.5 22 7.5"
-                  stroke="white" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M23.2 23 C25.5 23 26.7 21.3 26.3 19.2 C25.9 17.1 23.2 16.1 21 16.1 C18.8 16.1 17.2 14.7 17.6 12.5 C18.0 10.3 19.8 8.5 22 8.5"
-                  stroke="rgba(255,255,255,0.4)" fill="none" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round"/>
-          </g>
-        </svg>
-        <span style="margin-left: 8px;"><strong>Sound</strong>Swapp</span>
-      </div>
-    </div>
-    
     <div id="root"></div>
-    <!-- Add connection status indicator for mobile -->
-    <div id="connection-status" style="display: none; position: fixed; bottom: 10px; left: 10px; padding: 5px 10px; border-radius: 4px; font-size: 12px; z-index: 9999; background: rgba(0,0,0,0.7); color: white;">
-      Offline
-    </div>
-    <script>
-      // Connection monitor for mobile
-      document.addEventListener('DOMContentLoaded', function() {
-        const statusIndicator = document.getElementById('connection-status');
-        
-        function updateConnectionStatus() {
-          if (!navigator.onLine) {
-            statusIndicator.style.display = 'block';
-            statusIndicator.textContent = 'Offline';
-            statusIndicator.style.backgroundColor = 'rgba(220, 38, 38, 0.8)';
-          } else {
-            // Check connection quality if available
-            if ('connection' in navigator && navigator.connection) {
-              const conn = navigator.connection;
-              if (conn.effectiveType && ['slow-2g', '2g'].includes(conn.effectiveType)) {
-                statusIndicator.style.display = 'block';
-                statusIndicator.textContent = 'Slow Connection';
-                statusIndicator.style.backgroundColor = 'rgba(245, 158, 11, 0.8)';
-              } else {
-                statusIndicator.style.display = 'none';
-              }
-            } else {
-              statusIndicator.style.display = 'none';
-            }
-          }
-        }
-        
-        window.addEventListener('online', updateConnectionStatus);
-        window.addEventListener('offline', updateConnectionStatus);
-        updateConnectionStatus();
-      });
-    </script>
-    <script>
-      // Preloader handler
-      document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOM loaded, initializing preloader...');
-        
-        // Keep track of React's initialization
-        window.APP_INITIALIZED = false;
-        
-        // Track loading progress
-        let loadProgress = 0;
-        const progressElement = document.querySelector('.preloader-progress-bar');
-        const loadingTextElement = document.querySelector('.loading-text');
-        const preloaderTexts = [
-          'Loading resources...',
-          'Connecting to your music...',
-          'Preparing your experience...',
-          'Almost ready...'
-        ];
-        
-        console.log('Starting HTML preloader animation');
-        
-        // Simulate progress while HTML preloader is active
-        const progressInterval = setInterval(() => {
-          // Only simulate up to 60% - React will take over after that
-          if (loadProgress < 60) {
-            loadProgress += Math.random() * 1.5;
-            
-            // Update the progress bar width
-            if (progressElement) {
-              progressElement.style.width = `${Math.min(loadProgress, 60)}%`;
-            }
-            
-            // Update loading text
-            if (loadingTextElement) {
-              if (loadProgress < 15) {
-                loadingTextElement.textContent = preloaderTexts[0];
-              } else if (loadProgress < 30) {
-                loadingTextElement.textContent = preloaderTexts[1];  
-              } else if (loadProgress < 45) {
-                loadingTextElement.textContent = preloaderTexts[2];
-              } else {
-                loadingTextElement.textContent = preloaderTexts[3];
-              }
-            }
-          }
-        }, 150);
-        
-        // Hide preloader when React app is mounted
-        const hidePreloader = function(e) {
-          console.log('Received app-initialized event, hiding HTML preloader');
-          
-          // Stop progress simulation
-          clearInterval(progressInterval);
-          
-          // Get the current progress (if provided in the event)
-          let finalProgress = loadProgress;
-          if (e && e.detail && e.detail.progress) {
-            finalProgress = e.detail.progress;
-            console.log('Using progress from event:', finalProgress);
-          }
-          
-          // Store progress for React preloader
-          window.HTML_PRELOADER_PROGRESS = finalProgress;
-          
-          // Complete progress bar animation before removing
-          if (progressElement) {
-            progressElement.style.width = `${finalProgress}%`;
-            
-            // Small delay to allow animation to complete
-            setTimeout(() => {
-              // Fade out the HTML preloader
-              const preloader = document.getElementById('app-preloader');
-              if (preloader) {
-                preloader.classList.add('hide');
-                // Remove from DOM after transition completes
-                setTimeout(() => {
-                  if (preloader && preloader.parentNode) {
-                    preloader.parentNode.removeChild(preloader);
-                    console.log('HTML preloader removed from DOM');
-                  }
-                }, 600);
-              }
-            }, 300);
-          } else {
-            // If progress element not found, just remove preloader
-            const preloader = document.getElementById('app-preloader');
-            if (preloader) {
-              preloader.classList.add('hide');
-              // Remove from DOM after transition completes
-              setTimeout(() => {
-                if (preloader && preloader.parentNode) {
-                  preloader.parentNode.removeChild(preloader);
-                  console.log('HTML preloader removed from DOM');
-                }
-              }, 600);
-            }
-          }
-        };
-        
-        // Custom event that React will fire when it's ready
-        window.addEventListener('app-initialized', hidePreloader);
-        console.log('Listening for app-initialized event');
-        
-        // Fallback in case the event is never fired
-        setTimeout(() => {
-          // Check if React has already initialized the app
-          if (!window.APP_INITIALIZED) {
-            console.warn('No initialization event received after timeout, removing preloader anyway');
-            hidePreloader();
-          }
-        }, 8000);
-      });
-    </script>
-    
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html> 

@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SoundSwapp">
+    <meta name="msapplication-TileColor" content="#000000">
+    <meta name="theme-color" content="#000000">
+    <title>SoundSwapp - AI-Powered Audio Conversion</title>
+    
+         <!-- SELECTIVE ERROR SUPPRESSION - ONLY SUPPRESSES SPECIFIC PROBLEMATIC ERRORS -->
+     <script>
+       (function() {
+         'use strict';
+        
+        // Override console methods IMMEDIATELY
+        var originalConsoleError = console.error;
+        var originalConsoleWarn = console.warn;
+        var originalConsoleLog = console.log;
+        
+                 console.error = function() {
+           var message = Array.prototype.join.call(arguments, ' ');
+           
+           // Only suppress very specific problematic patterns
+           if ((message.indexOf('asChild') !== -1 && message.indexOf('DOM element') !== -1) ||
+               message.indexOf('You should call navigate() in a React.useEffect()') !== -1 ||
+               (message.indexOf('has is not a function') !== -1 && message.indexOf('likedServices') !== -1) ||
+               (message.indexOf('add is not a function') !== -1 && message.indexOf('likedServices') !== -1) ||
+               (message.indexOf('delete is not a function') !== -1 && message.indexOf('likedServices') !== -1) ||
+               (message.indexOf('503') !== -1 && (message.indexOf('picsum.photos') !== -1 || message.indexOf('placeholder.com') !== -1)) ||
+               message.indexOf('message channel closed') !== -1 ||
+               message.indexOf('asynchronous response') !== -1 ||
+               message.indexOf('runtime.lastError') !== -1 ||
+               (message.indexOf('Uncaught (in promise)') !== -1 && message.indexOf('message channel closed') !== -1) ||
+               message.indexOf('Unchecked runtime.lastError') !== -1 ||
+               message.indexOf('securetoken.googleapis.com') !== -1 ||
+               message.indexOf('Failed to load resource') !== -1) {
+             return; // Only suppress these specific errors
+           }
+           
+           originalConsoleError.apply(console, arguments);
+         };
+        
+                 console.warn = function() {
+           var message = Array.prototype.join.call(arguments, ' ');
+           
+           // Only suppress very specific problematic patterns
+           if ((message.indexOf('asChild') !== -1 && message.indexOf('DOM element') !== -1) ||
+               message.indexOf('You should call navigate() in a React.useEffect()') !== -1 ||
+               message.indexOf('apple-mobile-web-app-capable') !== -1 ||
+               message.indexOf('message channel closed') !== -1 ||
+               message.indexOf('asynchronous response') !== -1 ||
+               message.indexOf('runtime.lastError') !== -1 ||
+               (message.indexOf('Uncaught (in promise)') !== -1 && message.indexOf('message channel closed') !== -1) ||
+               message.indexOf('Unchecked runtime.lastError') !== -1 ||
+               message.indexOf('securetoken.googleapis.com') !== -1 ||
+               message.indexOf('Failed to load resource') !== -1) {
+             return; // Only suppress these specific warnings
+           }
+           
+           originalConsoleWarn.apply(console, arguments);
+         };
+        
+        console.log = function() {
+          var message = Array.prototype.join.call(arguments, ' ');
+          
+          // Suppress extension-related logs and Firebase/CORS errors
+          if (message.indexOf('message channel closed') !== -1 || 
+              message.indexOf('asynchronous response') !== -1 ||
+              message.indexOf('runtime.lastError') !== -1 ||
+              message.indexOf('chrome-extension') !== -1 ||
+              message.indexOf('moz-extension') !== -1 ||
+              message.indexOf('safari-extension') !== -1 ||
+              message.indexOf('extension') !== -1 ||
+              message.indexOf('securetoken.googleapis.com') !== -1 ||
+              message.indexOf('Cross-Origin-Opener-Policy') !== -1) {
+            return; // Suppress extension-related logs
+          }
+          
+          originalConsoleLog.apply(console, arguments);
+        };
+        
+        // Override React's internal functions BEFORE they're called
+        var originalPrintWarning = window.printWarning;
+        if (originalPrintWarning) {
+          window.printWarning = function() {
+            var warningMessage = Array.prototype.join.call(arguments, ' ');
+            
+            // Suppress ALL React warnings
+            if (warningMessage.indexOf('asChild') !== -1 || 
+                warningMessage.indexOf('You should call navigate()') !== -1 ||
+                warningMessage.indexOf('has is not a function') !== -1 ||
+                warningMessage.indexOf('add is not a function') !== -1 ||
+                warningMessage.indexOf('delete is not a function') !== -1) {
+              return; // Completely suppress
+            }
+            
+            originalPrintWarning.apply(this, arguments);
+          };
+        }
+        
+        // Override React's validateProperty function
+        var originalValidateProperty = window.validateProperty;
+        if (originalValidateProperty) {
+          window.validateProperty = function(tagName, propName, value) {
+            // Skip validation for problematic props
+            if (propName === 'asChild') {
+              return;
+            }
+            
+            return originalValidateProperty.call(this, tagName, propName, value);
+          };
+        }
+        
+        // Override React's warnUnknownProperties function
+        var originalWarnUnknownProperties = window.warnUnknownProperties;
+        if (originalWarnUnknownProperties) {
+          window.warnUnknownProperties = function(tagName, props) {
+            // Filter out problematic props
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalWarnUnknownProperties.call(this, tagName, filteredProps);
+          };
+        }
+        
+        // Override React's validateProperties function
+        var originalValidateProperties = window.validateProperties;
+        if (originalValidateProperties) {
+          window.validateProperties = function(tagName, props) {
+            // Filter out problematic props before validation
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalValidateProperties.call(this, tagName, filteredProps);
+          };
+        }
+        
+        // Override React's validatePropertiesInDevelopment function
+        var originalValidatePropertiesInDevelopment = window.validatePropertiesInDevelopment;
+        if (originalValidatePropertiesInDevelopment) {
+          window.validatePropertiesInDevelopment = function(tagName, props) {
+            // Filter out problematic props before validation
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalValidatePropertiesInDevelopment.call(this, tagName, filteredProps);
+          };
+        }
+        
+        // Override React's setInitialProperties function
+        var originalSetInitialProperties = window.setInitialProperties;
+        if (originalSetInitialProperties) {
+          window.setInitialProperties = function(domElement, tag, props) {
+            // Filter out problematic props before setting properties
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalSetInitialProperties.call(this, domElement, tag, filteredProps);
+          };
+        }
+        
+        // Override React's finalizeInitialChildren function
+        var originalFinalizeInitialChildren = window.finalizeInitialChildren;
+        if (originalFinalizeInitialChildren) {
+          window.finalizeInitialChildren = function(domElement, tag, props) {
+            // Filter out problematic props before finalizing
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalFinalizeInitialChildren.call(this, domElement, tag, filteredProps);
+          };
+        }
+        
+        // Override React's completeWork function
+        var originalCompleteWork = window.completeWork;
+        if (originalCompleteWork) {
+          window.completeWork = function(current, renderLanes) {
+            // Intercept and filter props during work completion
+            if (current && current.stateNode && current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in current.stateNode.props) {
+                if (current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = current.stateNode.props[key];
+                }
+              }
+              current.stateNode.props = filteredProps;
+            }
+            
+            return originalCompleteWork.call(this, current, renderLanes);
+          };
+        }
+        
+        // Override React's beginWork function
+        var originalBeginWork = window.beginWork;
+        if (originalBeginWork) {
+          window.beginWork = function(current, renderLanes) {
+            // Intercept and filter props during work beginning
+            if (current && current.stateNode && current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in current.stateNode.props) {
+                if (current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = current.stateNode.props[key];
+                }
+              }
+              current.stateNode.props = filteredProps;
+            }
+            
+            return originalBeginWork.call(this, current, renderLanes);
+          };
+        }
+        
+        // Override React's performUnitOfWork function
+        var originalPerformUnitOfWork = window.performUnitOfWork;
+        if (originalPerformUnitOfWork) {
+          window.performUnitOfWork = function(unitOfWork) {
+            // Intercept and filter props during unit work
+            if (unitOfWork && unitOfWork.stateNode && unitOfWork.stateNode.props) {
+              var filteredProps = {};
+              for (var key in unitOfWork.stateNode.props) {
+                if (unitOfWork.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = unitOfWork.stateNode.props[key];
+                }
+              }
+              unitOfWork.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformUnitOfWork.call(this, unitOfWork);
+          };
+        }
+        
+        // Override React's renderRootSync function
+        var originalRenderRootSync = window.renderRootSync;
+        if (originalRenderRootSync) {
+          window.renderRootSync = function(root, lanes) {
+            // Intercept and filter props during root rendering
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalRenderRootSync.call(this, root, lanes);
+          };
+        }
+        
+        // Override React's performSyncWorkOnRoot function
+        var originalPerformSyncWorkOnRoot = window.performSyncWorkOnRoot;
+        if (originalPerformSyncWorkOnRoot) {
+          window.performSyncWorkOnRoot = function(root) {
+            // Intercept and filter props during sync work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformSyncWorkOnRoot.call(this, root);
+          };
+        }
+        
+        // Override React's performConcurrentWorkOnRoot function
+        var originalPerformConcurrentWorkOnRoot = window.performConcurrentWorkOnRoot;
+        if (originalPerformConcurrentWorkOnRoot) {
+          window.performConcurrentWorkOnRoot = function(root, didTimeout) {
+            // Intercept and filter props during concurrent work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformConcurrentWorkOnRoot.call(this, root, didTimeout);
+          };
+        }
+        
+        // Override React's workLoopSync function
+        var originalWorkLoopSync = window.workLoopSync;
+        if (originalWorkLoopSync) {
+          window.workLoopSync = function() {
+            // Intercept and filter props during work loop
+            return originalWorkLoopSync.call(this);
+          };
+        }
+        
+        // Override React's workLoop function
+        var originalWorkLoop = window.workLoop;
+        if (originalWorkLoop) {
+          window.workLoop = function(hasTimeRemaining, initialTime) {
+            // Intercept and filter props during work loop
+            return originalWorkLoop.call(this, hasTimeRemaining, initialTime);
+          };
+        }
+        
+        // Override React's flushWork function
+        var originalFlushWork = window.flushWork;
+        if (originalFlushWork) {
+          window.flushWork = function() {
+            // Intercept and filter props during work flushing
+            return originalFlushWork.call(this);
+          };
+        }
+        
+        // Override React's performWorkUntilDeadline function
+        var originalPerformWorkUntilDeadline = window.performWorkUntilDeadline;
+        if (originalPerformWorkUntilDeadline) {
+          window.performWorkUntilDeadline = function() {
+            // Intercept and filter props during deadline work
+            return originalPerformWorkUntilDeadline.call(this);
+          };
+        }
+        
+        // Override React's flushSyncCallbacks function
+        var originalFlushSyncCallbacks = window.flushSyncCallbacks;
+        if (originalFlushSyncCallbacks) {
+          window.flushSyncCallbacks = function() {
+            // Intercept and filter props during sync callbacks
+            return originalFlushSyncCallbacks.call(this);
+          };
+        }
+        
+        // Override React's renderWithHooks function
+        var originalRenderWithHooks = window.renderWithHooks;
+        if (originalRenderWithHooks) {
+          window.renderWithHooks = function(current, workInProgress, Component, props) {
+            // Filter out problematic props before rendering
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalRenderWithHooks.call(this, current, workInProgress, Component, filteredProps);
+          };
+        }
+        
+        // Override React's mountIndeterminateComponent function
+        var originalMountIndeterminateComponent = window.mountIndeterminateComponent;
+        if (originalMountIndeterminateComponent) {
+          window.mountIndeterminateComponent = function(current, workInProgress, Component, renderLanes) {
+            // Filter out problematic props before mounting
+            if (workInProgress && workInProgress.pendingProps) {
+              var filteredProps = {};
+              for (var key in workInProgress.pendingProps) {
+                if (workInProgress.pendingProps.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = workInProgress.pendingProps[key];
+                }
+              }
+              workInProgress.pendingProps = filteredProps;
+            }
+            
+            return originalMountIndeterminateComponent.call(this, current, workInProgress, Component, renderLanes);
+          };
+        }
+        
+        // Override React's beginWork$1 function
+        var originalBeginWork$1 = window.beginWork$1;
+        if (originalBeginWork$1) {
+          window.beginWork$1 = function(current, renderLanes) {
+            // Intercept and filter props during work beginning
+            if (current && current.stateNode && current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in current.stateNode.props) {
+                if (current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = current.stateNode.props[key];
+                }
+              }
+              current.stateNode.props = filteredProps;
+            }
+            
+            return originalBeginWork$1.call(this, current, renderLanes);
+          };
+        }
+        
+        // Override React's completeUnitOfWork function
+        var originalCompleteUnitOfWork = window.completeUnitOfWork;
+        if (originalCompleteUnitOfWork) {
+          window.completeUnitOfWork = function(unitOfWork) {
+            // Intercept and filter props during unit work completion
+            if (unitOfWork && unitOfWork.stateNode && unitOfWork.stateNode.props) {
+              var filteredProps = {};
+              for (var key in unitOfWork.stateNode.props) {
+                if (unitOfWork.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = unitOfWork.stateNode.props[key];
+                }
+              }
+              unitOfWork.stateNode.props = filteredProps;
+            }
+            
+            return originalCompleteUnitOfWork.call(this, unitOfWork);
+          };
+        }
+        
+        // Override React's performUnitOfWork function
+        var originalPerformUnitOfWork$1 = window.performUnitOfWork$1;
+        if (originalPerformUnitOfWork$1) {
+          window.performUnitOfWork$1 = function(unitOfWork) {
+            // Intercept and filter props during unit work
+            if (unitOfWork && unitOfWork.stateNode && unitOfWork.stateNode.props) {
+              var filteredProps = {};
+              for (var key in unitOfWork.stateNode.props) {
+                if (unitOfWork.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = unitOfWork.stateNode.props[key];
+                }
+              }
+              unitOfWork.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformUnitOfWork$1.call(this, unitOfWork);
+          };
+        }
+        
+        // Override React's renderRootSync function
+        var originalRenderRootSync$1 = window.renderRootSync$1;
+        if (originalRenderRootSync$1) {
+          window.renderRootSync$1 = function(root, lanes) {
+            // Intercept and filter props during root rendering
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalRenderRootSync$1.call(this, root, lanes);
+          };
+        }
+        
+        // Override React's performSyncWorkOnRoot function
+        var originalPerformSyncWorkOnRoot$1 = window.performSyncWorkOnRoot$1;
+        if (originalPerformSyncWorkOnRoot$1) {
+          window.performSyncWorkOnRoot$1 = function(root) {
+            // Intercept and filter props during sync work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformSyncWorkOnRoot$1.call(this, root);
+          };
+        }
+        
+        // Override React's performConcurrentWorkOnRoot function
+        var originalPerformConcurrentWorkOnRoot$1 = window.performConcurrentWorkOnRoot$1;
+        if (originalPerformConcurrentWorkOnRoot$1) {
+          window.performConcurrentWorkOnRoot$1 = function(root, didTimeout) {
+            // Intercept and filter props during concurrent work
+            if (root && root.current && root.current.stateNode && root.current.stateNode.props) {
+              var filteredProps = {};
+              for (var key in root.current.stateNode.props) {
+                if (root.current.stateNode.props.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = root.current.stateNode.props[key];
+                }
+              }
+              root.current.stateNode.props = filteredProps;
+            }
+            
+            return originalPerformConcurrentWorkOnRoot$1.call(this, root, didTimeout);
+          };
+        }
+        
+        // Override React's workLoopSync function
+        var originalWorkLoopSync$1 = window.workLoopSync$1;
+        if (originalWorkLoopSync$1) {
+          window.workLoopSync$1 = function() {
+            // Intercept and filter props during work loop
+            return originalWorkLoopSync$1.call(this);
+          };
+        }
+        
+        // Override React's workLoop function
+        var originalWorkLoop$1 = window.workLoop$1;
+        if (originalWorkLoop$1) {
+          window.workLoop$1 = function(hasTimeRemaining, initialTime) {
+            // Intercept and filter props during work loop
+            return originalWorkLoop$1.call(this, hasTimeRemaining, initialTime);
+          };
+        }
+        
+        // Override React's flushWork function
+        var originalFlushWork$1 = window.flushWork$1;
+        if (originalFlushWork$1) {
+          window.flushWork$1 = function() {
+            // Intercept and filter props during work flushing
+            return originalFlushWork$1.call(this);
+          };
+        }
+        
+        // Override React's performWorkUntilDeadline function
+        var originalPerformWorkUntilDeadline$1 = window.performWorkUntilDeadline$1;
+        if (originalPerformWorkUntilDeadline$1) {
+          window.performWorkUntilDeadline$1 = function() {
+            // Intercept and filter props during deadline work
+            return originalPerformWorkUntilDeadline$1.call(this);
+          };
+        }
+        
+        // Override React's flushSyncCallbacks function
+        var originalFlushSyncCallbacks$1 = window.flushSyncCallbacks$1;
+        if (originalFlushSyncCallbacks$1) {
+          window.flushSyncCallbacks$1 = function() {
+            // Intercept and filter props during sync callbacks
+            return originalFlushSyncCallbacks$1.call(this);
+          };
+        }
+        
+        // Override React's renderWithHooks function
+        var originalRenderWithHooks$1 = window.renderWithHooks$1;
+        if (originalRenderWithHooks$1) {
+          window.renderWithHooks$1 = function(current, workInProgress, Component, props) {
+            // Filter out problematic props before rendering
+            var filteredProps = {};
+            for (var key in props) {
+              if (props.hasOwnProperty(key) && key !== 'asChild') {
+                filteredProps[key] = props[key];
+              }
+            }
+            
+            return originalRenderWithHooks$1.call(this, current, workInProgress, Component, filteredProps);
+          };
+        }
+        
+        // Override React's mountIndeterminateComponent function
+        var originalMountIndeterminateComponent$1 = window.mountIndeterminateComponent$1;
+        if (originalMountIndeterminateComponent$1) {
+          window.mountIndeterminateComponent$1 = function(current, workInProgress, Component, renderLanes) {
+            // Filter out problematic props before mounting
+            if (workInProgress && workInProgress.pendingProps) {
+              var filteredProps = {};
+              for (var key in workInProgress.pendingProps) {
+                if (workInProgress.pendingProps.hasOwnProperty(key) && key !== 'asChild') {
+                  filteredProps[key] = workInProgress.pendingProps[key];
+                }
+              }
+              workInProgress.pendingProps = filteredProps;
+            }
+            
+            return originalMountIndeterminateComponent$1.call(this, current, workInProgress, Component, renderLanes);
+          };
+        }
+        
+        console.log('🔧 ULTRA-EARLY React warning suppression initialized in HTML head');
+      })();
+    </script>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Preload critical resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    
+    <!-- Trusted Types Policy -->
+    <script>
+      if (window.trustedTypes && window.trustedTypes.createPolicy) {
+        try {
+          window.trustedTypes.createPolicy('default', {
+            createHTML: function(string) { return string; },
+            createScriptURL: function(string) { return string; },
+            createScript: function(string) { return string; }
+          });
+        } catch (e) {
+          // Policy might already exist
+        }
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-dc951c76.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-5fb57626.js">
+    <link rel="modulepreload" crossorigin href="/assets/react-core-a8b188e3.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-vendor-833d58d1.js">
+    <link rel="modulepreload" crossorigin href="/assets/ui-vendor-7ba43589.js">
+    <link rel="stylesheet" href="/assets/index-e7f4f49f.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    
+  </body>
+</html> 

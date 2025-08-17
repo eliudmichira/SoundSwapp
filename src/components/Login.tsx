@@ -7,6 +7,7 @@ import { Eye, EyeOff, Mail, Lock, User, Music, Shield, Zap } from 'lucide-react'
 import { FaSpotify, FaYoutube } from 'react-icons/fa';
 import FaviconLogo from '../../public/favicon.svg';
 import { SoundSwappLogo } from '../assets';
+import { ParticleField } from './ui/ParticleField';
 
 // Exact gradient from Login.tsx
 const logoGradient = 'linear-gradient(to right, #FF7A59, #FF007A, #00C4CC)';
@@ -143,7 +144,14 @@ const SimpleLogin: React.FC = () => {
   const displayError = localError || error;
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-[#181926] flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300 relative overflow-hidden flex items-center justify-center">
+      {/* Particle background */}
+      <ParticleField
+        colorScheme="colorful"
+        density="medium"
+        interactive={false}
+        className="fixed top-0 left-0 w-full h-full z-0 opacity-80 dark:opacity-60"
+      />
       {/* Animated orb background */}
       <motion.div
         className="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] blur-3xl opacity-30"
@@ -154,9 +162,9 @@ const SimpleLogin: React.FC = () => {
       {[...Array(3)].map((_, i) => (
         <motion.div
           key={i}
-          className="absolute text-white/10"
+          className="absolute text-white/20 drop-shadow-[0_0_10px_rgba(255,255,255,0.25)]"
           style={{ left: `${20 + i * 30}%`, top: `${30 + i * 15}%` }}
-          animate={{ y: [0, -20, 0], rotate: [0, 360], opacity: [0.1, 0.3, 0.1] }}
+          animate={{ y: [0, -24, 0], rotate: [0, 360], opacity: [0.2, 0.5, 0.2] }}
           transition={{ duration: 8 + i * 2, repeat: Infinity, delay: i }}
         >
           <Music size={28} />
@@ -181,7 +189,7 @@ const SimpleLogin: React.FC = () => {
           >
             SoundSwapp
           </h1>
-          <p className="text-lg text-gray-300 mb-8 max-w-md">Seamlessly sync your music across all platforms. One click, pure magic.</p>
+          <p className="text-lg text-neutral-600 dark:text-gray-300 mb-8 max-w-md">Seamlessly sync your music across all platforms. One click, pure magic.</p>
           <div className="space-y-6 mb-8 w-full max-w-xs mx-auto lg:mx-0">
             {featureList.map((f, i) => (
               <div key={i} className="flex items-center gap-4">
@@ -189,8 +197,8 @@ const SimpleLogin: React.FC = () => {
                   {f.icon}
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-white">{f.title}</h3>
-                  <p className="text-sm text-gray-400">{f.desc}</p>
+                  <h3 className="text-base font-semibold text-neutral-900 dark:text-white">{f.title}</h3>
+                  <p className="text-sm text-neutral-600 dark:text-gray-400">{f.desc}</p>
                 </div>
               </div>
             ))}
@@ -210,18 +218,15 @@ const SimpleLogin: React.FC = () => {
         </div>
         {/* Right: Login Card */}
         <div className="w-full max-w-md mx-auto">
-          <div className={`relative rounded-3xl p-1 ${cardGradient} shadow-2xl animate-gradient-x`}>
-            <div className="bg-[#181926]/90 backdrop-blur-xl rounded-3xl p-8">
+          <div className="space-y-6">
               <div className="text-center mb-8">
                 <div className="flex items-center justify-center mb-6">
-                  <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-tr from-[#FF7A59] via-[#FF007A] to-[#00C4CC] shadow-lg">
-                    <SoundSwappLogo width={48} height={48} />
-                  </span>
+                  <SoundSwappLogo width={48} height={48} />
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-2">
+                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[#FF7A59] via-[#FF007A] to-[#00C4CC] bg-clip-text text-transparent mb-2">
                   {isRecoveryMode ? 'Authentication Recovery' : (isSignUp ? 'Create your account' : 'Welcome back')}
                 </h2>
-                <p className="text-gray-300">
+                <p className="text-neutral-600 dark:text-gray-300">
                   {isRecoveryMode 
                     ? 'Please sign in again to continue with your music service connection'
                     : (isSignUp ? 'Sign up to start swapping playlists' : 'Sign in to continue')
@@ -260,7 +265,7 @@ const SimpleLogin: React.FC = () => {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleGoogleAuth}
                 disabled={loading}
-                className={`w-full flex items-center justify-center px-6 py-4 ${buttonGradient} text-white font-medium rounded-xl hover:from-[#FF7A59] hover:to-[#00C4CC] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mb-6 shadow-lg`}
+                className={"w-full py-4 rounded-xl transition-all duration-200 flex items-center justify-center gap-3 shadow-lg text-white bg-[linear-gradient(90deg,#4285F4_0%,#34A853_33%,#FBBC05_66%,#EA4335_100%)] hover:brightness-110 active:brightness-95 focus:outline-none focus:ring-2 focus:ring-white/70 disabled:opacity-50 disabled:cursor-not-allowed mb-6"}
                 aria-label="Sign in with Google"
               >
                 {loading ? (
@@ -277,13 +282,13 @@ const SimpleLogin: React.FC = () => {
               </motion.button>
               <div className="relative mb-6">
                 <div className="absolute inset-0 flex items-center">
-                  <div className={`w-full border-t ${dividerGradient} opacity-40`}></div>
+                  <div className="w-full border-t border-neutral-200 dark:border-white/20"></div>
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className="px-4 bg-transparent text-gray-400">Or continue with email</span>
+                  <span className="px-4 py-1 bg-transparent text-neutral-500 dark:text-gray-400">or</span>
                 </div>
               </div>
-              <form onSubmit={handleEmailAuth} className="space-y-4">
+              <form onSubmit={handleEmailAuth} className="space-y-4" encType="application/x-www-form-urlencoded">
                 {isSignUp && (
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -293,10 +298,13 @@ const SimpleLogin: React.FC = () => {
                       type="text"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7A59] focus:border-transparent transition-all duration-200"
+                      className={`w-full pl-12 pr-4 py-4 rounded-xl transition-all duration-200
+                                   bg-white text-neutral-900 placeholder-neutral-500 border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#FF7A59]
+                                   dark:bg-white/10 dark:text-white dark:placeholder-gray-400 dark:border-white/20`}
                       placeholder="Full Name"
                       required={isSignUp}
                       aria-label="Full Name"
+                      autoComplete="name"
                     />
                   </div>
                 )}
@@ -308,10 +316,13 @@ const SimpleLogin: React.FC = () => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7A59] focus:border-transparent transition-all duration-200"
+                    className={`w-full pl-12 pr-4 py-4 rounded-xl transition-all duration-200
+                               bg-white text-neutral-900 placeholder-neutral-500 border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#FF7A59]
+                               dark:bg-white/10 dark:text-white dark:placeholder-gray-400 dark:border-white/20`}
                     placeholder="Email Address"
                     required
                     aria-label="Email Address"
+                    autoComplete="email"
                   />
                 </div>
                 <div className="relative">
@@ -322,11 +333,14 @@ const SimpleLogin: React.FC = () => {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-12 pr-12 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF7A59] focus:border-transparent transition-all duration-200"
+                    className={`w-full pl-12 pr-12 py-4 rounded-xl transition-all duration-200
+                               bg-white text-neutral-900 placeholder-neutral-500 border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#FF7A59]
+                               dark:bg-white/10 dark:text-white dark:placeholder-gray-400 dark:border-white/20`}
                     placeholder="Password"
                     required
                     minLength={6}
                     aria-label="Password"
+                    autoComplete={isSignUp ? "new-password" : "current-password"}
                   />
                   <button
                     type="button"
@@ -377,10 +391,9 @@ const SimpleLogin: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
+                </div>
       </div>
-    </div>
-  );
+   );
 };
 
 export default SimpleLogin; 

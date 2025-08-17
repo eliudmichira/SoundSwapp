@@ -188,14 +188,14 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-8"
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            initial={{ scale: 0.9, opacity: 0, y: -20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
+            exit={{ scale: 0.9, opacity: 0, y: -20 }}
+            className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl mt-4"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -569,5 +569,296 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}; 
+
+// Full-page version similar to PreferencesPage
+export const EditProfilePage: React.FC<{ onShowToast?: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void }> = ({ onShowToast }) => {
+  const { user } = useAuth();
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<'basic' | 'social' | 'preferences' | 'security'>('basic');
+  const [formData, setFormData] = useState({
+    displayName: '',
+    email: '',
+    bio: '',
+    location: '',
+    website: '',
+    phone: '',
+    birthDate: '',
+    favoriteGenre: '',
+    favoriteArtist: '',
+    theme: 'dark',
+    notifications: { email: true, push: true, conversionComplete: true, weeklyReport: false },
+    privacy: { shareStats: false, publicProfile: false, showEmail: false, showLocation: false, showStats: true }
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.uid) return;
+      try {
+        const profile = await profileService.getUserProfile(user.uid);
+        const settings = await profileService.getProfileSettings(user.uid);
+        if (profile) {
+          setFormData(prev => ({
+            ...prev,
+            displayName: profile.displayName || user.displayName || '',
+            email: profile.email || user.email || '',
+            bio: profile.bio || '',
+            location: profile.location || '',
+            website: profile.website || '',
+            phone: profile.phone || '',
+            birthDate: profile.birthDate || '',
+            favoriteGenre: profile.favoriteGenre || '',
+            favoriteArtist: profile.favoriteArtist || '',
+            theme: (settings.theme as 'dark' | 'light' | 'auto') || 'dark',
+            notifications: settings.notifications,
+            privacy: settings.privacy
+          }));
+        }
+      } catch (e) {
+        console.error('Error loading profile page:', e);
+        onShowToast?.('error', 'Failed to load profile');
+      }
+    };
+    load();
+  }, [user?.uid, onShowToast]);
+
+  const handleInputChange = (field: string, value: any) => setFormData(prev => ({ ...prev, [field]: value }));
+  const handleNestedChange = (category: string, field: string, value: any) => setFormData(prev => ({ ...prev, [category]: { ...(prev as any)[category], [field]: value } }));
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user?.uid) return;
+    setIsUploading(true);
+    try {
+      const imageUrl = await profileService.uploadProfileImage(user.uid, file);
+      await profileService.updateUserProfile(user.uid, { photoURL: imageUrl });
+      onShowToast?.('success', 'Profile image updated');
+    } catch (e) {
+      console.error('upload error:', e);
+      onShowToast?.('error', 'Failed to upload image');
+    } finally { setIsUploading(false); }
+  };
+
+  const handleSave = async () => {
+    if (!user?.uid) return;
+    setIsSaving(true);
+    try {
+      await profileService.updateUserProfile(user.uid, {
+        displayName: formData.displayName,
+        bio: formData.bio,
+        location: formData.location,
+        website: formData.website,
+        phone: formData.phone,
+        birthDate: formData.birthDate,
+        favoriteGenre: formData.favoriteGenre,
+        favoriteArtist: formData.favoriteArtist
+      });
+      await profileService.updateProfileSettings(user.uid, {
+        theme: formData.theme as 'dark' | 'light' | 'auto',
+        notifications: formData.notifications,
+        privacy: formData.privacy
+      });
+      onShowToast?.('success', 'Profile saved');
+    } catch (e) {
+      console.error('save error:', e);
+      onShowToast?.('error', 'Failed to save profile');
+    } finally { setIsSaving(false); }
+  };
+
+  const tabs = [
+    { id: 'basic', label: 'Basic Info', icon: User },
+    { id: 'social', label: 'Social & Music', icon: Music },
+    { id: 'preferences', label: 'Preferences', icon: Settings },
+    { id: 'security', label: 'Privacy', icon: Shield }
+  ];
+
+  return (
+    <div className="min-h-screen px-4 sm:px-6 py-6 space-y-8">
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => window.history.back()} aria-label="Go back" className="p-2 rounded-full hover:bg-accent">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold">Edit Profile</h1>
+            <p className="text-muted-foreground text-sm">Customize your profile and preferences</p>
+          </div>
+        </div>
+        <button onClick={handleSave} disabled={isSaving} className="bg-gradient-to-r from-blue-500 to-purple-500 text-white py-2 px-4 rounded-lg font-medium disabled:opacity-50">
+          {isSaving ? 'Saving…' : 'Save'}
+        </button>
+      </header>
+
+      {/* Tab Navigation styled like Insights */}
+      <div className="flex justify-center px-2">
+        <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl max-w-full overflow-x-auto hide-scrollbar">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id as any)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all whitespace-nowrap min-w-0 flex-shrink-0 ${
+                activeTab === id
+                  ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-md'
+                  : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-200/60 dark:border-gray-600/60 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span className="text-xs font-medium">{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="space-y-6">
+        {activeTab === 'basic' && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="relative inline-block">
+                <div className="w-40 h-40 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/10">
+                  <User className="w-24 h-24 text-white" />
+                </div>
+                <button
+                  onClick={() => document.getElementById('profile-image-input')?.click()}
+                  disabled={isUploading}
+                  className="absolute -bottom-2 -right-2 w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
+                >
+                  {isUploading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Camera className="w-5 h-5 text-white" />
+                  )}
+                </button>
+                <input id="profile-image-input" type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={isUploading} />
+              </div>
+              <p className="text-sm text-muted-foreground mt-2">Click to change profile photo</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Display Name</label>
+                <input type="text" value={formData.displayName} onChange={(e) => handleInputChange('displayName', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3" placeholder="Enter your display name" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Email</label>
+                <input type="email" value={formData.email} onChange={(e) => handleInputChange('email', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3" placeholder="Enter your email" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Phone Number</label>
+                <input type="tel" value={formData.phone} onChange={(e) => handleInputChange('phone', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3" placeholder="Enter your phone number" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Location</label>
+                <input type="text" value={formData.location} onChange={(e) => handleInputChange('location', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3" placeholder="Enter your location" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Website</label>
+                <input type="url" value={formData.website} onChange={(e) => handleInputChange('website', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3" placeholder="Enter your website" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Birth Date</label>
+                <input type="date" value={formData.birthDate} onChange={(e) => handleInputChange('birthDate', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Bio</label>
+              <textarea value={formData.bio} onChange={(e) => handleInputChange('bio', e.target.value)} rows={3} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3 resize-none" placeholder="Tell us about yourself..." />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'social' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Favorite Genre</label>
+                <select value={formData.favoriteGenre} onChange={(e) => handleInputChange('favoriteGenre', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3">
+                  <option value="">Select your favorite genre</option>
+                  <option value="pop">Pop</option>
+                  <option value="rock">Rock</option>
+                  <option value="hip-hop">Hip Hop</option>
+                  <option value="electronic">Electronic</option>
+                  <option value="jazz">Jazz</option>
+                  <option value="classical">Classical</option>
+                  <option value="country">Country</option>
+                  <option value="r&b">R&B</option>
+                  <option value="indie">Indie</option>
+                  <option value="alternative">Alternative</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Favorite Artist</label>
+                <input type="text" value={formData.favoriteArtist} onChange={(e) => handleInputChange('favoriteArtist', e.target.value)} className="w-full bg-background/90 border border-border rounded-lg px-4 py-3" placeholder="Enter your favorite artist" />
+              </div>
+            </div>
+
+            <div className="bg-accent/40 rounded-lg p-4">
+              <h3 className="text-lg font-semibold mb-4 flex items-center"><Music className="w-5 h-5 mr-2"/>Music Preferences</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <label className="flex items-center gap-2"><input type="checkbox" defaultChecked /> <span>Spotify</span></label>
+                <label className="flex items-center gap-2"><input type="checkbox" defaultChecked /> <span>YouTube</span></label>
+                <label className="flex items-center gap-2"><input type="checkbox" /> <span>Apple Music</span></label>
+                <label className="flex items-center gap-2"><input type="checkbox" /> <span>SoundCloud</span></label>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'preferences' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold mb-4 flex items-center"><Palette className="w-5 h-5 mr-2"/>Theme Settings</h3>
+              <div className="space-y-3">
+                {['light', 'dark', 'auto'].map((theme) => (
+                  <label key={theme} className="flex items-center gap-3 cursor-pointer">
+                    <input type="radio" name="theme" value={theme} checked={formData.theme===theme} onChange={(e)=>handleInputChange('theme', e.target.value)} />
+                    <span className="capitalize">{theme} Theme</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold mb-4 flex items-center"><Bell className="w-5 h-5 mr-2"/>Notification Settings</h3>
+              <div className="space-y-3">
+                {Object.entries(formData.notifications).map(([key, value]) => (
+                  <label key={key} className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={value} onChange={(e)=>handleNestedChange('notifications', key, e.target.checked)} />
+                    <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'security' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold mb-4 flex items-center"><Shield className="w-5 h-5 mr-2"/>Privacy Settings</h3>
+              <div className="space-y-3">
+                {Object.entries(formData.privacy).map(([key, value]) => (
+                  <label key={key} className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={value} onChange={(e)=>handleNestedChange('privacy', key, e.target.checked)} />
+                    <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="bg-yellow-50 dark:bg-yellow-950/20 rounded-lg p-4">
+              <h3 className="text-lg font-semibold mb-3">Account Security</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button className="bg-blue-500 text-white py-2 px-3 rounded-lg text-sm">Change Password</button>
+                <button className="bg-green-500 text-white py-2 px-3 rounded-lg text-sm">Enable 2FA</button>
+                <button className="bg-gray-500 text-white py-2 px-3 rounded-lg text-sm">Login History</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }; 

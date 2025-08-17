@@ -1,0 +1,4 @@
+#Mon Aug 11 22:41:20 EAT 2025
+base.0=C\:\\Users\\User\\Desktop\\SS\\SoundSwapp-GitHub\\app\\build\\intermediates\\dex\\release\\minifyReleaseWithR8\\classes.dex
+renamed.0=classes.dex
+path.0=classes.dex

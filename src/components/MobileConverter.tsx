@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, lazy } from 'react';
+import { ParticleField } from './ui/ParticleField';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence, LazyMotion, domAnimation } from 'framer-motion';
 import { 
@@ -84,22 +85,21 @@ import { ResponsiveLayout, MobileHeader, MobileContent, MobileBottomNav, MobileN
 import { useAuth } from '../lib/AuthContext';
 import { useConversion, type FailedTrack } from '../lib/ConversionContext';
 import { ConversionStatus } from '../types/conversion';
-import { getYouTubeAuthUrl } from '../lib/youtubeAuth';
+import { getYouTubeAuthUrl, getYouTubeToken } from '../lib/youtubeAuth';
 import { initSpotifyAuth } from '../lib/spotifyAuth';
 import { cn } from '../lib/utils';
 import { GlassmorphicCard } from './ui/GlassmorphicCard';
 import { GlowButton } from './ui/GlowButton';
-import { ParticleField } from './ui/ParticleField';
 import { GlassmorphicContainer } from './ui/GlassmorphicContainer';
 import { FloatingLabels } from './ui/FloatingLabels';
 import AnimatedGradientText from './ui/AnimatedGradientText';
 import LightingText from './ui/LightingText';
 import SpotlightCard from './ui/SpotlightCard';
-import { EnhancedFailedTracksModal } from './EnhancedFailedTracksModal';
 import { MobileFailedTracksDetails } from './visualization/MobileFailedTracksDetails';
 import SoundSwappLogo from '../assets/SoundSwappLogo';
 import { ToastContainer, Toast } from './feedback/EnhancedToast';
-import { SuccessCelebration } from './feedback/SuccessCelebration';
+import { openUrlOnMobile, openUrlOnMobileAlternative } from '../utils/mobileUtils';
+// Success celebration is lazy-loaded below
 import EnhancedConnectionCard from './EnhancedConnectionCard';
 import { PlaylistInsights } from './visualization/PlaylistInsights';
 import { useHapticFeedback } from '../hooks/useHapticFeedback';
@@ -124,19 +124,16 @@ const ANIMATION_DURATION = 0.3;
 const SPRING_CONFIG = { type: "spring" as const, stiffness: 300, damping: 30 };
 
 // Lazy load heavy components
-const LazyParticleField = lazy(() => import('./ui/ParticleField').then(module => ({ default: module.ParticleField })));
 const LazySuccessCelebration = lazy(() => import('./feedback/SuccessCelebration').then(module => ({ default: module.SuccessCelebration })));
 
 // Memoized components for better performance
 const MemoizedSoundSwappLogo = React.memo(SoundSwappLogo);
 const MemoizedParticleField = React.memo(({ isDark, className }: { isDark: boolean; className: string }) => (
-  <Suspense fallback={<div className={className} />}>
-    <LazyParticleField 
-      color={isDark ? "var(--particle-color, #FF7A59)" : "var(--particle-color, #FF007A)"}
-      density="low"
-      className={className}
-    />
-  </Suspense>
+  <ParticleField 
+    color={isDark ? "var(--particle-color, #FF7A59)" : "var(--particle-color, #FF007A)"}
+    density="low"
+    className={className}
+  />
 ));
 
 // Optimized animation variants
@@ -768,23 +765,27 @@ const ProfileContent: React.FC<ProfileContentProps> = ({
   });
   const [isLoadingStats, setIsLoadingStats] = useState(false);
 
+  // Debug log to verify ProfileContent is being rendered
+  
+
   // Load user stats from profile service
   useEffect(() => {
     const loadUserStats = async () => {
       if (!user?.uid) {
-        console.log('[DEBUG] No user UID available for loading stats');
+        console.log('[ProfileContent] No user UID available for loading stats');
         return;
       }
       
-      console.log('[DEBUG] Loading user stats for UID:', user.uid);
+      console.log('[ProfileContent] Loading user stats for UID:', user.uid);
       setIsLoadingStats(true);
       
       try {
+        console.log('[ProfileContent] Calling profileService.getUserStats...');
         const stats = await profileService.getUserStats(user.uid);
-        console.log('[DEBUG] User stats loaded successfully:', stats);
+        console.log('[ProfileContent] User stats loaded successfully:', stats);
         setUserStats(stats);
       } catch (error) {
-        console.error('[DEBUG] Error loading user stats:', error);
+        console.error('[ProfileContent] Error loading user stats:', error);
         // Keep default values if loading fails
       } finally {
         setIsLoadingStats(false);
@@ -1353,6 +1354,75 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState(0);
+  // Dynamic estimated time based on conversion progress
+  const estimatedTime = useMemo(() => {
+    if (state.status === ConversionStatus.IDLE) return "Ready to convert";
+    if (state.status === ConversionStatus.LOADING_TRACKS) return "Loading tracks...";
+    if (state.status === ConversionStatus.MATCHING_TRACKS) {
+      const remainingTracks = state.tracks.length - Math.floor((state.matchingProgress / 100) * state.tracks.length);
+      const estimatedSeconds = remainingTracks * 2; // Rough estimate: 2 seconds per track
+      if (estimatedSeconds < 60) return `${estimatedSeconds}s remaining`;
+      const minutes = Math.ceil(estimatedSeconds / 60);
+      return `${minutes} min remaining`;
+    }
+    if (state.status === ConversionStatus.CREATING_PLAYLIST) return "Creating playlist...";
+    if (state.status === ConversionStatus.SUCCESS) return "Conversion complete!";
+    return "Processing...";
+  }, [state.status, state.matchingProgress, state.tracks.length]);
+  
+  // Enhanced conversion progress data - derived from real conversion state
+  const matchedSongs = useMemo(() => {
+    if (!state.tracks || !state.matches) return [];
+    
+    return state.tracks
+      .filter(track => {
+        const match = state.matches.get(track.id);
+        return match && match.score > 0.7; // Only show high-confidence matches
+      })
+      .map(track => {
+        const match = state.matches.get(track.id);
+        return {
+          title: track.name,
+          artist: track.artists.join(', '),
+          confidence: Math.round((match?.score || 0) * 100),
+        };
+      })
+      .slice(0, 5); // Show top 5 matches
+  }, [state.tracks, state.matches]);
+  
+  const processingSongs = useMemo(() => {
+    if (!state.tracks || !state.matches) return [];
+    
+    return state.tracks
+      .filter(track => {
+        const match = state.matches.get(track.id);
+        return match && match.score > 0.3 && match.score <= 0.7; // Medium confidence matches
+      })
+      .map(track => ({
+        title: track.name,
+        artist: track.artists.join(', '),
+      }))
+      .slice(0, 3); // Show top 3 processing
+  }, [state.tracks, state.matches]);
+  
+  const issuesSongs = useMemo(() => {
+    if (!state.tracks || !state.matches) return [];
+    
+    return state.tracks
+      .filter(track => {
+        const match = state.matches.get(track.id);
+        return !match || match.score <= 0.3; // Low confidence or no match
+      })
+      .map(track => {
+        const match = state.matches.get(track.id);
+        return {
+          title: track.name,
+          artist: track.artists.join(', '),
+          issue: !match ? 'No match found' : 'Low confidence match',
+        };
+      })
+      .slice(0, 3); // Show top 3 issues
+  }, [state.tracks, state.matches]);
   
   // Enhanced UI state with reduced animations
   const [showWelcomeAnimation, setShowWelcomeAnimation] = useState(false); // Disabled by default
@@ -1400,6 +1470,27 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
   useEffect(() => {
     scrollToTop();
   }, [activeTab, scrollToTop]);
+  
+  // Auto-update conversion step based on conversion status
+  useEffect(() => {
+    if (state.status === ConversionStatus.MATCHING_TRACKS || 
+        state.status === ConversionStatus.CREATING_PLAYLIST) {
+      setConversionStep('converting');
+    } else if (state.status === ConversionStatus.SUCCESS) {
+      setConversionStep('success');
+    }
+  }, [state.status]);
+  
+  // Real-time conversion progress updates
+  useEffect(() => {
+    if (state.status === ConversionStatus.MATCHING_TRACKS) {
+      // Update the local conversion progress to match the real matching progress
+      setConversionProgress(state.matchingProgress);
+    } else if (state.status === ConversionStatus.CREATING_PLAYLIST) {
+      // When creating playlist, show progress from 90-100%
+      setConversionProgress(90 + (state.matchingProgress / 10));
+    }
+  }, [state.status, state.matchingProgress]);
   
   // Reduced welcome animation effect
   useEffect(() => {
@@ -1579,9 +1670,32 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
       
       // Determine destination platform and use appropriate playlist URL
       const destinationIsSpotify = destinationPlatform === 'spotify';
-      const playlistUrl = destinationIsSpotify 
+      let playlistUrl = destinationIsSpotify 
         ? state.spotifyPlaylistUrl 
         : state.youtubePlaylistUrl;
+      
+      // If playlist URL is null, try to get it from conversion history
+      if (!playlistUrl && state.conversionHistory.length > 0) {
+        const latestConversion = state.conversionHistory[0];
+        if (destinationIsSpotify) {
+          playlistUrl = latestConversion.spotifyPlaylistUrl || null;
+        } else {
+          playlistUrl = latestConversion.youtubePlaylistUrl || null;
+        }
+        console.log('[MobileConverter] Retrieved playlist URL from conversion history on success:', playlistUrl);
+      }
+      
+      console.log('[MobileConverter] Conversion success - URL debugging:', {
+        destinationPlatform,
+        destinationIsSpotify,
+        spotifyPlaylistUrl: state.spotifyPlaylistUrl,
+        youtubePlaylistUrl: state.youtubePlaylistUrl,
+        finalPlaylistUrl: playlistUrl,
+        hasSpotifyUrl: !!state.spotifyPlaylistUrl,
+        hasYouTubeUrl: !!state.youtubePlaylistUrl,
+        conversionHistoryLength: state.conversionHistory.length,
+        latestConversion: state.conversionHistory[0]
+      });
       
       const platformName = destinationIsSpotify ? 'Spotify' : 'YouTube';
       
@@ -1591,8 +1705,23 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
         message: `Your playlist has been successfully converted to ${platformName}!`,
         actionLabel: 'View Playlist',
         onAction: () => {
+          console.log('[MobileConverter] Toast View Playlist action clicked:', {
+            playlistUrl,
+            platformName,
+            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+          });
+          
           if (playlistUrl) {
-            window.open(playlistUrl, '_blank');
+            let success = openUrlOnMobile(playlistUrl);
+            if (!success) {
+              console.warn('[MobileConverter] Toast: Primary method failed, trying alternative...');
+              success = openUrlOnMobileAlternative(playlistUrl);
+              if (!success) {
+                console.error('[MobileConverter] Toast: Both methods failed to open playlist URL');
+              }
+            }
+          } else {
+            console.error('[MobileConverter] Toast: No playlist URL available');
           }
         }
       });
@@ -1650,6 +1779,8 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
       fetchSpotifyPlaylists();
     }
   }, [isAuthenticated, hasSpotifyAuth, fetchSpotifyPlaylists]);
+
+  // Check for duplicates when playlists are loaded (moved after addToast declaration)
   
   useEffect(() => {
     if (isAuthenticated && hasYouTubeAuth && typeof fetchYouTubePlaylists === 'function') {
@@ -1730,6 +1861,29 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
   useEffect(() => {
     showToastWrapper.current = showToast;
   }, [showToast]);
+
+  // Check for duplicates when playlists are loaded (moved after addToast declaration)
+  useEffect(() => {
+    if (state.spotifyPlaylists.length > 0) {
+      const duplicates = state.spotifyPlaylists.filter(p => 
+        p.name.includes('(Converted)')
+      );
+      
+      if (duplicates.length > 0) {
+        console.log('[MobileConverter] Found duplicate playlists:', duplicates.map(p => p.name));
+        // Show info toast only once
+        if (!localStorage.getItem('duplicate_info_shown')) {
+          addToast({
+            type: 'info',
+            title: 'Duplicate Prevention Active',
+            message: `Found ${duplicates.length} converted playlists. The app will now prevent creating duplicates.`,
+            actionLabel: 'OK'
+          });
+          localStorage.setItem('duplicate_info_shown', 'true');
+        }
+      }
+    }
+  }, [state.spotifyPlaylists, addToast]);
   
   // Fetch playlists with proper error handling (after showToast is defined)
   useEffect(() => {
@@ -1772,7 +1926,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
   }, [conversionStep, selectedSourcePlatform, userPlaylists.length, hasSpotifyAuth, hasYouTubeAuth, isAuthenticated, fetchSpotifyPlaylists, fetchYouTubePlaylists]);
   
   // YouTube playlists data handling
-  const selectYouTubePlaylist = useCallback((id: string) => {
+  const selectYouTubePlaylist = useCallback(async (id: string) => {
     dispatch({ type: 'SET_STATUS', payload: ConversionStatus.LOADING_TRACKS });
     setIsProcessing(true);
     
@@ -1780,7 +1934,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
     dispatch({ type: 'SELECT_PLAYLIST', payload: id });
     
     // Call the YouTube API to get tracks from this playlist
-    const accessToken = localStorage.getItem('soundswapp_youtube_access_token');
+    const accessToken = await getYouTubeToken();
     
     if (!accessToken) {
       showToastWrapper.current?.('error', 'YouTube authentication token not found. Please reconnect.');
@@ -2251,11 +2405,11 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
               <div className={cn(
                 "relative w-12 h-12 rounded-full transition-all duration-300 mb-2",
                 conversionStep === 'select-source' 
-                  ? "bg-gradient-to-br from-[#34A89B] to-[#2D6F6B] shadow-lg shadow-[#34A89B]/20" 
+                  ? "bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] shadow-lg shadow-[#FF007A]/20" 
                   : "bg-gradient-to-br from-gray-100/80 to-gray-200/80 dark:from-gray-800/80 dark:to-gray-700/80"
               )}>
                 {conversionStep === 'select-source' && (
-                  <div className="absolute inset-2 bg-[#34A89B] rounded-full"></div>
+                  <div className="absolute inset-2 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full"></div>
                 )}
                 <div className={cn(
                   "relative z-10 flex items-center justify-center w-full h-full",
@@ -2274,11 +2428,11 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
               <div className={cn(
                 "relative w-12 h-12 rounded-full transition-all duration-300 mb-2",
                 conversionStep === 'select-destination' 
-                  ? "bg-gradient-to-br from-[#34A89B] to-[#2D6F6B] shadow-lg shadow-[#34A89B]/20" 
+                  ? "bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] shadow-lg shadow-[#FF007A]/20" 
                   : "bg-gradient-to-br from-gray-100/80 to-gray-200/80 dark:from-gray-800/80 dark:to-gray-700/80"
               )}>
                 {conversionStep === 'select-destination' && (
-                  <div className="absolute inset-2 bg-[#34A89B] rounded-full"></div>
+                  <div className="absolute inset-2 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full"></div>
                 )}
                 <div className={cn(
                   "relative z-10 flex items-center justify-center w-full h-full",
@@ -2297,11 +2451,11 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
               <div className={cn(
                 "relative w-12 h-12 rounded-full transition-all duration-300 mb-2",
                 conversionStep === 'select-playlist' 
-                  ? "bg-gradient-to-br from-[#34A89B] to-[#2D6F6B] shadow-lg shadow-[#34A89B]/20" 
+                  ? "bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] shadow-lg shadow-[#FF007A]/20" 
                   : "bg-gradient-to-br from-gray-100/80 to-gray-200/80 dark:from-gray-800/80 dark:to-gray-700/80"
               )}>
                 {conversionStep === 'select-playlist' && (
-                  <div className="absolute inset-2 bg-[#34A89B] rounded-full"></div>
+                  <div className="absolute inset-2 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full"></div>
                 )}
                 <div className={cn(
                   "relative z-10 flex items-center justify-center w-full h-full",
@@ -2320,11 +2474,11 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
               <div className={cn(
                 "relative w-12 h-12 rounded-full transition-all duration-300 mb-2",
                 conversionStep === 'converting' 
-                  ? "bg-gradient-to-br from-[#34A89B] to-[#2D6F6B] shadow-lg shadow-[#34A89B]/20" 
+                  ? "bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] shadow-lg shadow-[#FF007A]/20" 
                   : "bg-gradient-to-br from-gray-100/80 to-gray-200/80 dark:from-gray-800/80 dark:to-gray-700/80"
               )}>
                 {conversionStep === 'converting' && (
-                  <div className="absolute inset-2 bg-[#34A89B] rounded-full"></div>
+                  <div className="absolute inset-2 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full"></div>
                 )}
                 <div className={cn(
                   "relative z-10 flex items-center justify-center w-full h-full",
@@ -2390,9 +2544,41 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                 }}
               >
                 <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-gradient-to-br from-[#1DB954] to-[#1ED760] rounded-xl flex items-center justify-center">
-                    <FaSpotify className="w-8 h-8 text-white" />
-                  </div>
+                  <motion.div 
+                    className="w-16 h-16 bg-gradient-to-br from-[#1DB954] to-[#1ED760] rounded-xl flex items-center justify-center shadow-lg relative overflow-hidden"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                                          {(() => {
+                        const imageUrl = spotifyUserProfile?.images?.[0]?.url || spotifyUserProfile?.imageUrl;
+                        
+                        return hasSpotifyAuth && imageUrl ? (
+                        <motion.img
+                          src={imageUrl}
+                          alt="Spotify Profile"
+                          className="w-full h-full object-cover rounded-xl"
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.3 }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null;
+                    })()}
+                    <motion.div 
+                      className={cn(
+                        "absolute inset-0 flex items-center justify-center",
+                        hasSpotifyAuth && (spotifyUserProfile?.images?.[0]?.url || spotifyUserProfile?.imageUrl) ? "hidden" : ""
+                      )}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <FaSpotify className="w-8 h-8 text-white drop-shadow-lg" />
+                    </motion.div>
+                  </motion.div>
                   <div className="flex-1">
                     <h4 className="font-semibold text-gray-900 dark:text-white">Spotify</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -2400,7 +2586,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     </p>
                   </div>
                   {selectedSourcePlatform === 'spotify' && (
-                    <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <div className="w-6 h-6 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full flex items-center justify-center">
                       <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -2428,46 +2614,18 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    {hasYouTubeAuth && youtubeUserProfile?.picture ? (
-                      <motion.img
-                        src={youtubeUserProfile.picture}
-                        alt="YouTube Profile"
-                        className="w-full h-full object-cover rounded-xl"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.3 }}
-                        onError={(e) => {
-                          console.log('YouTube profile image failed to load');
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                        onLoad={() => {
-                          console.log('YouTube profile image loaded successfully');
-                        }}
-                      />
-                    ) : null}
-                    <motion.div 
-                      className={cn(
-                        "absolute inset-0 flex items-center justify-center",
-                        hasYouTubeAuth && youtubeUserProfile?.picture ? "hidden" : ""
-                      )}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <img 
-                        src="/images/YouTube connection card logo.png" 
-                        alt="YouTube" 
-                        style={{ 
-                          height: 32, 
-                          width: 'auto', 
-                          objectFit: 'contain', 
-                          display: 'block',
-                          minWidth: '32px'
-                        }} 
-                        className="w-8 h-8 drop-shadow-lg" 
-                      />
-                    </motion.div>
+                    <img 
+                      src="/images/YouTube connection card logo.png" 
+                      alt="YouTube" 
+                      style={{ 
+                        height: 32, 
+                        width: 'auto', 
+                        objectFit: 'contain', 
+                        display: 'block',
+                        minWidth: '32px'
+                      }} 
+                      className="w-8 h-8 drop-shadow-lg" 
+                    />
                   </motion.div>
                   <div className="flex-1">
                     <h4 className="font-semibold text-gray-900 dark:text-white">YouTube</h4>
@@ -2476,7 +2634,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     </p>
                   </div>
                   {selectedSourcePlatform === 'youtube' && (
-                    <div className="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
+                    <div className="w-6 h-6 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full flex items-center justify-center">
                       <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -2521,9 +2679,41 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                 }}
               >
                 <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-gradient-to-br from-[#1DB954] to-[#1ED760] rounded-xl flex items-center justify-center">
-                    <FaSpotify className="w-8 h-8 text-white" />
-                  </div>
+                  <motion.div 
+                    className="w-16 h-16 bg-gradient-to-br from-[#1DB954] to-[#1ED760] rounded-xl flex items-center justify-center shadow-lg relative overflow-hidden"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                                          {(() => {
+                        const imageUrl = spotifyUserProfile?.images?.[0]?.url || spotifyUserProfile?.imageUrl;
+                        
+                        return hasSpotifyAuth && imageUrl ? (
+                        <motion.img
+                          src={imageUrl}
+                          alt="Spotify Profile"
+                          className="w-full h-full object-cover rounded-xl"
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.3 }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null;
+                    })()}
+                    <motion.div 
+                      className={cn(
+                        "absolute inset-0 flex items-center justify-center",
+                        hasSpotifyAuth && (spotifyUserProfile?.images?.[0]?.url || spotifyUserProfile?.imageUrl) ? "hidden" : ""
+                      )}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <FaSpotify className="w-8 h-8 text-white drop-shadow-lg" />
+                    </motion.div>
+                  </motion.div>
                   <div className="flex-1">
                     <h4 className="font-semibold text-gray-900 dark:text-white">Spotify</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -2531,7 +2721,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     </p>
                   </div>
                   {selectedDestinationPlatform === 'spotify' && (
-                    <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <div className="w-6 h-6 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full flex items-center justify-center">
                       <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -2575,7 +2765,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     </p>
                   </div>
                   {selectedDestinationPlatform === 'youtube' && (
-                    <div className="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
+                    <div className="w-6 h-6 bg-gradient-to-br from-[#FF7A59] via-[#FF007A] to-[#00C4CC] rounded-full flex items-center justify-center">
                       <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -2629,7 +2819,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     userPlaylists.forEach((playlist, index) => {
                       console.log(`Playlist ${index}:`, {
                         id: playlist.id,
-                        name: playlist.name,
+                        name: playlist.name || playlist.snippet?.title || 'Untitled Playlist',
                         snippet: playlist.snippet,
                         imageUrl: playlist.imageUrl,
                         tracks: playlist.tracks,
@@ -2686,7 +2876,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                               <>
                                                               <img 
                                 src={imageUrl} 
-                                alt={`${playlist.name || playlist.snippet?.title || 'Playlist'} cover`}
+                                alt={`${(playlist.name || playlist.snippet?.title || 'Playlist')} cover`}
                                 className="w-12 h-12 rounded-xl object-cover"
                                 onError={(e) => {
                                   console.warn('Failed to load playlist thumbnail:', imageUrl);
@@ -2845,41 +3035,221 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
             transition={{ duration: 0.3 }}
             className="space-y-6"
           >
-            {/* Conversion Progress */}
+            {/* Conversion Progress Header */}
             <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Converting...</h2>
-              <p className="text-gray-600 dark:text-gray-400">Please wait while we convert your playlist</p>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Converting Playlist</h2>
+              <p className="text-gray-600 dark:text-gray-400">
+                {selectedPlaylist?.name || 'Playlist'} • {estimatedTime}
+              </p>
             </div>
             
-            <div className="space-y-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center space-x-4 mb-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-[#FF7A59] to-[#FF007A] rounded-xl flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-white animate-spin" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-900 dark:text-white">Converting Playlist</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {selectedPlaylist?.name || 'Playlist'}
-                    </p>
-                  </div>
+            {/* Main Progress Card */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
+              <div className="flex items-center space-x-4 mb-6">
+                <div className="w-12 h-12 bg-gradient-to-br from-[#FF7A59] to-[#FF007A] rounded-xl flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 text-white animate-spin" />
                 </div>
-                
-                {/* Progress Bar */}
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-4">
+                <div className="flex-1">
+                  <h4 className="font-semibold text-gray-900 dark:text-white">Conversion in Progress</h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {selectedPlaylist?.name || 'Playlist'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-[#FF7A59]">
+                    {state.status === ConversionStatus.MATCHING_TRACKS ? state.matchingProgress : conversionProgress}%
+                  </div>
+                  <div className="text-xs text-gray-500">{estimatedTime}</div>
+                </div>
+              </div>
+              
+              {/* Progress Bar */}
+                              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-6">
                   <motion.div
-                    className="bg-gradient-to-r from-[#FF7A59] to-[#FF007A] h-2 rounded-full"
+                    className="bg-gradient-to-r from-[#FF7A59] via-[#FF007A] to-[#00C4CC] h-3 rounded-full"
                     initial={{ width: 0 }}
-                    animate={{ width: `${conversionProgress}%` }}
+                    animate={{ 
+                      width: `${state.status === ConversionStatus.MATCHING_TRACKS ? state.matchingProgress : conversionProgress}%` 
+                    }}
                     transition={{ duration: 0.5 }}
                   />
                 </div>
-                
-                <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
-                  {conversionProgress}% complete
-                </p>
+              
+              {/* Conversion Stats */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="text-center">
+                  <div className="text-lg font-bold text-green-600">
+                    {state.tracks ? state.tracks.filter(track => {
+                      const match = state.matches.get(track.id);
+                      return match && match.score > 0.7;
+                    }).length : 0}
+                  </div>
+                  <div className="text-xs text-gray-500">Matched</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-blue-600">
+                    {state.tracks ? state.tracks.filter(track => {
+                      const match = state.matches.get(track.id);
+                      return match && match.score > 0.3 && match.score <= 0.7;
+                    }).length : 0}
+                  </div>
+                  <div className="text-xs text-gray-500">Processing</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-red-600">
+                    {state.tracks ? state.tracks.filter(track => {
+                      const match = state.matches.get(track.id);
+                      return !match || match.score <= 0.3;
+                    }).length : 0}
+                  </div>
+                  <div className="text-xs text-gray-500">Issues</div>
+                </div>
               </div>
             </div>
+            
+            {/* Matched Songs Section */}
+            {matchedSongs.length > 0 && (
+              <motion.div 
+                className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+              >
+                <div className="flex items-center space-x-2 mb-4">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <h5 className="font-semibold text-gray-900 dark:text-white">Successfully Matched</h5>
+                  <span className="text-sm text-gray-500">({matchedSongs.length})</span>
+                </div>
+                <div className="space-y-3">
+                  {matchedSongs.slice(0, 3).map((song, index) => (
+                    <motion.div
+                      key={index}
+                      className="flex items-center space-x-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.3 + index * 0.1 }}
+                    >
+                      <div className="w-10 h-10 bg-green-100 dark:bg-green-800 rounded-lg flex items-center justify-center">
+                        <Check className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 dark:text-white truncate">
+                          {song.title}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                          {song.artist}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-semibold text-green-600">{song.confidence}%</div>
+                        <div className="text-xs text-gray-500">confidence</div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {matchedSongs.length > 3 && (
+                    <div className="text-center text-sm text-gray-500">
+                      +{matchedSongs.length - 3} more songs matched
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+            
+            {/* Processing Songs Section */}
+            {processingSongs.length > 0 && (
+              <motion.div 
+                className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+              >
+                <div className="flex items-center space-x-2 mb-4">
+                  <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                  <h5 className="font-semibold text-gray-900 dark:text-white">Currently Processing</h5>
+                  <span className="text-sm text-gray-500">({processingSongs.length})</span>
+                </div>
+                <div className="space-y-3">
+                  {processingSongs.slice(0, 3).map((song, index) => (
+                    <motion.div
+                      key={index}
+                      className="flex items-center space-x-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.5 + index * 0.1 }}
+                    >
+                      <div className="w-10 h-10 bg-blue-100 dark:bg-blue-800 rounded-lg flex items-center justify-center">
+                        <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 dark:text-white truncate">
+                          {song.title}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                          {song.artist}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-semibold text-blue-600">Processing</div>
+                        <div className="text-xs text-gray-500">matching...</div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {processingSongs.length > 3 && (
+                    <div className="text-center text-sm text-gray-500">
+                      +{processingSongs.length - 3} more songs processing
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+            
+            {/* Issues Songs Section */}
+            {issuesSongs.length > 0 && (
+              <motion.div 
+                className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+              >
+                <div className="flex items-center space-x-2 mb-4">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                  <h5 className="font-semibold text-gray-900 dark:text-white">Issues Found</h5>
+                  <span className="text-sm text-gray-500">({issuesSongs.length})</span>
+                </div>
+                <div className="space-y-3">
+                  {issuesSongs.slice(0, 3).map((song, index) => (
+                    <motion.div
+                      key={index}
+                      className="flex items-center space-x-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.7 + index * 0.1 }}
+                    >
+                      <div className="w-10 h-10 bg-red-100 dark:bg-red-800 rounded-lg flex items-center justify-center">
+                        <AlertTriangle className="w-5 h-5 text-red-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 dark:text-white truncate">
+                          {song.title}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                          {song.artist}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-semibold text-red-600">Issue</div>
+                        <div className="text-xs text-gray-500">{song.issue}</div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {issuesSongs.length > 3 && (
+                    <div className="text-center text-sm text-gray-500">
+                      +{issuesSongs.length - 3} more issues
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         )}
         
@@ -2954,11 +3324,54 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
                     const destinationIsSpotify = destinationPlatform === 'spotify';
-                    const playlistUrl = destinationIsSpotify 
+                    let playlistUrl = destinationIsSpotify 
                       ? state.spotifyPlaylistUrl 
                       : state.youtubePlaylistUrl;
+                    
+                    // If playlist URL is null, try to get it from conversion history
+                    if (!playlistUrl && state.conversionHistory.length > 0) {
+                      const latestConversion = state.conversionHistory[0];
+                      if (destinationIsSpotify) {
+                        playlistUrl = latestConversion.spotifyPlaylistUrl || null;
+                      } else {
+                        playlistUrl = latestConversion.youtubePlaylistUrl || null;
+                      }
+                      console.log('[MobileConverter] Retrieved playlist URL from conversion history:', playlistUrl);
+                    }
+                    
+                    console.log('[MobileConverter] View Playlist button clicked:', {
+                      destinationPlatform,
+                      destinationIsSpotify,
+                      spotifyPlaylistUrl: state.spotifyPlaylistUrl,
+                      youtubePlaylistUrl: state.youtubePlaylistUrl,
+                      finalPlaylistUrl: playlistUrl,
+                      conversionHistoryLength: state.conversionHistory.length,
+                      latestConversion: state.conversionHistory[0],
+                      isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+                    });
+                    
                     if (playlistUrl) {
-                      window.open(playlistUrl, '_blank');
+                      let success = openUrlOnMobile(playlistUrl);
+                      if (!success) {
+                        console.warn('[MobileConverter] Primary method failed, trying alternative...');
+                        success = openUrlOnMobileAlternative(playlistUrl);
+                        if (!success) {
+                          console.error('[MobileConverter] Both methods failed to open playlist URL');
+                        }
+                      }
+                    } else {
+                      console.error('[MobileConverter] No playlist URL available');
+                      // Show a toast to inform the user
+                      if (typeof window !== 'undefined' && window.dispatchEvent) {
+                        window.dispatchEvent(new CustomEvent('show-toast', {
+                          detail: {
+                            type: 'error',
+                            title: 'Playlist URL Not Available',
+                            message: 'The playlist URL is not available. Please try converting again.',
+                            duration: 5000
+                          }
+                        }));
+                      }
                     }
                     hapticMedium();
                   }}
@@ -2969,6 +3382,28 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     <span>View Playlist</span>
                   </div>
                 </motion.button>
+                
+                {/* Debug Test Button - Only show in development */}
+                {process.env.NODE_ENV === 'development' && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      console.log('[MobileConverter] Testing mobile URL handling...');
+                      const testUrl = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M';
+                      let success = openUrlOnMobile(testUrl);
+                      if (!success) {
+                        console.log('[MobileConverter] Primary method failed, trying alternative...');
+                        success = openUrlOnMobileAlternative(testUrl);
+                      }
+                      console.log('[MobileConverter] Test result:', success);
+                      hapticMedium();
+                    }}
+                    className="w-full py-2 px-4 bg-gray-500 text-white rounded-lg text-sm"
+                  >
+                    Test URL Opening (Dev Only)
+                  </motion.button>
+                )}
                 
                 {/* Convert Another Button */}
                 <motion.button
@@ -3044,28 +3479,29 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                     >
-                      {hasSpotifyAuth && spotifyUserProfile?.images?.[0]?.url ? (
-                        <motion.img
-                          src={spotifyUserProfile.images[0].url}
-                          alt="Spotify Profile"
-                          className="w-full h-full object-cover rounded-2xl"
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.3 }}
-                          onError={(e) => {
-                            console.log('Spotify profile image failed to load');
+                      {(() => {
+                        // Try both images[0].url and imageUrl
+                        const imageUrl = spotifyUserProfile?.images?.[0]?.url || spotifyUserProfile?.imageUrl;
+                        
+                        return hasSpotifyAuth && imageUrl ? (
+                          <motion.img
+                            src={imageUrl}
+                            alt="Spotify Profile"
+                            className="w-full h-full object-cover rounded-2xl"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.3 }}
+                                                      onError={(e) => {
                             e.currentTarget.style.display = 'none';
                             e.currentTarget.nextElementSibling?.classList.remove('hidden');
                           }}
-                          onLoad={() => {
-                            console.log('Spotify profile image loaded successfully');
-                          }}
-                        />
-                      ) : null}
+                          />
+                        ) : null;
+                      })()}
                       <motion.div 
                         className={cn(
                           "absolute inset-0 flex items-center justify-center",
-                          hasSpotifyAuth && spotifyUserProfile?.images?.[0]?.url ? "hidden" : ""
+                          hasSpotifyAuth && (spotifyUserProfile?.images?.[0]?.url || spotifyUserProfile?.imageUrl) ? "hidden" : ""
                         )}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -3167,7 +3603,9 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                     >
                       <div className="flex items-center space-x-2">
                         <AlertCircle className="w-4 h-4 text-red-600" />
-                        <p className="text-sm text-red-600 font-medium">{spotifyError}</p>
+                        <p className="text-sm text-red-600 font-medium">
+                          {typeof spotifyError === 'string' ? spotifyError : 'Spotify connection error'}
+                        </p>
                       </div>
                     </motion.div>
                   )}
@@ -3333,8 +3771,10 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                         <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-sm text-red-600 font-medium">YouTube Connection Error</p>
-                          <p className="text-red-500 text-xs mt-1">{youtubeError}</p>
-                          {youtubeError.includes('quota exceeded') && (
+                          <p className="text-red-500 text-xs mt-1">
+                            {typeof youtubeError === 'string' ? youtubeError : 'YouTube connection error'}
+                          </p>
+                          {typeof youtubeError === 'string' && youtubeError.includes('quota exceeded') && (
                             <button
                               onClick={() => window.location.reload()}
                               className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700 transition-colors"
@@ -3475,11 +3915,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                                 e.stopPropagation();
                                 console.log('View Failed Tracks clicked:', conversion);
                                 console.log('Failed tracks:', conversion.failedTracks);
-                                console.log('Tracks failed:', conversion.tracksFailed);
-                                console.log('Conversion ID:', conversion.id);
-                                console.log('All conversion history:', state.conversionHistory);
-                                console.log('Conversions with failures:', state.conversionHistory.filter((c: any) => c.tracksFailed > 0));
-                                // Pass failed tracks directly like desktop does
+                                // Navigate to the mobile failed tracks page
                                 navigate('/failed-tracks', { 
                                   state: { 
                                     failedTracks: conversion.failedTracks || [],
@@ -3639,42 +4075,27 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
               </p>
             </div>
           </div>
-          
-          {/* Right Side - Quick Actions */}
+          {/* Right Side - Theme toggle + Profile avatar */}
           <div className="flex items-center space-x-3">
-            {/* Enhanced Dark Mode Toggle */}
             <motion.button 
               onClick={() => {
                 toggleTheme();
                 hapticLight();
               }}
               className={cn(
-                "relative transition-all duration-500",
+                "relative transition-all duration-300 rounded-full p-2",
                 isDark 
-                  ? "text-yellow-500 hover:text-yellow-400" 
-                  : "text-gray-800 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-100"
+                  ? "text-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10 hover:shadow-yellow-500/20 hover:shadow-lg" 
+                  : "text-gray-800 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-100 hover:bg-gray-200/50 dark:hover:bg-gray-700/30"
               )}
-              whileHover={{ 
-                scale: 1.1,
-                rotate: isDark ? 15 : -15
-              }}
+              whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              transition={{ 
-                type: "spring", 
-                stiffness: 400, 
-                damping: 25,
-                rotate: { duration: 0.3, ease: "easeInOut" }
-              }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              aria-label="Toggle theme"
             >
-              {/* Icon with Enhanced Animation */}
               <motion.div
-                animate={{
-                  rotate: isDark ? [0, 360] : [0, -360]
-                }}
-                transition={{
-                  duration: 0.8,
-                  ease: "easeInOut"
-                }}
+                animate={{ rotate: isDark ? 180 : 0 }}
+                transition={{ duration: 0.5, ease: "easeInOut" }}
               >
                 {isDark ? (
                   <Sun className="w-6 h-6 drop-shadow-sm" />
@@ -3683,26 +4104,27 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
                 )}
               </motion.div>
             </motion.button>
-            
-            {/* Settings Button */}
-            <motion.button 
-              onClick={() => {
-                setActiveTab('profile');
-                hapticLight();
-              }}
-              className="relative p-3 rounded-full bg-gradient-to-br from-[#34A89B] to-[#2D6F6B] transition-all duration-300 shadow-lg backdrop-blur-sm border border-[#34A89B]/30"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+
+            {/* Profile avatar (replaces settings icon) */}
+            <button
+              onClick={() => setActiveTab('profile')}
+              onContextMenu={(e) => { e.preventDefault(); navigate('/preferences'); }}
+              className="relative w-14 h-14 rounded-full overflow-hidden outline-none ring-0 border-0 shadow-sm bg-transparent"
+              aria-label="Open profile"
             >
-              {/* Inner Circle */}
-              <div className="absolute inset-2 bg-[#34A89B] rounded-full"></div>
-              
-              {/* Gear Icon */}
-              <div className="relative z-10">
-                <Settings className="w-6 h-6 text-white drop-shadow-sm" />
-              </div>
-            </motion.button>
+              <img
+                src={profileImage || user?.photoURL || "/images/default-avatar.svg"}
+                alt="Profile"
+                className="w-full h-full object-cover rounded-full select-none"
+                draggable={false}
+                onError={(e) => {
+                  const img = e.currentTarget as HTMLImageElement;
+                  if (img.src.endsWith('default-avatar.svg')) return;
+                  img.src = "/images/default-avatar.svg";
+                  setProfileImage("/images/default-avatar.svg");
+                }}
+              />
+            </button>
           </div>
         </div>
       </MobileHeader>
@@ -3719,12 +4141,15 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
             className="h-full"
           >
             <motion.div
-              className="h-full overflow-y-auto"
+              className="h-full overflow-y-auto pb-[calc(5rem+env(safe-area-inset-bottom))] mobile-surface-premium"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.1, ease: "easeOut" }}
             >
-              {renderContent()}
+              {/* apply premium card style to existing sections without changing layout */}
+              <div className="mx-4 mt-4 rounded-2xl p-4 shadow-lg mobile-card-premium animate-rise-fade">
+                {renderContent()}
+              </div>
             </motion.div>
           </motion.div>
         </AnimatePresence>
@@ -3733,6 +4158,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
       {/* Fixed Bottom Navigation */}
       <div className="flex-shrink-0 z-10">
         <MobileBottomNav>
+          {/* existing nav items preserved */}
           <MobileNavItem
             icon={<LinkIcon className="w-6 h-6" />}
             label="Connect"
@@ -3766,7 +4192,7 @@ export const MobileConverter: React.FC<MobileConverterProps> = React.memo((props
               state.conversionHistory.length.toString() : undefined}
           />
           <MobileNavItem
-            icon={<Settings className="w-6 h-6" />}
+            icon={<User className="w-6 h-6" />}
             label="Profile"
             active={activeTab === 'profile'}
             onClick={() => {

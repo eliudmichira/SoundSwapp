@@ -1,5 +1,21 @@
 import { useState, useEffect } from 'react';
-import { isMobileDevice, isIOSDevice, isAndroidDevice } from '../lib/utils';
+
+// Utility functions for device detection
+const isMobileDevice = (): boolean => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+const isIOSDevice = (): boolean => {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent);
+};
+
+const isAndroidDevice = (): boolean => {
+  return /Android/i.test(navigator.userAgent);
+};
+
+const isTabletDevice = (): boolean => {
+  return /iPad|Android(?=.*\bMobile\b)(?=.*\bSafari\b)/i.test(navigator.userAgent);
+};
 
 /**
  * Hook to detect mobile devices and provide responsive information
@@ -10,58 +26,54 @@ export const useMobileDetection = () => {
   const initialPortrait = window.innerHeight > window.innerWidth;
   const initialIOS = isIOSDevice();
   const initialAndroid = isAndroidDevice();
-  
-  console.log('useMobileDetection: Initial detection:', {
-    isMobileDevice: isMobileDevice(),
-    windowWidth: window.innerWidth,
-    windowHeight: window.innerHeight,
-    initialMobile,
-    initialPortrait,
-    initialIOS,
-    initialAndroid,
-    userAgent: navigator.userAgent
-  });
+  const initialTablet = isTabletDevice();
   
   const [isMobile, setIsMobile] = useState(initialMobile);
   const [isPortrait, setIsPortrait] = useState(initialPortrait);
   const [isIOS, setIsIOS] = useState(initialIOS);
   const [isAndroid, setIsAndroid] = useState(initialAndroid);
+  const [isTablet, setIsTablet] = useState(initialTablet);
   const [viewport, setViewport] = useState({
     width: window.innerWidth,
-    height: window.innerHeight
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio || 1
   });
   
   useEffect(() => {
     // Initial detection
-    const detectMobile = () => {
+    const detectDevice = () => {
       const mobile = isMobileDevice() || window.innerWidth < 768;
-      console.log('useMobileDetection: Detecting mobile:', { 
-        isMobileDevice: isMobileDevice(), 
-        windowWidth: window.innerWidth, 
-        mobile, 
-        userAgent: navigator.userAgent 
-      });
+      const portrait = window.innerHeight > window.innerWidth;
+      const ios = isIOSDevice();
+      const android = isAndroidDevice();
+      const tablet = isTabletDevice();
+      
       setIsMobile(mobile);
-      setIsIOS(isIOSDevice());
-      setIsAndroid(isAndroidDevice());
+      setIsIOS(ios);
+      setIsAndroid(android);
+      setIsTablet(tablet);
+      setIsPortrait(portrait);
       setViewport({
         width: window.innerWidth,
-        height: window.innerHeight
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio || 1
       });
-      setIsPortrait(window.innerHeight > window.innerWidth);
     };
     
     // Call initially
-    detectMobile();
+    detectDevice();
     
     // Add listeners for window resizing
     const handleResize = () => {
-      detectMobile();
+      detectDevice();
     };
     
     // Handle orientation changes
     const handleOrientationChange = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
+      // Add delay for iOS orientation change
+      setTimeout(() => {
+        detectDevice();
+      }, 100);
     };
     
     window.addEventListener('resize', handleResize);
@@ -80,7 +92,16 @@ export const useMobileDetection = () => {
     isLandscape: !isPortrait,
     isIOS,
     isAndroid,
-    viewport
+    isTablet,
+    viewport,
+    // Helper functions
+    isSmallScreen: viewport.width < 640,
+    isMediumScreen: viewport.width >= 640 && viewport.width < 1024,
+    isLargeScreen: viewport.width >= 1024,
+    // Device-specific helpers
+    isMobileOrTablet: isMobile || isTablet,
+    isStandalone: window.matchMedia('(display-mode: standalone)').matches || 
+                  (window.navigator as any).standalone === true
   };
 };
 

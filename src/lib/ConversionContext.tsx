@@ -1,13 +1,31 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { useAuth } from './AuthContext';
-import { getSpotifyPlaylists, getSpotifyPlaylistTracks, extractTrackData, getSpotifyPlaylistById } from './spotifyApi';
-import { getYouTubePlaylists, searchYouTube } from './youtubeApi';
+import { 
+  getSpotifyPlaylists, 
+  getSpotifyPlaylistTracks, 
+  extractTrackData, 
+  getSpotifyPlaylistById,
+  createSpotifyPlaylist,
+  addTracksToSpotifyPlaylist,
+  searchSpotifyTracks,
+  findUserPlaylistByName
+} from './spotifyApi';
+import { 
+  getYouTubePlaylists, 
+  searchYouTube,
+  fetchAllYouTubePlaylistItems,
+  addToYouTubePlaylist,
+  findOrCreatePlaylist
+} from './youtubeApi';
+import { getYouTubeToken } from './youtubeAuth';
 import { collection, addDoc, getDocs, query, orderBy, Timestamp, Firestore, QuerySnapshot, doc, setDoc } from 'firebase/firestore';
 import { db as firebaseDb, auth, reconnectFirestore } from './firebase';
 import { isSpotifyAuthenticated, getSpotifyToken } from './spotifyAuth';
+import TokenManager from './tokenManager';
 import { checkForExistingPlaylist, generateUniquePlaylistName, ConversionLock } from './duplicatePrevention';
 import { parseYouTubeTitle, calculateTrackSimilarity, generateSearchQueries } from './improvedConversion';
 import { profileService } from '../services/profileService';
+import { conversionConverter } from './firebase';
 
 // Type assertion for the Firestore db
 const db = firebaseDb as Firestore;
@@ -55,7 +73,7 @@ export interface YouTubeMatch {
     artistMatch: number;
     lengthScore: number;
   };
-  isMockData?: boolean;
+
 }
 
 export interface ConversionResult {
@@ -69,7 +87,7 @@ export interface ConversionResult {
   tracksFailed: number;
   totalTracks: number;
   convertedAt: Date;
-  isMockData: boolean;
+
   failedTracks?: FailedTrack[]; // Add failed tracks details
 }
 
@@ -90,6 +108,8 @@ import { ConversionStatus } from '../types/conversion';
 type ConversionState = {
   status: ConversionStatus;
   error: string | null;
+  isLoading: boolean;
+  accountType: string | null;
   spotifyPlaylists: SpotifyPlaylist[];
   youtubePlaylists: any[];
   selectedPlaylistId: string | null;
@@ -108,6 +128,8 @@ type ConversionState = {
 type ConversionAction =
   | { type: 'SET_STATUS'; payload: ConversionStatus }
   | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ACCOUNT_TYPE'; payload: string | null }
   | { type: 'SET_SPOTIFY_PLAYLISTS'; payload: SpotifyPlaylist[] }
   | { type: 'SET_YOUTUBE_PLAYLISTS'; payload: any[] }
   | { type: 'SELECT_PLAYLIST'; payload: string }
@@ -122,6 +144,8 @@ type ConversionAction =
 const initialState: ConversionState = {
   status: ConversionStatus.IDLE,
   error: null,
+  isLoading: false,
+  accountType: null,
   spotifyPlaylists: [],
   youtubePlaylists: [],
   selectedPlaylistId: null,
@@ -143,6 +167,10 @@ const conversionReducer = (state: ConversionState, action: ConversionAction): Co
       return { ...state, status: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload, status: action.payload ? ConversionStatus.ERROR : state.status };
+    case 'SET_LOADING':
+      return { ...state, isLoading: action.payload };
+    case 'SET_ACCOUNT_TYPE':
+      return { ...state, accountType: action.payload };
     case 'SET_SPOTIFY_PLAYLISTS':
       return { ...state, spotifyPlaylists: action.payload };
     case 'SET_YOUTUBE_PLAYLISTS':
@@ -156,12 +184,14 @@ const conversionReducer = (state: ConversionState, action: ConversionAction): Co
     case 'UPDATE_MATCHING_PROGRESS':
       return { ...state, matchingProgress: action.payload };
     case 'SET_YOUTUBE_PLAYLIST':
+      console.log('[ConversionContext] Reducer: Setting YouTube playlist:', action.payload);
       return { 
         ...state, 
         youtubePlaylistId: action.payload.id, 
         youtubePlaylistUrl: action.payload.url 
       };
     case 'SET_SPOTIFY_PLAYLIST':
+      console.log('[ConversionContext] Reducer: Setting Spotify playlist:', action.payload);
       return { 
         ...state, 
         spotifyPlaylistId: action.payload.id, 
@@ -188,9 +218,11 @@ interface ConversionContextType {
   selectPlaylist: (playlistId: string) => void;
   selectYouTubePlaylist: (playlistId: string) => void;
   startConversion: () => Promise<void>;
+  convertFromPublicUrl: (playlistUrl: string, sourcePlatform: 'spotify' | 'youtube') => Promise<void>;
+  reconnectWithFamilyMode: () => Promise<void>;
   resetConversion: () => void;
   fetchConversionHistory: () => Promise<void>;
-  toggleMockDataMode: (enabled: boolean) => void;
+
   dispatch: React.Dispatch<ConversionAction>;
 }
 
@@ -201,9 +233,11 @@ const ConversionContext = createContext<ConversionContextType>({
   selectPlaylist: () => {},
   selectYouTubePlaylist: () => {},
   startConversion: async () => {},
+  convertFromPublicUrl: async () => {},
+  reconnectWithFamilyMode: async () => {},
   resetConversion: () => {},
   fetchConversionHistory: async () => {},
-  toggleMockDataMode: () => {},
+
   dispatch: () => {},
 });
 
@@ -325,19 +359,7 @@ const handleFirestoreRecovery = async (error: any): Promise<boolean> => {
 export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(conversionReducer, initialState);
   const { user } = useAuth();
-  
-  // Add a function to toggle mock data mode for development and testing
-  const toggleMockDataMode = useCallback((enabled: boolean) => {
-    if (enabled) {
-      localStorage.setItem('use_mock_youtube_data', 'true');
-      console.log('Mock data mode ENABLED for YouTube API');
-      showToast('info', 'Mock data mode enabled - using fake YouTube data');
-    } else {
-      localStorage.removeItem('use_mock_youtube_data');
-      console.log('Mock data mode DISABLED for YouTube API');
-      showToast('info', 'Mock data mode disabled - using live YouTube API');
-    }
-  }, []);
+
   
   // Helper function for showing toasts
   const showToast = (type: 'success' | 'info' | 'warning' | 'error', message: string) => {
@@ -365,55 +387,124 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const fetchSpotifyPlaylists = useCallback(async () => {
     // First check if user is authenticated
     if (!user) {
-      dispatch({ type: 'SET_ERROR', payload: 'You need to sign in to access Spotify playlists' });
+      dispatch({ type: 'SET_ERROR', payload: 'Please sign in to continue' });
       return;
     }
-    
-    // Check Spotify authentication with detailed logging
-    const isAuthed = await isSpotifyAuthenticated();
-    console.log('Spotify auth check:', { 
-      user: user.uid, 
-      isAuthed, 
-      hasAccessToken: !!localStorage.getItem('soundswapp_spotify_access_token'),
-      hasExpiresAt: !!localStorage.getItem('soundswapp_spotify_expires_at')
-    });
-    
-    if (!isAuthed) {
-      dispatch({ type: 'SET_ERROR', payload: 'You need to authenticate with Spotify first. Please reconnect your Spotify account.' });
-      return;
-    }
-    
+
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    let accountInfo: any = null;
+
     try {
-      dispatch({ type: 'SET_STATUS', payload: ConversionStatus.LOADING_PLAYLISTS });
-      
-      const accessToken = await getSpotifyToken();
-      if (!accessToken) {
-        throw new Error('No Spotify access token available');
+      console.log('[ConversionContext] 🎵 Fetching Spotify playlists...');
+      const isAuthed = await isSpotifyAuthenticated();
+      const spotifyTokens = await TokenManager.getTokens('spotify');
+      console.log('Spotify auth check:', {
+        user: user.uid,
+        isAuthed,
+        hasTokensFromTokenManager: !!spotifyTokens,
+        hasAccessToken: !!spotifyTokens?.accessToken,
+        hasRefreshToken: !!spotifyTokens?.refreshToken,
+        tokenExpiresAt: spotifyTokens?.expiresAt
+      });
+
+      if (!isAuthed || !spotifyTokens?.accessToken) {
+        dispatch({ 
+          type: 'SET_ERROR', 
+          payload: 'Spotify not connected. Please connect your Spotify account first.' 
+        });
+        return;
       }
+
+      // Import detect account type function
+      const { detectAccountType } = await import('../lib/spotifyAuth');
       
-      const response = await getSpotifyPlaylists(accessToken);
+      // Detect account type and permissions
+      accountInfo = await detectAccountType(spotifyTokens.accessToken);
+      console.log('[ConversionContext] Account type detected:', accountInfo);
+
+      // Store account type for later use
+      dispatch({ type: 'SET_ACCOUNT_TYPE', payload: accountInfo.accountType });
       
-      const playlists: SpotifyPlaylist[] = response.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        imageUrl: item.images?.[0]?.url || '',
-        trackCount: item.tracks.total,
-        owner: item.owner.display_name,
-      }));
+      // For restricted accounts, we'll still try to fetch playlists
+      // Sometimes restricted accounts can still read their own playlists
+      if (!accountInfo.hasPlaylistAccess) {
+        console.log('[ConversionContext] ⚠️ Account has restricted playlist access, but attempting to fetch anyway...');
+      }
+
+      // Fetch playlists normally
+      const token = await getSpotifyToken();
+      if (!token) {
+        dispatch({ 
+          type: 'SET_ERROR', 
+          payload: 'Failed to get Spotify access token. Please reconnect your account.' 
+        });
+        return;
+      }
+
+      const playlists = await getSpotifyPlaylists(token);
+      console.log('[ConversionContext] ✅ Fetched Spotify playlists:', playlists.length);
       
       dispatch({ type: 'SET_SPOTIFY_PLAYLISTS', payload: playlists });
       dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SELECTING_PLAYLIST });
+      
     } catch (error) {
+      console.error('[ConversionContext] ❌ Failed to fetch playlists:', error);
+      
+      // If playlist fetching failed and account has restrictions, show family account guidance
+      if (accountInfo && !accountInfo.hasPlaylistAccess && (error as Error).message.includes('permission')) {
+        let familyErrorMessage = `🚫 **Spotify Family Account Detected**\n\n`;
+        
+        if (accountInfo.accountType === 'family_child') {
+          familyErrorMessage += `Your account appears to be a **family plan child account** with restricted permissions.\n\n`;
+        } else if (accountInfo.accountType === 'family_restricted') {
+          familyErrorMessage += `Your account has **family plan restrictions** on playlist access.\n\n`;
+        } else {
+          familyErrorMessage += `Your account has **limited playlist permissions**.\n\n`;
+        }
+
+        familyErrorMessage += `**🔄 Alternative Solutions:**\n`;
+        familyErrorMessage += `• **Use Public Playlist URLs**: You can still convert playlists by pasting public Spotify playlist URLs\n`;
+        familyErrorMessage += `• **Ask Family Admin**: Request the family plan administrator to enable playlist permissions\n`;
+        familyErrorMessage += `• **Try Read-Only Mode**: Click "Try Family-Friendly Connection" below\n`;
+        familyErrorMessage += `• **Use Different Account**: Sign in with a personal Premium account\n\n`;
+        
+        if (accountInfo.recommendations && accountInfo.recommendations.length > 0) {
+          familyErrorMessage += `**💡 Specific Recommendations:**\n`;
+          accountInfo.recommendations.forEach((rec: string) => {
+            familyErrorMessage += `• ${rec}\n`;
+          });
+        }
+
+        dispatch({ type: 'SET_ERROR', payload: familyErrorMessage });
+        return;
+      }
+      
+      // For other errors, show generic error
       console.error('Error fetching Spotify playlists:', error);
       
-      // Provide more specific error messages with helpful guidance
+      // Enhanced error handling with family account support
       let errorMessage = 'Failed to fetch Spotify playlists';
+      
       if (error instanceof Error) {
         if (error.message.includes('401') || error.message.includes('Authentication')) {
           errorMessage = 'Spotify authentication expired. Please reconnect your Spotify account.';
         } else if (error.message.includes('403') || error.message.includes('permission')) {
-          errorMessage = 'You do not have permission to access Spotify playlists. This could be because:\n\n• Your Spotify account type doesn\'t support playlist access\n• You need to upgrade to a Premium account\n• Your account has restrictions\n• You\'re using a family plan with limited permissions\n\nPlease try:\n1. Upgrading to Spotify Premium\n2. Checking your account settings\n3. Reconnecting your Spotify account';
+          // Family account specific error
+          errorMessage = `🚫 **Spotify Family Account Issue**\n\n`;
+          errorMessage += `Your account doesn't have permission to access playlists. This is common with:\n\n`;
+          errorMessage += `**👨‍👩‍👧‍👦 Family Plan Accounts:**\n`;
+          errorMessage += `• Child accounts often have restricted permissions\n`;
+          errorMessage += `• Some family plans limit playlist access\n`;
+          errorMessage += `• Regional restrictions may apply\n\n`;
+          errorMessage += `**🔄 Solutions to Try:**\n`;
+          errorMessage += `• **Use Public URLs**: Paste any public Spotify playlist URL for conversion\n`;
+          errorMessage += `• **Try Family Mode**: Use the "Family-Friendly Connection" option below\n`;
+          errorMessage += `• **Contact Admin**: Ask your family plan administrator for permissions\n`;
+          errorMessage += `• **Different Account**: Try with a personal Premium account\n`;
+          errorMessage += `• **Check Settings**: Review your Spotify privacy settings\n\n`;
+          errorMessage += `**💡 Tip**: You can convert any public playlist by pasting its URL!`;
         } else if (error.message.includes('429')) {
           errorMessage = 'Rate limit exceeded. Please try again in a few minutes.';
         } else {
@@ -422,6 +513,8 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
       
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, [user, dispatch]);
   
@@ -532,13 +625,10 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       console.log('[selectYouTubePlaylist] Fetching tracks for playlistId:', playlistId);
       
       // Get YouTube access token
-      const accessToken = localStorage.getItem('soundswapp_youtube_access_token');
+      const accessToken = await getYouTubeToken();
       if (!accessToken) {
         throw new Error('YouTube authentication token not found. Please reconnect to YouTube.');
       }
-      
-      // Import the YouTube API function dynamically
-      const { fetchAllYouTubePlaylistItems } = await import('./youtubeApi');
       
       const allItems = await fetchAllYouTubePlaylistItems(playlistId, accessToken);
       
@@ -813,9 +903,30 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       dispatch({ type: 'SET_STATUS', payload: ConversionStatus.LOADING_TRACKS });
       dispatch({ type: 'UPDATE_MATCHING_PROGRESS', payload: 0 });
 
-      // Determine source and destination platforms
-      const sourcePlatform = localStorage.getItem('source_platform') || 'spotify';
-      const destinationPlatform = localStorage.getItem('destination_platform') || 'youtube';
+      // Determine source and destination platforms - infer from playlist ID if localStorage is unreliable
+      let sourcePlatform = localStorage.getItem('source_platform') || 'spotify';
+      let destinationPlatform = localStorage.getItem('destination_platform') || 'youtube';
+      
+      // CRITICAL FIX: Validate platform based on playlist ID format
+      if (playlistId.startsWith('PL') && playlistId.length > 20) {
+        // YouTube playlist ID format (starts with "PL" and is long)
+        sourcePlatform = 'youtube';
+        destinationPlatform = 'spotify';
+        console.log('[ConversionContext] 🔍 Auto-detected YouTube playlist ID, setting source=youtube, destination=spotify');
+      } else if (playlistId.length === 22 && !playlistId.startsWith('PL')) {
+        // Spotify playlist ID format (22 characters, base62, no "PL" prefix)
+        sourcePlatform = 'spotify';
+        destinationPlatform = 'youtube';
+        console.log('[ConversionContext] 🔍 Auto-detected Spotify playlist ID, setting source=spotify, destination=youtube');
+      }
+      
+      console.log('[ConversionContext] Platform determination:', {
+        playlistId,
+        detectedSource: sourcePlatform,
+        detectedDestination: destinationPlatform,
+        storedSource: localStorage.getItem('source_platform'),
+        storedDestination: localStorage.getItem('destination_platform')
+      });
 
       let tracks: SpotifyTrack[] = [];
       let matches = new Map();
@@ -872,14 +983,11 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           try {
             console.log('Fetching tracks from YouTube for playlist:', playlistId);
             
-            // Get YouTube access token
-            const accessToken = localStorage.getItem('soundswapp_youtube_access_token');
-            if (!accessToken) {
-              throw new Error('YouTube authentication token not found. Please reconnect to YouTube.');
-            }
-            
-            // Import the YouTube API function dynamically
-            const { fetchAllYouTubePlaylistItems } = await import('./youtubeApi');
+                         // Get YouTube access token
+             const accessToken = await getYouTubeToken();
+             if (!accessToken) {
+               throw new Error('YouTube authentication token not found. Please reconnect to YouTube.');
+             }
             
             // Fetch all playlist items with timeout
             const tracksPromise = fetchAllYouTubePlaylistItems(playlistId, accessToken);
@@ -1093,7 +1201,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                       artistMatch: Math.round(bestScore * 100),
                       lengthScore: Math.round(bestScore * 100)
                     },
-                    isMockData: false
+
                   }
                 };
               }
@@ -1137,9 +1245,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         
         try {
           // Set a timeout for the YouTube playlist creation
-          const createPlaylistPromise = await import('./youtubeApi').then(module => 
-            module.findOrCreatePlaylist(user.uid, youtubePlaylistName, youtubePlaylistDescription)
-          );
+          const createPlaylistPromise = findOrCreatePlaylist(user.uid, youtubePlaylistName, youtubePlaylistDescription);
           
           const timeoutPromise = new Promise<any>((_, reject) => 
             setTimeout(() => reject(new Error('YouTube playlist creation timed out')), 20000)
@@ -1156,15 +1262,25 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const youtubePlaylistUrl = createYouTubePlaylistUrl(youtubePlaylistId);
           
           console.log(`Created YouTube playlist: ${youtubePlaylistId}`);
+          console.log(`[ConversionContext] Setting YouTube playlist URL: ${youtubePlaylistUrl}`);
           
           // Save the YouTube playlist ID to state
-      dispatch({ 
-        type: 'SET_YOUTUBE_PLAYLIST', 
-        payload: { 
+          console.log('[ConversionContext] Dispatching SET_YOUTUBE_PLAYLIST with:', { id: youtubePlaylistId, url: youtubePlaylistUrl });
+          dispatch({ 
+            type: 'SET_YOUTUBE_PLAYLIST', 
+            payload: { 
               id: youtubePlaylistId, 
               url: youtubePlaylistUrl
             } 
           });
+          
+          // Double-check that the state was updated correctly
+          setTimeout(() => {
+            console.log('[ConversionContext] State check after SET_YOUTUBE_PLAYLIST:', {
+              youtubePlaylistId: state.youtubePlaylistId,
+              youtubePlaylistUrl: state.youtubePlaylistUrl
+            });
+          }, 100);
           
           // Add videos to the playlist with improved error handling and progress updates
           let successCount = 0;
@@ -1226,7 +1342,6 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                   // Add a significant delay between each video addition
                   await new Promise(resolve => setTimeout(resolve, 1000 + (attempts * 1000)));
                   
-                  const { addToYouTubePlaylist } = await import('./youtubeApi');
                   await addToYouTubePlaylist(user.uid, youtubePlaylistId, match.videoId);
                   
                   success = true;
@@ -1343,7 +1458,6 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             tracksFailed: failureCount,
             totalTracks: tracks.length,
             convertedAt: new Date(),
-            isMockData: false,
             failedTracks: failedTracks // Include failed tracks in history
           };
 
@@ -1364,7 +1478,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               playlistName: conversionResult.spotifyPlaylistName
             });
 
-            const conversionsRef = collection(db, 'users', user.uid, 'conversions');
+            const conversionsRef = collection(db, 'users', user.uid, 'conversions').withConverter(conversionConverter as any);
             
             // Use the same ID for Firestore document
             const docRef = doc(conversionsRef, conversionResult.id);
@@ -1381,15 +1495,15 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                   convertedAt: Timestamp.fromDate(conversionResult.convertedAt),
                   userId: user.uid,
                   tracks: tracks.map(track => ({
-                    name: track.name,
-                    artists: track.artists,
-                    album: track.album,
-                    duration_ms: track.duration_ms,
-                    popularity: track.popularity || 0,
-                    explicit: track.explicit || false,
-                    releaseYear: track.releaseYear,
-                    genres: track.genres || [],
-                    artistImages: track.artistImages || []
+                    name: track.name ?? 'Unknown',
+                    artists: Array.isArray(track.artists) ? track.artists : [],
+                    album: track.album ?? '',
+                    duration_ms: track.duration_ms ?? 0,
+                    popularity: track.popularity ?? 0,
+                    explicit: track.explicit ?? false,
+                    ...(track.releaseYear ? { releaseYear: track.releaseYear } : {}),
+                    genres: Array.isArray(track.genres) ? track.genres : [],
+                    artistImages: Array.isArray(track.artistImages) ? track.artistImages : []
                   })),
                   failedTracks: failedTracks // Save failed tracks to Firestore
                 });
@@ -1445,8 +1559,12 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           throw new Error(errorMessage);
         }
       } else if (destinationPlatform === 'spotify') {
-        // YouTube → Spotify conversion
+                // YouTube → Spotify conversion
         console.log('=== Starting YouTube to Spotify conversion ===');
+        // Show creating playlist step explicitly for better UI feedback
+        dispatch({ type: 'SET_STATUS', payload: ConversionStatus.CREATING_PLAYLIST });
+        // Nudge progress so users see movement while creating playlist
+        dispatch({ type: 'UPDATE_MATCHING_PROGRESS', payload: 5 });
         console.log('Source platform:', sourcePlatform);
         console.log('Destination platform:', destinationPlatform);
         console.log('Playlist ID:', playlistId);
@@ -1460,30 +1578,69 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           throw new Error('Spotify authentication required. Please reconnect your Spotify account.');
         }
         
-        // Get the selected playlist details
-        const selectedPlaylist = state.youtubePlaylists.find((p: any) => p.id === playlistId);
-        console.log('Selected YouTube playlist:', selectedPlaylist);
+        // Get the selected playlist details (fallback to fetch by ID when not in state)
+        let selectedPlaylist: any = state.youtubePlaylists.find((p: any) => p.id === playlistId);
+        console.log('Selected YouTube playlist (from state):', selectedPlaylist);
         
         if (!selectedPlaylist) {
-          throw new Error('Selected playlist details not found');
+          try {
+            const accessToken = await getYouTubeToken();
+            if (accessToken) {
+              const res = await fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${playlistId}` , {
+                headers: { Authorization: `Bearer ${accessToken}` }
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.items && data.items.length > 0) {
+                  selectedPlaylist = data.items[0];
+                  console.log('Fetched YouTube playlist details by ID:', selectedPlaylist);
+                }
+              } else {
+                console.warn('Failed to fetch YouTube playlist details:', res.status, res.statusText);
+              }
+            }
+          } catch (e) {
+            console.warn('Error fetching YouTube playlist details:', e);
+          }
+        }
+        
+        if (!selectedPlaylist) {
+          // As a last resort, proceed with a minimal fallback
+          selectedPlaylist = { id: playlistId, snippet: { title: 'YouTube Playlist' } };
+          console.warn('Using minimal fallback playlist details');
         }
         
         // Create a descriptive Spotify playlist name
-        const spotifyPlaylistName = `${selectedPlaylist.snippet?.title || 'YouTube Playlist'} (Converted)`;
+        const rawTitle = selectedPlaylist.snippet?.title || 'YouTube Playlist';
+        const baseName = rawTitle.replace(/\s*\(Converted\)+$/i, '').trim();
+        const convertedSuffix = '(Converted)';
+        const spotifyPlaylistName = baseName.endsWith(convertedSuffix)
+          ? baseName
+          : `${baseName} ${convertedSuffix}`;
         const spotifyPlaylistDescription = `Converted from YouTube using SoundSwapp`;
         
         console.log('Spotify playlist name:', spotifyPlaylistName);
         console.log('Spotify playlist description:', spotifyPlaylistDescription);
         
                   try {
-            // Import Spotify API functions
-            const { createSpotifyPlaylist, addTracksToSpotifyPlaylist } = await import('./spotifyApi');
-            
             // Create the Spotify playlist
             console.log('Creating Spotify playlist:', spotifyPlaylistName);
             console.log('Playlist description:', spotifyPlaylistDescription);
             
-            const newSpotifyPlaylist = await createSpotifyPlaylist(spotifyPlaylistName, spotifyPlaylistDescription);
+            // Idempotency: check if a playlist with the same name already exists
+            let newSpotifyPlaylist = await findUserPlaylistByName(spotifyPlaylistName);
+            if (!newSpotifyPlaylist) {
+              // Generate a unique playlist name to avoid duplicates
+              const uniquePlaylistName = await (await import('../lib/spotifyApi')).SpotifyService.generateUniquePlaylistName(spotifyPlaylistName);
+              console.log(`[ConversionContext] Creating new Spotify playlist with unique name: "${uniquePlaylistName}"`);
+              
+              newSpotifyPlaylist = await createSpotifyPlaylist(
+                uniquePlaylistName, 
+                `${spotifyPlaylistDescription} • tag:converted-by-soundswapp`,
+              );
+            } else {
+              console.log(`[ConversionContext] Using existing Spotify playlist: "${newSpotifyPlaylist.name}" (ID: ${newSpotifyPlaylist.id})`);
+            }
           
           if (!newSpotifyPlaylist || !newSpotifyPlaylist.id) {
             throw new Error('Failed to create Spotify playlist');
@@ -1493,6 +1650,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const spotifyPlaylistUrl = `https://open.spotify.com/playlist/${spotifyPlaylistId}`;
           
           console.log(`Created Spotify playlist: ${spotifyPlaylistId}`);
+          console.log(`[ConversionContext] Setting Spotify playlist URL: ${spotifyPlaylistUrl}`);
           
           // Save the Spotify playlist ID to state
           dispatch({ 
@@ -1504,6 +1662,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           });
           
           // Search for tracks on Spotify and add them to the playlist
+          dispatch({ type: 'SET_STATUS', payload: ConversionStatus.MATCHING_TRACKS });
           let successCount = 0;
           let failureCount = 0;
           let totalTracks = tracks.length;
@@ -1512,7 +1671,10 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           console.log(`Starting to add ${totalTracks} tracks to Spotify playlist ${spotifyPlaylistId}`);
           console.log('First few tracks:', tracks.slice(0, 3).map(t => ({ name: t.name, artists: t.artists })));
           
-          // Process tracks one by one with progress updates
+                     // Process tracks one by one with progress updates
+           if (!Array.isArray(tracks) || tracks.length === 0) {
+             throw new Error('No tracks available to convert. Please re-select the playlist.');
+           }
           for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             
@@ -1533,8 +1695,6 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 console.log(`Searching Spotify for: "${searchQuery}"`);
                 
                 try {
-                  // Import Spotify search function
-                  const { searchSpotifyTracks } = await import('./spotifyApi');
                   console.log(`Searching Spotify for: "${searchQuery}"`);
                   const searchResults = await searchSpotifyTracks(searchQuery, 20); // Get more results
                   
@@ -1569,8 +1729,8 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 }
               }
               
-              // Lower the threshold for better matching - from 0.5 to 0.3
-              if (bestMatch && bestScore > 0.3) {
+                             // Lower the threshold for better matching - from 0.5 to 0.25
+                             if (bestMatch && bestScore > 0.25) {
                 const trackUri = bestMatch.uri;
                 
                 console.log(`Found Spotify track: ${bestMatch.name} by ${bestMatch.artists[0].name} (score: ${bestScore.toFixed(2)})`);
@@ -1666,8 +1826,9 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
           }
           
-          // Update state to indicate success
-          dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SUCCESS });
+                     // Update state to indicate success
+           dispatch({ type: 'SET_STATUS', payload: ConversionStatus.SUCCESS });
+           dispatch({ type: 'UPDATE_MATCHING_PROGRESS', payload: 100 });
           
           // Save the conversion to history
           const conversionResult: ConversionResult = {
@@ -1681,7 +1842,6 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             tracksFailed: failureCount,
             totalTracks: tracks.length,
             convertedAt: new Date(),
-            isMockData: false,
             failedTracks: failedTracks // Include failed tracks in history
           };
 
@@ -1702,7 +1862,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               playlistName: conversionResult.spotifyPlaylistName
             });
 
-            const conversionsRef = collection(db, 'users', user.uid, 'conversions');
+            const conversionsRef = collection(db, 'users', user.uid, 'conversions').withConverter(conversionConverter as any);
             const docRef = doc(conversionsRef, conversionResult.id);
             
             await setDoc(docRef, {
@@ -1710,17 +1870,17 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               convertedAt: Timestamp.fromDate(conversionResult.convertedAt),
               userId: user.uid,
               tracks: tracks.map(track => ({
-                name: track.name,
-                artists: track.artists,
-                album: track.album,
-                duration_ms: track.duration_ms,
-                popularity: track.popularity || 0,
-                explicit: track.explicit || false,
-                releaseYear: track.releaseYear,
-                genres: track.genres || [],
-                artistImages: track.artistImages || []
+                name: track.name ?? 'Unknown',
+                artists: Array.isArray(track.artists) ? track.artists : [],
+                album: track.album ?? '',
+                duration_ms: track.duration_ms ?? 0,
+                popularity: track.popularity ?? 0,
+                explicit: track.explicit ?? false,
+                ...(track.releaseYear ? { releaseYear: track.releaseYear } : {}),
+                genres: Array.isArray(track.genres) ? track.genres : [],
+                artistImages: Array.isArray(track.artistImages) ? track.artistImages : []
               })),
-              failedTracks: failedTracks // Save failed tracks to Firestore
+              ...(Array.isArray(failedTracks) ? { failedTracks } : {})
             });
 
             console.log('Successfully saved conversion to Firestore:', docRef.id);
@@ -1812,7 +1972,7 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // Wait a moment to ensure auth token has propagated
         await new Promise(resolve => setTimeout(resolve, 500));
         
-      const conversionsRef = collection(db, 'users', user.uid, 'conversions');
+      const conversionsRef = collection(db, 'users', user.uid, 'conversions').withConverter(conversionConverter as any);
       const q = query(conversionsRef, orderBy('convertedAt', 'desc'));
         
         // Add timeout to the getDocs call
@@ -1844,8 +2004,9 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             tracksMatched: data.tracksMatched,
             tracksFailed: data.tracksFailed,
             totalTracks: data.totalTracks,
-            convertedAt: data.convertedAt.toDate(),
-              isMockData: data.isMockData || false,
+            convertedAt: data.convertedAt && typeof data.convertedAt.toDate === 'function' 
+              ? data.convertedAt.toDate() 
+              : new Date(data.convertedAt || Date.now()),
             failedTracks: data.failedTracks || [] // Load failed tracks from Firestore
           });
           });
@@ -1904,6 +2065,94 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
   
+  // Add public playlist URL conversion function
+  const convertFromPublicUrl = useCallback(async (playlistUrl: string, sourcePlatform: 'spotify' | 'youtube') => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    try {
+      // Extract playlist ID from URL
+      let playlistId: string;
+      
+      if (sourcePlatform === 'spotify') {
+        // Spotify URL formats: 
+        // https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+        // spotify:playlist:37i9dQZF1DXcBWIGoYBM5M
+        const spotifyMatch = playlistUrl.match(/(?:spotify:playlist:|playlist\/)([a-zA-Z0-9]{22})/);
+        if (!spotifyMatch) {
+          throw new Error('Invalid Spotify playlist URL. Please paste a valid Spotify playlist link.');
+        }
+        playlistId = spotifyMatch[1];
+      } else {
+        // YouTube URL formats:
+        // https://www.youtube.com/playlist?list=PLrU1wdE2sKAhQfQl56b8pjBEuixrEP0A5
+        // https://music.youtube.com/playlist?list=PLrU1wdE2sKAhQfQl56b8pjBEuixrEP0A5
+        const youtubeMatch = playlistUrl.match(/[&?]list=([a-zA-Z0-9_-]+)/);
+        if (!youtubeMatch) {
+          throw new Error('Invalid YouTube playlist URL. Please paste a valid YouTube playlist link.');
+        }
+        playlistId = youtubeMatch[1];
+      }
+
+      console.log(`[ConversionContext] 🔗 Starting conversion from public ${sourcePlatform} URL:`, playlistId);
+
+      // Set the source and destination platforms in localStorage
+      localStorage.setItem('source_platform', sourcePlatform);
+      localStorage.setItem('destination_platform', sourcePlatform === 'spotify' ? 'youtube' : 'spotify');
+
+      // Set the playlist ID in state and start conversion
+      dispatch({ type: 'SELECT_PLAYLIST', payload: playlistId });
+      
+      // Start conversion with a slight delay to ensure state is updated
+      setTimeout(() => {
+        startConversion();
+      }, 100);
+
+    } catch (error) {
+      console.error('Error converting from public URL:', error);
+      let errorMessage = 'Failed to convert playlist from URL';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      dispatch({ type: 'SET_ERROR', payload: errorMessage });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [dispatch]);
+
+  // Add family-friendly reconnection function
+  const reconnectWithFamilyMode = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
+
+      // Import progressive auth function
+      const { initProgressiveSpotifyAuth } = await import('../lib/spotifyAuth');
+      
+      console.log('[ConversionContext] 👨‍👩‍👧‍👦 Attempting family-friendly Spotify connection...');
+      
+      // Try with read-only scopes
+      const result = await initProgressiveSpotifyAuth(true);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to connect with family-friendly mode');
+      }
+
+      // Connection initiated, user will be redirected
+      
+    } catch (error) {
+      console.error('Error reconnecting with family mode:', error);
+      dispatch({ 
+        type: 'SET_ERROR', 
+        payload: error instanceof Error ? error.message : 'Failed to reconnect with family-friendly mode' 
+      });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [dispatch]);
+  
   const contextValue: ConversionContextType = {
     state,
     fetchSpotifyPlaylists,
@@ -1911,9 +2160,10 @@ export const ConversionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     selectPlaylist,
     selectYouTubePlaylist,
     startConversion,
+    convertFromPublicUrl,
+    reconnectWithFamilyMode,
     resetConversion,
     fetchConversionHistory,
-    toggleMockDataMode,
     dispatch
   };
   

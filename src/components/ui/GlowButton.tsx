@@ -1,6 +1,6 @@
 // src/components/ui/GlowButton.tsx
 import React, { ButtonHTMLAttributes, forwardRef } from 'react';
-import { cn } from '../../lib/utils';
+import { cn, filterDOMProps } from '../../lib/utils';
 
 /**
  * Enhanced GlowButton with gradient support and accessibility
@@ -21,7 +21,7 @@ const variants = {
   soundswapp: "soundswapp-button shadow-glow",
   outline: "bg-transparent text-content-primary border border-border-default hover:border-border-hover hover:bg-surface-elevated",
   glass: "bg-surface-card/50 backdrop-blur-sm border border-border-default text-content-primary hover:bg-surface-card/70",
-  minimal: "bg-transparent text-content-secondary hover:text-content-primary hover:bg-surface-card/30",
+  minimal: "bg-transparent text-content-primary hover:bg-surface-elevated",
 };
 
 const sizes = {
@@ -43,6 +43,9 @@ const GlowButton = forwardRef<HTMLButtonElement, GlowButtonProps>(
     rightIcon,
     ...props
   }, ref) => {
+    // Filter out props that shouldn't be on DOM elements
+    const domProps = filterDOMProps(props);
+    
     return (
       <button
         ref={ref}
@@ -68,7 +71,7 @@ const GlowButton = forwardRef<HTMLButtonElement, GlowButtonProps>(
           className
         )}
         disabled={disabled || isLoading}
-        {...props}
+        {...domProps}
       >
         {/* Loading spinner */}
         {isLoading && (
